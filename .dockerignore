@@ -1,0 +1,26 @@
+# Exclude local virtual environments
+.venv/
+.venv_sales/
+__pycache__/
+*.pyc
+
+# Exclude Git files
+.git/
+.gitignore
+
+# Exclude local data and secrets
+data/
+.env
+gcp-wif-credentials.json
+WIF.json
+service_account.json
+
+# Exclude IDE and notebooks
+.ipynb_checkpoints/
+*.ipynb
+.vscode/
+.idea/
+
+# Exclude build artifacts
+dist/
+build/
