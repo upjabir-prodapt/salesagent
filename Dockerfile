@@ -9,14 +9,16 @@ WORKDIR /app
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies into a virtual environment
-RUN uv sync --frozen --no-dev --no-install-project
+# Install all dependencies (including build deps) into a virtual environment
+RUN uv sync --frozen --no-install-project
 
 # Stage 2: Runtime - Lean production image
 FROM python:3.11-slim AS runtime
 
+# Install uv in runtime image too
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # Set environment variables
-# GCE_METADATA_MTLS_MODE=none is critical to bypass the SSL error on Cloud Run
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
@@ -25,8 +27,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install only runtime dependencies (skip dev/test)
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application source code and relevant files
 COPY src/ ./src/
@@ -38,5 +43,4 @@ COPY ColtProductCatalog.pdf .
 EXPOSE 8000
 
 # Run the application
-# We use src.routes.app:app as the entry point for Sales Agent
 CMD ["uvicorn", "src.routes.app:app", "--host", "0.0.0.0", "--port", "8000"]
