@@ -35,8 +35,8 @@ COPY .python-version .
 COPY ColtProductCatalog.pdf .
 
 # Cloud Run defaults to port 8080, but we use the PORT env var
-EXPOSE 8080
+EXPOSE 8000
 
 # Run the application
 # We use src.routes.app:app as the entry point for Sales Agent
-CMD ["uvicorn", "src.routes.app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "src.routes.app:app", "--host", "0.0.0.0", "--port", "8000"]
