@@ -1,0 +1,61 @@
+[project]
+name = "colt_ai"
+version = "0.2.0"
+description = "Colt-AI Data Ingestion and Crawling System"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-adk>=1.22.1",
+    "pydantic>=2.12.5",
+    "requests>=2.32.5",
+    "python-dotenv>=1.0.1",
+    "fastapi>=0.123.10",
+    "pytest-cov>=7.0.0",
+    "pre-commit>=4.5.1",
+    "google-cloud-bigquery>=3.25.0",
+    "google-cloud-storage>=3.7.0",
+    "google-cloud-firestore>=2.14.0",
+    "uvicorn>=0.32.1",
+    "loguru>=0.7.2",
+    "tenacity>=8.2.3",
+    "streamlit>=1.42.0",
+    "pypdf>=6.7.3",
+    "beautifulsoup4>=4.14.3",
+    "rouge-score>=0.1.2",
+    "bert-score>=0.3.13",
+    "torch>=2.10.0",
+    "google-cloud-aiplatform>=1.139.0",
+    "markdown-pdf>=1.13.1",
+    "opentelemetry-instrumentation-google-genai>=0.4b0",
+    "opentelemetry-instrumentation-sqlite3",
+    "opentelemetry-exporter-gcp-logging",
+    "opentelemetry-exporter-gcp-monitoring",
+    "opentelemetry-exporter-gcp-trace",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-instrumentation-vertexai>=2.0b0",
+    "google-auth>=2.47.0",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "ruff>=0.14.10",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.ruff]
+line-length = 88
+lint.select = ["E", "F", "B", "UP", "SIM", "C4", "I"]
+lint.ignore = [
+    "E501", # line length (handled by formatter)
+]
+fix = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
