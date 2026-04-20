@@ -6,32 +6,25 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Copy dependency files
+# Copy only dependency files first (better caching)
 COPY pyproject.toml uv.lock ./
 
-# Install all dependencies (including build deps) into a virtual environment
-RUN uv sync --frozen --no-install-project
+# Install dependencies into a virtual environment (no dev/test)
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Stage 2: Runtime - Lean production image
 FROM python:3.11-slim AS runtime
 
-# Install uv in runtime image too
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# Set environment variables
+# Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    GCE_METADATA_MTLS_MODE=none \
-    PORT=8080
+    GCE_METADATA_MTLS_MODE=none
 
 WORKDIR /app
 
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
-
-# Install only runtime dependencies (skip dev/test)
-RUN uv sync --frozen --no-dev --no-install-project
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
 
 # Copy application source code and relevant files
 COPY src/ ./src/
@@ -39,8 +32,8 @@ COPY main.py .
 COPY .python-version .
 COPY ColtProductCatalog.pdf .
 
-# Cloud Run defaults to port 8080, but we use the PORT env var
-EXPOSE 8000
+# Expose Cloud Run port (default 8080, but app uses $PORT dynamically)
+EXPOSE 8080
 
-# Run the application
-CMD ["uvicorn", "src.routes.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application (shell form so $PORT expands correctly)
+CMD uvicorn src.routes.app:app --host 0.0.0.0 --port $PORT --workers 1
