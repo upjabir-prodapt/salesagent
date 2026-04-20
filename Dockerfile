@@ -1,60 +1,31 @@
-# Stage 1: Builder - Build and prepare dependencies
-FROM python:3.11-slim AS builder
+# 1. FROM base image
+FROM python:3.11-slim
 
-# Optimized: Use uv to resolve and install dependencies with high parallelism
+# 2. Install dependency software (uv for fast, reliable builds)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Set environment variables for optimization
 ENV UV_SYSTEM_PYTHON=1 \
     UV_COMPILE_BYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-WORKDIR /app
-
-# Copy dependency files first to leverage build cache
-COPY pyproject.toml uv.lock ./
-
-# Optimized: Force install CPU-only torch to save ~1.5GB of image size
-# Azure DevOps agents have limited space; this is the single most important optimization
-RUN uv pip install torch --index-url https://download.pytorch.org/whl/cpu --system
-
-# Install remaining dependencies from pyproject.toml
-RUN uv pip install -r pyproject.toml --system
-
-# Copy application and download script
-COPY download_models.py .
-COPY src/ ./src/
-
-# Optimized: Pre-download BERT models during build time
-# This prevents timeouts and large downloads during first request/runtime
-RUN python download_models.py
-
-# Stage 2: Runtime - Lean production image
-FROM python:3.11-slim AS runtime
-
-# Set runtime environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8080 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH" \
+    PORT=8000 \
     GCE_METADATA_MTLS_MODE=none
 
 WORKDIR /app
 
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# 3. Copy pyproject.toml first (The Cache Trick)
+COPY pyproject.toml uv.lock ./
 
-# Copy pre-downloaded HuggingFace models cache
-COPY --from=builder /root/.cache/huggingface /root/.cache/huggingface
+# 4. Run uv command with pyproject.toml
+# Now that torch/bert-score are removed, this is very fast!
+RUN uv pip install -r pyproject.toml --system
 
-# Copy application source code and relevant assets
-COPY src/ ./src/
-COPY main.py .
-COPY .python-version .
-COPY ColtProductCatalog.pdf .
+# 5. Copy all base folder
+COPY . .
 
-# Expose port 8080 (Cloud Run / Default)
-EXPOSE 8080
+# Expose the standard FastAPI port
+EXPOSE 8000
 
-# Run the application
-# Use workers=1 for memory-constrained environments unless CPU allows more
-CMD ["uvicorn", "src.routes.app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+# Start application using dynamic port for Cloud Run compatibility
+CMD uvicorn src.routes.app:app --host 0.0.0.0 --port $PORT --workers 1

@@ -10,8 +10,6 @@ dependencies = [
     "requests>=2.32.5",
     "python-dotenv>=1.0.1",
     "fastapi>=0.123.10",
-    "pytest-cov>=7.0.0",
-    "pre-commit>=4.5.1",
     "google-cloud-bigquery>=3.25.0",
     "google-cloud-storage>=3.7.0",
     "google-cloud-firestore>=2.14.0",
@@ -21,8 +19,6 @@ dependencies = [
     "pypdf>=6.7.3",
     "beautifulsoup4>=4.14.3",
     "rouge-score>=0.1.2",
-    "bert-score>=0.3.13",
-    "torch>=2.10.0",
     "google-cloud-aiplatform>=1.139.0",
     "markdown-pdf>=1.13.1",
     "opentelemetry-instrumentation-google-genai>=0.4b0",
@@ -42,20 +38,11 @@ dev = [
     "ruff>=0.14.10",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-cov>=7.0.0",
 ]
 
 [tool.ruff]
 line-length = 88
 lint.select = ["E", "F", "B", "UP", "SIM", "C4", "I"]
-lint.ignore = [
-    "E501", # line length (handled by formatter)
-]
+lint.ignore = ["E501"]
 fix = true
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
