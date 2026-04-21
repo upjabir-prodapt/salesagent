@@ -164,6 +164,6 @@ stages:
                   --quiet \
                   --image $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId) \
                   --platform=managed \
-                  --port=8000
+                  --port=8000 \
                   --region=$REGION \
                   --project=$PROJECT_ID
