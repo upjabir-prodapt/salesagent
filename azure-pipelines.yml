@@ -63,7 +63,7 @@ stages:
           inputs:
             connectionType: 'azureRM'
             azureSubscription: 'sc-ado-gcp-aicoe'
-            addSpnToEnvironment: true
+            add_spn_to_environment: true
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
@@ -92,7 +92,7 @@ stages:
           inputs:
             connectionType: 'azureRM'
             azureSubscription: 'sc-ado-gcp-aicoe'
-            addSpnToEnvironment: true
+            add_spn_to_environment: true
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
@@ -100,8 +100,6 @@ stages:
               
               docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId) .
               docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId)
-        
-        
 
 # ============================================================================
 # STAGE 2 — Deploy Approve
@@ -139,7 +137,7 @@ stages:
             inputs:
               connectionType: 'azureRM'
               azureSubscription: 'sc-ado-gcp-aicoe'
-              addSpnToEnvironment: true
+              add_spn_to_environment: true
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
@@ -164,6 +162,7 @@ stages:
                   --quiet \
                   --image $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId) \
                   --platform=managed \
-                  --port=8000 \
                   --region=$REGION \
-                  --project=$PROJECT_ID
+                  --project=$PROJECT_ID \
+                  --port=8000 \
+                  --set-secrets="/app/.env=sales-agent-service-env:latest"
