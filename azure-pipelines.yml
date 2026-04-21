@@ -57,9 +57,9 @@ stages:
           inputs:
             dockerVersion: '17.09.0-ce'
 
-          # ── Step 2: Authenticate with GCP via WIF ───────────────────────────────
+          # ── Step 2: Authenticate, Build & Push ─────────────────────────────────
         - task: AzureCLI@3
-          displayName: Authenticate with GCP (WIF)
+          displayName: Authenticate, Build & Push Docker Image
           inputs:
             connectionType: 'azureRM'
             azureSubscription: 'sc-ado-gcp-aicoe'
@@ -67,6 +67,7 @@ stages:
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
+              # Generate WIF Credentials
               echo $idToken > $(Pipeline.Workspace)/.workload_identity.jwt
               cat << EOF > $GOOGLE_APPLICATION_CREDENTIALS
               {
@@ -80,24 +81,14 @@ stages:
                 "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/$(GoogleCloud.WorkloadIdentity.ServiceAccount):generateAccessToken"         
               }
               EOF
+              
+              # Login and Configure Docker
               gcloud auth login --cred-file=$GOOGLE_APPLICATION_CREDENTIALS
               gcloud config set project $PROJECT_ID
               gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
-
               
-
-          # ── Step 2: Docker Build & Push ─────────────────────────────────────────
-        - task: AzureCLI@3
-          displayName: Build & Push Docker Image
-          inputs:
-            connectionType: 'azureRM'
-            azureSubscription: 'sc-ado-gcp-aicoe'
-            add_spn_to_environment: true
-            scriptType: 'bash'
-            scriptLocation: 'inlineScript'
-            inlineScript: |
+              # Build and Push
               cd $(ROOT)
-              
               docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId) .
               docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId)
 
