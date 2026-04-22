@@ -63,19 +63,12 @@ stages:
           inputs:
             connectionType: 'azureRM'
             azureSubscription: 'sc-ado-gcp-aicoe'
-            add_spn_to_environment: true
+            addSpnToEnvironment: true
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
               # Generate WIF Credentials
-              # Use the environment variable $idToken provided by Azure Workload Identity
-              if [ -z "$idToken" ]; then
-                echo "ERROR: Azure idToken environment variable is missing. Ensure WIF is configured correctly."
-                exit 1
-              fi
-              
-              echo "$idToken" > $(Pipeline.Workspace)/.workload_identity.jwt
-              
+              echo $idToken > $(Pipeline.Workspace)/.workload_identity.jwt
               cat << EOF > $GOOGLE_APPLICATION_CREDENTIALS
               {
                 "type": "external_account",
@@ -89,9 +82,9 @@ stages:
               }
               EOF
               
-              # Login and Configure Docker
-              gcloud auth login --cred-file=$GOOGLE_APPLICATION_CREDENTIALS --quiet
-              gcloud config set project $PROJECT_ID --quiet
+              # Login and Configure Docker (Direct Token method)
+              gcloud auth login --cred-file=$GOOGLE_APPLICATION_CREDENTIALS
+              gcloud config set project $PROJECT_ID
               
               # Get a fresh token and login to Docker directly
               gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://$REGION-docker.pkg.dev
@@ -137,7 +130,7 @@ stages:
             inputs:
               connectionType: 'azureRM'
               azureSubscription: 'sc-ado-gcp-aicoe'
-              add_spn_to_environment: true
+              addSpnToEnvironment: true
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
