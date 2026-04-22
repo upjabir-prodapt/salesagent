@@ -82,10 +82,12 @@ stages:
               }
               EOF
               
-              # Login and Configure Docker
+              # Login and Configure Docker (Direct Token method)
               gcloud auth login --cred-file=$GOOGLE_APPLICATION_CREDENTIALS
               gcloud config set project $PROJECT_ID
-              gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+              
+              # Get a fresh token and login to Docker directly
+              gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://$REGION-docker.pkg.dev
               
               # Build and Push
               cd $(ROOT)
