@@ -68,7 +68,16 @@ stages:
             scriptLocation: 'inlineScript'
             inlineScript: |
               # Generate WIF Credentials
-              echo $idToken > $(Pipeline.Workspace)/.workload_identity.jwt
+              # We use the direct Azure variable $(idToken) which is more reliable than the shell $idToken
+              ID_TOKEN="$(idToken)"
+              
+              if [ -z "$ID_TOKEN" ]; then
+                echo "ERROR: Azure Federated ID Token is empty. Check Service Connection permissions."
+                exit 1
+              fi
+              
+              echo "$ID_TOKEN" > $(Pipeline.Workspace)/.workload_identity.jwt
+              
               cat << EOF > $GOOGLE_APPLICATION_CREDENTIALS
               {
                 "type": "external_account",
@@ -82,7 +91,7 @@ stages:
               }
               EOF
               
-              # Login and Configure Docker (Direct Token method)
+              # Login and Configure Docker
               gcloud auth login --cred-file=$GOOGLE_APPLICATION_CREDENTIALS
               gcloud config set project $PROJECT_ID
               
