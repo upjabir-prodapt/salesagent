@@ -570,7 +570,7 @@ class EvaluationService:
             rouge_scores = {"rouge1": 0.0, "rouge2": 0.0, "rougeLsum": 0.0}
 
         try:
-            bert_f1 = 0.0  # BERTScore disabled to save container space
+            bert_f1 = self._compute_bertscore(final_report, reference_text)
         except Exception as e:
             logger.warning(f"[Evaluation] BERTScore computation failed: {e}")
             bert_f1 = 0.0
