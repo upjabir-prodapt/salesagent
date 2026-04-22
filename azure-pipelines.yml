@@ -156,4 +156,4 @@ stages:
                   --region=$REGION \
                   --project=$PROJECT_ID \
                   --port=8000 \
-                  --set-secrets="/app/.env=sales-agent-service-env:latest"
+                  --set-secrets="/secrets/.env=sales-agent-service-env:latest"

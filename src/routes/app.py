@@ -30,6 +30,7 @@ from . import research
 
 # Load environment variables from .env file
 load_dotenv()
+load_dotenv("/secrets/.env", override=True)
 
 # Configure logging
 setup_logging()
