@@ -93,31 +93,31 @@ stages:
               docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId)
 
 # ============================================================================
-# STAGE 2 — Deploy Approve
+# STAGE 2 — Deploy Approve (Disabled for initial development)
 # ============================================================================
 
-  - stage: Deploy_Approve
-    displayName: 'Deploy-Approve'
-    dependsOn: BuildAndPush
-    jobs:
-    - deployment: Deploy_Approve
-      displayName: 'Approve Deploy'
-      environment: $(ENV)        # ← ADO Environment with approval gate
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-            - script: |
-                echo "Approval granted for Deploy"
-                echo "Reviewer approved at: $(date -u)"
-              displayName: 'Approval Confirmed'
+#  - stage: Deploy_Approve
+#    displayName: 'Deploy-Approve'
+#    dependsOn: BuildAndPush
+#    jobs:
+#    - deployment: Deploy_Approve
+#      displayName: 'Approve Deploy'
+#      environment: $(ENV)        # ← ADO Environment with approval gate
+#      strategy:
+#        runOnce:
+#          deploy:
+#            steps:
+#            - script: |
+#                echo "Approval granted for Deploy"
+#                echo "Reviewer approved at: $(date -u)"
+#              displayName: 'Approval Confirmed'
 
 # ============================================================================
 # STAGE 3 — DEPLOY
 # ============================================================================
   - stage: Deploy
     displayName: Deploy to Cloud Run
-    dependsOn: Deploy_Approve
+    dependsOn: BuildAndPush
     jobs:
       - job: DeployJob
         steps:
