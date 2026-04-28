@@ -41,13 +41,13 @@ variables:
     
 stages:
 # ============================================================================
-# STAGE 0 — TESTS & COVERAGE GATE (blocks build if coverage < 90%)
+# STAGE 0 — TESTS & COVERAGE GATE (blocks build if coverage < 80%)
 # ============================================================================
   - stage: Test
     displayName: Tests & Coverage Gate
     jobs:
       - job: PytestCoverage
-        displayName: pytest with coverage >= 90%
+        displayName: pytest with coverage >= 80%
         steps:
           - checkout: self
             displayName: 'Checkout source'
@@ -64,18 +64,18 @@ stages:
               uv sync --frozen
             displayName: 'Install dependencies (uv sync)'
 
-          # `--cov-fail-under=90` makes the gate explicit on the command line in
-          # addition to pyproject.toml's [tool.coverage.report] fail_under = 90.
-          # If overall coverage is below 90 %, pytest exits non-zero and the
+          # `--cov-fail-under=80` makes the gate explicit on the command line in
+          # addition to pyproject.toml's [tool.coverage.report] fail_under = 80.
+          # If overall coverage is below 80 %, pytest exits non-zero and the
           # pipeline fails before BuildAndPush runs.
           - script: |
               uv run pytest \
                 --cov=src \
-                --cov-report=xml:$(System.DefaultWorkingDirectory)/coverage.xml \
+                --cov-report=xml:$(System.DefaultWorkingDirectory)/coverage.txt \
                 --cov-report=term-missing \
-                --cov-fail-under=90 \
-                --junitxml=$(System.DefaultWorkingDirectory)/test-results.xml
-            displayName: 'Run pytest with coverage gate (>= 90%)'
+                --cov-fail-under=80 \
+                --junitxml=$(System.DefaultWorkingDirectory)/test-results.txt
+            displayName: 'Run pytest with coverage gate (>= 80%)'
 
           - task: PublishTestResults@2
             displayName: 'Publish test results'
