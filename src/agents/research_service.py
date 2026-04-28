@@ -1,5 +1,6 @@
 """Research Service - Business Logic for Research Operations"""
 
+import asyncio
 import io
 import time
 from typing import Any
@@ -16,7 +17,6 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 from ..core.config import settings
 from ..core.exceptions import OutputValidationException, ServiceError
 from ..repositories.bigquery_repository import BigQueryRepository
-from ..repositories.firestore_repository import FirestoreRepository
 from ..repositories.gcs_repository import GCSRepository
 from ..utils.agent import log_event
 from ..utils.guardrails import OutputGuardrail
@@ -32,11 +32,9 @@ class ResearchService:
         self,
         bigquery_repository: BigQueryRepository,
         gcs_repository: GCSRepository,
-        firestore_repository: FirestoreRepository,
     ):
         self.bigquery_repo = bigquery_repository
         self.gcs_repo = gcs_repository
-        self.firestore_repo = firestore_repository
 
     async def create_research_request(
         self, job_id: str, company_name: str, metadata: dict[str, Any] | None = None
@@ -50,16 +48,20 @@ class ResearchService:
             logger.error(f"Failed to create research request: {e}")
             raise ServiceError(f"Failed to create research request: {str(e)}") from e
 
+    @staticmethod
+    def _generate_pdf_static(final_report: str) -> bytes:
+        """Synchronous helper for PDF generation (CPU-bound)"""
+        from markdown_pdf import MarkdownPdf, Section
+        pdf = MarkdownPdf(toc_level=0)
+        pdf.add_section(Section(final_report))
+        pdf_buffer = io.BytesIO()
+        pdf.save(pdf_buffer)
+        return pdf_buffer.getvalue()
+
     async def process_research_background(self, job_id: str, company_name: str) -> None:
         """Process research request in background using SalesAgent"""
         try:
             logger.info(f"Starting research for job {job_id}: {company_name}")
-
-            # Initialize Firestore tracking
-            await self.firestore_repo.initialize_job(job_id)
-            await self.firestore_repo.update_overall_progress(
-                job_id, settings.RESEARCH_INIT_PROGRESS, "PROCESSING"
-            )
 
             self.bigquery_repo.update_status(
                 job_id,
@@ -142,14 +144,9 @@ class ResearchService:
 
             # Generate and upload PDF
             try:
-                from markdown_pdf import MarkdownPdf, Section
-
                 logger.info(f"Generating PDF for job {job_id}")
-                pdf = MarkdownPdf(toc_level=0)
-                pdf.add_section(Section(final_report))
-                pdf_buffer = io.BytesIO()
-                pdf.save(pdf_buffer)
-                pdf_uri = self.gcs_repo.upload_pdf(job_id, pdf_buffer.getvalue())
+                pdf_bytes = await asyncio.to_thread(self._generate_pdf_static, final_report)
+                pdf_uri = await asyncio.to_thread(self.gcs_repo.upload_pdf, job_id, pdf_bytes)
                 logger.info(f"PDF uploaded successfully to {pdf_uri}")
             except Exception as pdf_err:
                 logger.warning(
@@ -211,7 +208,6 @@ class ResearchService:
                 )
 
             # Mark COMPLETED, persist model card data into metadata
-            await self.firestore_repo.update_overall_progress(job_id, 100, "COMPLETED")
             self.bigquery_repo.update_status(
                 job_id,
                 "COMPLETED",
@@ -229,7 +225,6 @@ class ResearchService:
 
         except Exception as e:
             logger.error(f"Error processing research for job {job_id}: {e}")
-            await self.firestore_repo.update_overall_progress(job_id, 0, "FAILED")
             self.bigquery_repo.update_status(job_id, "FAILED", error=str(e))
             raise
 
@@ -290,16 +285,18 @@ class ResearchService:
                         last_invocation_id = event.invocation_id
                         log_event(event, verbose=True)
 
-                        # Update individual agent progress in Firestore
+                        # Update individual agent progress in BigQuery
                         if hasattr(event, "author") and event.author:
-                            # Use 50% for intermediate events, 100% when final response
                             is_final = getattr(
                                 event, "is_final_response", lambda: False
                             )()
                             agent_status = "COMPLETED" if is_final else "PROCESSING"
-                            agent_pct = 100 if is_final else 50
-                            await self.firestore_repo.update_agent_progress(
-                                job_id, event.author, agent_pct, agent_status
+                            
+                            # Log to BQ current_step for visibility
+                            self.bigquery_repo.update_status(
+                                job_id, 
+                                None, 
+                                current_step=f"Agent: {event.author} ({agent_status})"
                             )
 
                         # Update progress based on agent milestones
@@ -307,9 +304,6 @@ class ResearchService:
                             pct, label = progress_map[event.author]
                             self.bigquery_repo.update_status(
                                 job_id, None, progress=pct, current_step=label
-                            )
-                            await self.firestore_repo.update_overall_progress(
-                                job_id, pct, "PROCESSING"
                             )
 
         except Exception as e:

@@ -32,6 +32,19 @@ class Settings(BaseSettings):
         default="us-central1", description="Google Cloud region for resources"
     )
 
+    # IAP Configuration (Zero-Trust Security)
+    AUTH_ENABLED: bool = Field(
+        default=False, description="Master toggle for authentication"
+    )
+    IAP_AUDIENCE: str | None = Field(
+        default=None, 
+        description="IAP Backend Audience (format: /projects/PROJECT_NUMBER/global/backendServices/SERVICE_ID)"
+    )
+    IAP_EXPECTED_ISSUER: str = Field(
+        default="https://cloud.google.com/iap",
+        description="Standard Google IAP Issuer URL"
+    )
+
     # BigQuery Configuration
     BIGQUERY_DATASET: str = Field(default="colt_ingest", description="BigQuery dataset")
     BIGQUERY_TABLE: str = Field(
@@ -160,7 +173,7 @@ class Settings(BaseSettings):
 
     # Evaluation Configuration
     EVALUATOR_MODEL: str = Field(
-        default="gemini-2.0-flash", description="LLM model used as evaluation judge"
+        default="gemini-2.5-flash", description="LLM model used as evaluation judge"
     )
     COLT_PRODUCT_CATALOG_PATH: str = Field(
         default="ColtProductCatalog.pdf",

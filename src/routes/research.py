@@ -24,9 +24,14 @@ from ..models.research_schemas import (
     ResearchResultResponse,
     ResearchStatusResponse,
 )
+from ..core.security import verify_iap_jwt
 from ..utils.guardrails import InputGuardrail
 
-router = APIRouter(prefix=f"{settings.API_PREFIX}/research", tags=["research"])
+router = APIRouter(
+    prefix=f"{settings.API_PREFIX}/research", 
+    tags=["research"],
+    dependencies=[Depends(verify_iap_jwt)]
+)
 
 # Type alias for dependency injection (avoids B008 lint error)
 ResearchServiceDep = Annotated[ResearchService, Depends(get_research_service)]

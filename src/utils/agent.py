@@ -51,9 +51,8 @@ def log_event(event: Event, *, verbose: bool = False) -> None:
                 # Tool invocations show the behind-the-scenes processing
                 if part.function_call:
                     logger.info(
-                        f"{event.author} > [Calling tool:"
-                        f" {part.function_call.name}("
-                        f"{_truncate(str(part.function_call.args), 50)})]"
+                        f"{event.author} > [Tool Call: {part.function_call.name} "
+                        f"with args {part.function_call.args}]"
                     )
                 # Handle function response parts (tool results)
                 elif part.function_response:

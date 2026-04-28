@@ -4,11 +4,29 @@ from pydantic import BaseModel, Field
 
 
 class ResearchInitiateRequest(BaseModel):
-    """Request model for initiating research"""
+    """Request model for initiating research with strict validation"""
 
-    account_id: str = Field(..., description="Salesforce Account ID")
-    company_name: str = Field(..., description="Company name to research")
-    user_id: str = Field(..., description="Salesforce User ID making the request")
+    account_id: str = Field(
+        ..., 
+        description="Salesforce Account ID", 
+        pattern=r"^001[a-zA-Z0-9]{12,15}$",
+        min_length=15,
+        max_length=18
+    )
+    company_name: str = Field(
+        ..., 
+        description="Company name to research", 
+        min_length=2, 
+        max_length=100,
+        pattern=r"^[a-zA-Z0-9\s\&\.\-\',]+$"
+    )
+    user_id: str = Field(
+        ..., 
+        description="Salesforce User ID making the request", 
+        pattern=r"^005[a-zA-Z0-9]{12,15}$",
+        min_length=15,
+        max_length=18
+    )
 
     model_config = {
         "json_schema_extra": {

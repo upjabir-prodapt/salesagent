@@ -6,6 +6,7 @@ from google.cloud import bigquery
 from google.cloud.exceptions import GoogleCloudError, NotFound
 from loguru import logger
 
+from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.exceptions import DatabaseError
 
@@ -14,7 +15,7 @@ class BigQueryRepository:
     """Repository for BigQuery operations with local bypass support"""
 
     def __init__(self, client: bigquery.Client = None):
-        self.client = client
+        self.client = client or client_pool.get_bq_client()
         self.dataset_id = settings.BIGQUERY_DATASET
         self.table_id = settings.BIGQUERY_TABLE
         self.table_ref = (

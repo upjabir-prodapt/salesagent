@@ -228,12 +228,12 @@ def after_tool_callback(
     tool_name = tool.name
     logger.info(f"[Callback] AFTER TOOL '{tool_name}' returned: {tool_response}")
 
-    # Count web tool calls (google_search + read_url) as sources crawled
+    # Count tool calls as sources crawled if they are web tools
     _WEB_TOOLS = {"google_search", "read_url"}
     try:
+        state = tool_context.callback_context.state
         if tool_name in _WEB_TOOLS:
-            count = tool_context.state.get("mc_tool_call_count") or 0
-            tool_context.state["mc_tool_call_count"] = count + 1
+            state["mc_tool_call_count"] = state.get("mc_tool_call_count", 0) + 1
     except Exception as e:
         logger.debug(f"[Callback] Could not increment tool call count: {e}")
 

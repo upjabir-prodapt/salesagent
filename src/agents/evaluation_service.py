@@ -10,10 +10,12 @@ Two-section evaluation framework:
 Results are stored as evaluation.json in GCS alongside raw_data.json and final_report.md.
 """
 
+import asyncio
 import json
 import re
 import textwrap
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -179,7 +181,7 @@ class EvaluationService:
         # ------------------------------------------------------------------
         # Section B: Automated metrics
         # ------------------------------------------------------------------
-        section_b_result = self._run_section_b(
+        section_b_result = await self._run_section_b(
             final_report, reference_text, raw_search_cache
         )
 
@@ -556,7 +558,7 @@ class EvaluationService:
     # Section B: Automated metrics
     # ------------------------------------------------------------------
 
-    def _run_section_b(
+    async def _run_section_b(
         self,
         final_report: str,
         reference_text: str,
@@ -564,13 +566,17 @@ class EvaluationService:
     ) -> dict[str, Any]:
         """Compute all automated metrics for Section B."""
         try:
-            rouge_scores = self._compute_rouge(final_report, reference_text)
+            rouge_scores = await asyncio.to_thread(
+                self._compute_rouge, final_report, reference_text
+            )
         except Exception as e:
             logger.warning(f"[Evaluation] ROUGE computation failed: {e}")
             rouge_scores = {"rouge1": 0.0, "rouge2": 0.0, "rougeLsum": 0.0}
 
         try:
-            bert_f1 = self._compute_bertscore(final_report, reference_text)
+            bert_f1 = await asyncio.to_thread(
+                self._compute_bertscore, final_report, reference_text
+            )
         except Exception as e:
             logger.warning(f"[Evaluation] BERTScore computation failed: {e}")
             bert_f1 = 0.0

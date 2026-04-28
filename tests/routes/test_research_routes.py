@@ -1,0 +1,104 @@
+import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
+
+def test_root_endpoint(client):
+    """Test the root endpoint."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Professional Sales Intelligence Research API" in response.json()["description"]
+
+def test_health_endpoint(client):
+    """Test the health check endpoint."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+
+def test_initiate_research_success(client):
+    """Test initiating research successfully."""
+    payload = {
+        "company_name": "Acme Corp",
+        "account_id": "0011234567890123",
+        "user_id": "0051234567890123"
+    }
+    
+    client.mock_service.create_research_request.return_value = True
+    
+    response = client.post("/api/v1/research/initiate", json=payload)
+    
+    assert response.status_code == 202
+    data = response.json()
+    assert "job_id" in data
+    assert data["status"] == "PENDING"
+    
+    client.mock_service.create_research_request.assert_called_once()
+    client.mock_service.process_research_background.assert_called_once()
+
+def test_get_research_status_success(client):
+    """Test getting research status."""
+    job_id = "job_123"
+    status_data = {
+        "request_id": job_id,
+        "status": "PROCESSING",
+        "progress": 50,
+        "current_step": "Researching"
+    }
+    client.mock_service.get_request_status.return_value = status_data
+    
+    response = client.get(f"/api/v1/research/status/{job_id}")
+    
+    assert response.status_code == 200
+    assert response.json() == status_data
+
+def test_get_research_status_not_found(client):
+    """Test getting research status for non-existent job."""
+    client.mock_service.get_request_status.return_value = None
+    
+    response = client.get("/api/v1/research/status/non-existent")
+    assert response.status_code == 404
+
+def test_get_research_result_success(client):
+    """Test getting research result."""
+    job_id = "job_123"
+    result_data = {
+        "request_id": job_id,
+        "status": "COMPLETED",
+        "report_content": "# Report",
+        "download_url": "http://gcs/report.pdf",
+        "model_card": {
+            "model_version": "gemini-1.5-pro",
+            "tokens_used": 1000,
+            "latency_seconds": 10.5,
+            "cost_usd": 0.01
+        }
+    }
+    client.mock_service.get_request_result.return_value = result_data
+    
+    response = client.get(f"/api/v1/research/result/{job_id}")
+    
+    assert response.status_code == 200
+    assert response.json()["request_id"] == job_id
+
+def test_download_pdf_report_success(client):
+    """Test downloading PDF report."""
+    job_id = "job_123"
+    client.mock_service.get_pdf_report.return_value = (b"%PDF-1.4 test", "Acme Corp")
+    
+    response = client.get(f"/api/v1/research/download/{job_id}")
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "Acme_Corp" in response.headers["content-disposition"]
+
+def test_404_handler(client):
+    """Test the custom 404 handler."""
+    response = client.get("/non-existent-route")
+    assert response.status_code == 404
+    assert response.json()["error"] == "NOT_FOUND"
+
+def test_error_handler_middleware(client):
+    """Test that the error handler middleware catches unhandled exceptions."""
+    client.mock_service.get_request_status.side_effect = Exception("Crash")
+    
+    response = client.get("/api/v1/research/status/job_123")
+    assert response.status_code == 500
+    assert "error" in response.json()

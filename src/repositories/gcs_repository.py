@@ -6,6 +6,7 @@ from typing import Any
 from google.cloud import storage
 from loguru import logger
 
+from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.exceptions import StorageError
 
@@ -14,7 +15,7 @@ class GCSRepository:
     """Repository for Google Cloud Storage operations"""
 
     def __init__(self, client: storage.Client = None):
-        self.client = client or storage.Client(project=settings.GOOGLE_CLOUD_PROJECT)
+        self.client = client or client_pool.get_storage_client()
         self.bucket_name = settings.GCS_BUCKET_NAME
         self.bucket = self.client.bucket(self.bucket_name)
 
