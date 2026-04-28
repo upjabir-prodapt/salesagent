@@ -122,10 +122,10 @@ def test_after_tool_callback_read_url(mock_context):
     assert mock_context.state["mc_tool_call_count"] == 1
     assert "example.com" in mock_context.state["mc_source_domains"]
 
-def test_after_tool_callback_firecrawl(mock_context):
-    """Functional test for another web tool."""
+def test_after_tool_callback_google_search_count(mock_context):
+    """Functional test for tool call counting with google_search."""
     tool = MagicMock()
-    tool.name = "firecrawl_search"
+    tool.name = "google_search"
     args = {"query": "test"}
     tool_ctx = MagicMock()
     tool_ctx.callback_context = mock_context
@@ -135,11 +135,11 @@ def test_after_tool_callback_firecrawl(mock_context):
     after_tool_callback(tool, args, tool_ctx, MagicMock(parts=[]))
     assert mock_context.state["mc_tool_call_count"] == 1
 
-def test_after_tool_callback_tavily(mock_context):
-    """Functional test for tavily search tool."""
+def test_after_tool_callback_read_url_count(mock_context):
+    """Functional test for tool call counting with read_url."""
     tool = MagicMock()
-    tool.name = "tavily_search"
-    args = {"query": "test"}
+    tool.name = "read_url"
+    args = {"url": "https://example.com"}
     tool_ctx = MagicMock()
     tool_ctx.callback_context = mock_context
     tool_ctx.state = mock_context.state
