@@ -41,6 +41,58 @@ variables:
     
 stages:
 # ============================================================================
+# STAGE 0 — TESTS & COVERAGE GATE (blocks build if coverage < 90%)
+# ============================================================================
+  - stage: Test
+    displayName: Tests & Coverage Gate
+    jobs:
+      - job: PytestCoverage
+        displayName: pytest with coverage >= 90%
+        steps:
+          - checkout: self
+            displayName: 'Checkout source'
+
+          - task: UsePythonVersion@0
+            displayName: 'Use Python 3.11'
+            inputs:
+              versionSpec: '3.11'
+              addToPath: true
+
+          - script: |
+              python -m pip install --upgrade pip
+              pip install uv
+              uv sync --frozen
+            displayName: 'Install dependencies (uv sync)'
+
+          # `--cov-fail-under=90` makes the gate explicit on the command line in
+          # addition to pyproject.toml's [tool.coverage.report] fail_under = 90.
+          # If overall coverage is below 90 %, pytest exits non-zero and the
+          # pipeline fails before BuildAndPush runs.
+          - script: |
+              uv run pytest \
+                --cov=src \
+                --cov-report=xml:$(System.DefaultWorkingDirectory)/coverage.xml \
+                --cov-report=term-missing \
+                --cov-fail-under=90 \
+                --junitxml=$(System.DefaultWorkingDirectory)/test-results.xml
+            displayName: 'Run pytest with coverage gate (>= 90%)'
+
+          - task: PublishTestResults@2
+            displayName: 'Publish test results'
+            condition: always()
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '$(System.DefaultWorkingDirectory)/test-results.txt'
+              testRunTitle: 'pytest'
+              failTaskOnFailedTests: true
+
+          - task: PublishCodeCoverageResults@2
+            displayName: 'Publish coverage report'
+            condition: always()
+            inputs:
+              summaryFileLocation: '$(System.DefaultWorkingDirectory)/coverage.txt'
+
+# ============================================================================
 # STAGE 1 — BUILD and PUSH
 # ============================================================================
   - stage: BuildAndPush
