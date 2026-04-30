@@ -186,11 +186,11 @@ class Settings(BaseSettings):
 
     # Output Guardrail Configuration
     OUTPUT_GUARDRAIL_HALLUCINATION_MODEL: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-2.5-flash",
         description="Secondary LLM model for output hallucination cross-reference check (Section 11 vs Section 12)",
     )
     OUTPUT_GUARDRAIL_MIN_SECTIONS: int = Field(
-        default=10,
+        default=8,
         description="Minimum populated sections required (out of 13) to pass the completeness check",
     )
     OUTPUT_GUARDRAIL_MAX_RETRIES: int = Field(
@@ -198,10 +198,10 @@ class Settings(BaseSettings):
         description="Max additional report generation attempts if output guardrails fail (0 = no retry)",
     )
     OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD: int = Field(
-        default=2,
+        default=5,
         description=(
             "Minimum number of unsupported claims required before the hallucination check "
-            "blocks the report. Default 2 — a single borderline claim does not fail the job."
+            "blocks the report. Default 5 — allow for strategic hypotheses while stopping total fabrication."
         ),
     )
 

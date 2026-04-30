@@ -77,6 +77,7 @@ class ResearchService:
             final_report: str | None = None
             session_state: dict = {}
 
+            all_violations = []
             for attempt in range(max_retries + 1):
                 if attempt > 0:
                     logger.info(
@@ -85,12 +86,20 @@ class ResearchService:
                 final_report, session_state = await self._run_sales_agent(
                     job_id, company_name
                 )
-                raw_search_cache = session_state.get("raw_search_cache") or []
+                
+                # Aggregate raw search cache from all agents (to survive parallel merge clobbering)
+                raw_search_cache = []
+                for k, v in session_state.items():
+                    if k.startswith("raw_search_cache_") and isinstance(v, list):
+                        raw_search_cache.extend(v)
+                
                 output_validation = await OutputGuardrail().validate(
                     final_report, raw_search_cache=raw_search_cache
                 )
                 if output_validation.is_valid:
                     break
+                
+                all_violations.extend(output_validation.violations)
                 violation_details = "; ".join(
                     f"{v.rule}: {v.detail}" for v in output_validation.violations
                 )
@@ -100,14 +109,18 @@ class ResearchService:
                         f"blocked for job {job_id}: {violation_details} — retrying"
                     )
                 else:
+                    failure_summary = self._build_failure_summary(all_violations)
                     logger.error(
                         f"[OutputGuardrail] All {max_retries + 1} attempt(s) blocked "
-                        f"for job {job_id}: {violation_details}"
+                        f"for job {job_id}. Dominant rule: {failure_summary['dominant_rule']}"
                     )
-                    raise OutputValidationException(
-                        message=f"Output blocked after {max_retries + 1} attempt(s): {violation_details}",
-                        violations=[v.rule for v in output_validation.violations],
+                    self.bigquery_repo.update_status(
+                        job_id,
+                        "FAILED",
+                        error=f"Output blocked: {failure_summary['dominant_rule']}",
+                        metadata_update={"failure_summary": failure_summary},
                     )
+                    return  # hard stop
 
             latency = round(time.monotonic() - start_time, 2)
 
@@ -143,18 +156,27 @@ class ResearchService:
             md_uri = self.gcs_repo.upload_markdown(job_id, final_report)
 
             # Generate and upload PDF
-            try:
+            side_op_failures = {}
+            pdf_available = False
+
+            async def _generate_and_upload_pdf():
+                nonlocal pdf_available
                 logger.info(f"Generating PDF for job {job_id}")
                 pdf_bytes = await asyncio.to_thread(self._generate_pdf_static, final_report)
                 pdf_uri = await asyncio.to_thread(self.gcs_repo.upload_pdf, job_id, pdf_bytes)
                 logger.info(f"PDF uploaded successfully to {pdf_uri}")
+                pdf_available = True
+
+            try:
+                await self._with_retry(_generate_and_upload_pdf)
             except Exception as pdf_err:
                 logger.warning(
-                    f"PDF generation or upload failed for job {job_id} (non-fatal): {pdf_err}"
+                    f"PDF generation or upload failed permanently for job {job_id}: {pdf_err}"
                 )
+                side_op_failures["pdf"] = str(pdf_err)
 
             # Run evaluation (non-fatal)
-            try:
+            async def _run_evaluation():
                 logger.info(f"Running evaluation for job {job_id}")
                 self.bigquery_repo.update_status(
                     job_id,
@@ -173,14 +195,18 @@ class ResearchService:
                     f"Evaluation complete for job {job_id} — "
                     f"Final Score: {evaluation_result.get('final_composite_score', 'N/A')}"
                 )
+
+            try:
+                await self._with_retry(_run_evaluation)
             except Exception as eval_err:
                 logger.warning(
-                    f"Evaluation failed for job {job_id} (non-fatal): {eval_err}"
+                    f"Evaluation failed permanently for job {job_id}: {eval_err}"
                 )
+                side_op_failures["evaluation"] = str(eval_err)
 
             # Insert model card record (non-fatal)
             try:
-                self.bigquery_repo.insert_model_card(
+                await self._with_retry_sync(lambda: self.bigquery_repo.insert_model_card(
                     job_id=job_id,
                     model_version=settings.GEMINI_MODEL,
                     temperature=mc_temperature,
@@ -191,21 +217,30 @@ class ResearchService:
                     latency_seconds=latency,
                     source_domains=mc_source_domains or None,
                     cost_usd=mc_cost_usd,
-                )
+                ))
             except Exception as mc_err:
                 logger.warning(
-                    f"Model card insertion failed for job {job_id} (non-fatal): {mc_err}"
+                    f"Model card insertion failed permanently for job {job_id}: {mc_err}"
                 )
+                side_op_failures["model_card"] = str(mc_err)
 
             # Flush per-agent telemetry records to BigQuery (non-fatal)
-            try:
-                telemetry_records = session_state.get(TELEMETRY_RECORDS_KEY) or []
-                if telemetry_records:
-                    self.bigquery_repo.insert_agent_telemetry_batch(telemetry_records)
-            except Exception as tel_err:
-                logger.warning(
-                    f"Agent telemetry flush failed for job {job_id} (non-fatal): {tel_err}"
-                )
+            telemetry_records = session_state.get(TELEMETRY_RECORDS_KEY) or []
+            if telemetry_records:
+                try:
+                    await self._with_retry_sync(lambda: self.bigquery_repo.insert_agent_telemetry_batch(telemetry_records))
+                except Exception as tel_err:
+                    logger.warning(
+                        f"Agent telemetry flush failed permanently — writing dead-letter: {tel_err}"
+                    )
+                    side_op_failures["telemetry"] = str(tel_err)
+                    try:
+                        self.gcs_repo.upload_json(
+                            f"{job_id}_telemetry_deadletter",
+                            {"records": telemetry_records, "error": str(tel_err)},
+                        )
+                    except Exception as dl_err:
+                        logger.error(f"Dead-letter write also failed for job {job_id}: {dl_err}")
 
             # Mark COMPLETED, persist model card data into metadata
             self.bigquery_repo.update_status(
@@ -219,13 +254,25 @@ class ResearchService:
                     "latency_seconds": latency,
                     "tokens_used": mc_total_tokens or None,
                     "cost_usd": mc_cost_usd,
+                    "pdf_available": pdf_available,
+                    "side_op_failures": side_op_failures or None,
                 },
             )
             logger.info(f"Research completed successfully for job {job_id}")
 
         except Exception as e:
+            # Handle parallel execution crashes (Common in large AstraZeneca-style runs)
+            error_msg = str(e)
+            if "GeneratorExit" in error_msg or "TaskGroup" in error_msg:
+                error_msg = "Parallel execution collapsed (likely Quota/QPM limit reached)"
+            
             logger.error(f"Error processing research for job {job_id}: {e}")
-            self.bigquery_repo.update_status(job_id, "FAILED", error=str(e))
+            self.bigquery_repo.update_status(
+                job_id, 
+                "FAILED", 
+                error=error_msg,
+                metadata_update={"raw_error": str(e)[:1000]}
+            )
             raise
 
     async def _run_sales_agent(
@@ -381,3 +428,28 @@ class ResearchService:
         except Exception as e:
             logger.error(f"Failed to get job result: {e}")
             raise ServiceError(f"Failed to get job result: {str(e)}") from e
+
+    def _build_failure_summary(self, violations: list) -> dict:
+        """Construct a structured summary of guardrail violations."""
+        from collections import Counter
+        rule_counts = Counter(v.rule for v in violations)
+        dominant_rule = rule_counts.most_common(1)[0][0] if rule_counts else "unknown"
+        return {
+            "dominant_rule": dominant_rule,
+            "all_violations": [{"rule": v.rule, "detail": v.detail} for v in violations],
+        }
+
+    async def _with_retry(self, coro_fn, retries: int = 1, delay: float = 3.0):
+        """Simple async retry wrapper."""
+        for attempt in range(retries + 1):
+            try:
+                return await coro_fn()
+            except Exception:
+                if attempt < retries:
+                    await asyncio.sleep(delay)
+                else:
+                    raise
+
+    async def _with_retry_sync(self, fn, retries: int = 1, delay: float = 3.0):
+        """Simple sync-to-thread retry wrapper."""
+        return await self._with_retry(lambda: asyncio.to_thread(fn), retries=retries, delay=delay)

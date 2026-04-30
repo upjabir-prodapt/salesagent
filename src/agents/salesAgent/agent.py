@@ -13,7 +13,6 @@ from loguru import logger
 from .sub_agents.research_agents import create_research_agents
 from .sub_agents.signals_agent import create_signals_orchestrator
 from .sub_agents.synthesis_agents import (
-    create_research_validator,
     create_synthesis_agents,
 )
 
@@ -30,7 +29,6 @@ def create_sales_agent_app():
         tech_stack_agent,
     ) = create_research_agents()
     signals_orchestrator = create_signals_orchestrator()
-    research_validator = create_research_validator()
     alignment_analyst, report_compiler = create_synthesis_agents()
 
     # 1. The Massive Parallel Research Orchestrator
@@ -56,14 +54,13 @@ def create_sales_agent_app():
         name="SalesResearchAgent",
         sub_agents=[
             research_orchestrator,
-            research_validator,
             alignment_analyst,
             report_compiler,
         ],
         description="An agent that performs deep sales research on a company and generates a strategic lead report.",
     )
     logger.debug(
-        "SalesResearchAgent pipeline: ResearchOrchestrator -> ResearchValidator -> AlignmentAnalyst -> ReportCompiler"
+        "SalesResearchAgent pipeline: ResearchOrchestrator -> AlignmentAnalyst -> ReportCompiler"
     )
 
     logger.success("SalesResearchAgent fully initialized and ready")

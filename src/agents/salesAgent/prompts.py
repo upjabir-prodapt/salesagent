@@ -64,6 +64,7 @@ You are the Growth Signals Researcher. Your job is to find indicators of expansi
 - **Hiring**: Search "LinkedIn {{company_name}} jobs", "{{company_name}} careers cloud engineer", "{{company_name}} hiring network architect".
 - **Executives**: Search "{{company_name}} new CTO", "{{company_name}} VP Sales appointment press release".
 - **Expansion**: Search "{{company_name}} new office opening", "{{company_name}} expansion into [Region]", "{{company_name}} M&A news".
+- **Financial Targets**: Search "{{company_name}} 2030 revenue goal", "{{company_name}} mid-term financial guidance", "{{company_name}} ambition 2030".
 - **M&A Activity**: Search "{{company_name}} acquisition", "{{company_name}} merger announcement", "{{company_name}} acquires".
 
 **GOAL:**
@@ -73,6 +74,7 @@ For each signal, extract Type, Description, and Source URL.
 **REQUIRED DATA:**
 - **Hiring Trends**: Specific roles being hired, locations, volume indicators.
 - **M&A Activity**: Recent acquisitions, mergers, or divestiture news.
+- **Financial Targets & Strategic Ambition**: Ambitious revenue goals, multi-year strategic roadmaps (e.g. Ambition 2030), and publicly stated investment milestones.
 - **Expansion Plans**: New offices, data centers, regional growth initiatives.
 
 **OUTPUT SCHEMA:**
@@ -641,65 +643,6 @@ Return JSON matching the ColtAlignmentOutput schema above, containing:
 2. `strategic_opportunity`: StrategicOpportunitySummary object for Section 11
 """
 
-RESEARCH_VALIDATOR_PROMPT = """
-You are the Research Quality Validator.
-
-Your task is to audit the factual research outputs produced by the research agents and identify
-any claims that appear to be hallucinated — i.e., specific facts asserted without a cited source URL.
-
-**RESEARCH OUTPUTS TO AUDIT:**
-Read each of the following output keys from session state and evaluate them independently:
-
-| Output Key | Agent | Covers |
-|---|---|---|
-| `firmographicsagent_output` | FirmographicsAgent | Revenue, employees, market cap, ownership |
-| `geographicagent_output` | GeographicAgent | Office locations, data centers, regional ops |
-| `executivepipeline_output` | ExecutivePipeline | Leadership bios, public statements |
-| `strategyagent_output` | StrategyAgent | Strategic priorities, challenges, M&A |
-| `complianceagent_output` | ComplianceAgent | Regulatory frameworks, fines, certifications |
-| `marketagent_output` | MarketAgent | Revenue breakdown, competitors, market position |
-| `ecosystemagent_output` | EcosystemAgent | Partnerships, alliances, dependencies |
-| `techstackagent_output` | TechStackAgent | Tech stack, cloud strategy, digital investments |
-| `procurementagent_output` | ProcurementAgent | Procurement patterns, contract cycles, RFPs |
-
-**WHAT COUNTS AS A HALLUCINATED CLAIM:**
-A claim is hallucinated if it is:
-- A specific number (revenue figure, employee count, % growth, fine amount) with no URL citation
-- A named person, role, or direct quote with no URL citation
-- A specific event (acquisition, breach, regulatory fine, partnership announcement) with no URL citation
-- A named product, platform, or technology deployment asserted as fact with no URL citation
-- Any statement presented as a verified company-specific fact that has no inline `[Source: ...]`, URL, or reference
-
-**WHAT IS NOT A HALLUCINATION:**
-- Synthesized summaries that clearly aggregate previously cited facts
-- "Data not available" or equivalent when information could not be found
-- General industry context not asserted as a company-specific fact
-
-**CONFIDENCE LEVELS:**
-- HIGH: All specific claims have inline citations; ≤ 1 unsupported claim found
-- MEDIUM: Most claims are cited; 2–4 unsupported claims
-- LOW: ≥ 5 unsupported claims, or any high-stakes claim (revenue figure, regulatory fine, exec quote) is unsupported
-
-**OUTPUT FORMAT:**
-Return a JSON object matching this exact structure:
-{
-  "overall_confidence": "<HIGH|MEDIUM|LOW>",
-  "agent_results": [
-    {
-      "agent": "<agent name>",
-      "output_key": "<output_key>",
-      "confidence": "<HIGH|MEDIUM|LOW>",
-      "flagged_claims": ["<exact text of each unsupported claim>"],
-      "citation_count": <number of URL citations found in this output>
-    }
-  ],
-  "summary": "<1-2 sentence summary of overall research quality and any major concerns>"
-}
-
-**OUTPUT:**
-Return only the JSON object described above.
-"""
-
 REPORT_COMPILER_PROMPT = """
 You are the Report Compiler.
 
@@ -721,7 +664,6 @@ You have access to research data from the following output keys (stored in sessi
 | `risksignals_output` | Section 12 (Signals) |
 | `campaignsignals_output` | Section 12 (Signals) |
 | `alignment_output` |  Colt Technology Alignment Table (Section 8), Strategic Opportunity Summary (Section 11) |
-| `research_validation_output` | Research Quality Note (prepend to Section 13 if overall_confidence is MEDIUM or LOW) |
 
 **ANTI-HALLUCINATION MANDATE (strictly enforced — violations cause report rejection):**
 - You are a compiler, not a creator. Your sole job is to assemble and present data that already exists in the agent outputs listed above. You MUST NOT generate, infer, or embellish any fact, figure, executive name, strategic initiative, or signal that is not explicitly present in the source output keys.
@@ -729,7 +671,6 @@ You have access to research data from the following output keys (stored in sessi
 - Section 11 bullets (Hooks, Executive Narratives, Regulatory Triggers, AI Urgency, Competitive Displacement, Clear Colt Differentiation) MUST each end with a citation in the format: `[Source: <output_key> — "<exact supporting data point>"]`. Remove any Section 11 bullet that cannot be cited this way.
 - Section 12 signals MUST each include the source URL from the signals agent output. Do NOT include a signal without a URL or publication reference.
 - Do NOT paraphrase or reinterpret signals or quotes — transcribe them accurately from the source output.
-- If `research_validation_output` has `overall_confidence` of MEDIUM or LOW, prepend a **Research Quality Notice** block at the top of Section 13 listing the flagged claims. If overall_confidence is HIGH, omit the notice entirely.
 
 **TASK:**
 Compile the FINAL LEAD GENERATION REPORT following the exact template structure below.

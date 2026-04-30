@@ -321,6 +321,12 @@ class EvaluationService:
             session_state.get("campaignsignals_output", {}), indent=2
         )
 
+        # Extract verification results from the new Verifier Agents
+        verifications = {
+            k: v for k, v in session_state.items() if k.endswith("_verification_result")
+        }
+        verifications_text = json.dumps(verifications, indent=2)
+
         dimension_rubric = ""
         for dim_key, cfg in DIMENSION_CONFIG.items():
             # Add explicit section mapping to guide the judge
@@ -368,6 +374,12 @@ class EvaluationService:
         ## COLT PRODUCT CATALOG CONTEXT (Use this to assess alignment accuracy):
         {catalog_context[:8000]}
         {evidence_section}
+
+        ## REAL-TIME VERIFICATION RESULTS (Fact-checks performed during this run):
+        These results come from a secondary search agent that verified claims as they were gathered.
+        TRUST these results over your internal training data.
+        {verifications_text}
+
         ## REPORT TO EVALUATE:
         {final_report}
 
@@ -412,19 +424,21 @@ class EvaluationService:
 
         ## PENALTY METRICS:
         - **M12_hallucination_count**: Count of factual claims in the report that cannot be
-          verified against the VERIFIED EVIDENCE section above, or that contradict it.
+          verified against the VERIFIED EVIDENCE or REAL-TIME VERIFICATION RESULTS above.
           **CRITICAL GUIDELINES FOR M12:**
-          - **Use the VERIFIED EVIDENCE as the source of truth**: If the VERIFIED EVIDENCE section
-            is present, a numerical claim (revenue, headcount, growth rate, fine, contract value)
-            is a hallucination if it does not appear in that evidence. Do NOT apply leniency for
-            "close enough" figures — the evidence contains what was actually scraped.
-          - **No VERIFIED EVIDENCE present**: Apply financial and percentage leniency (small
-            discrepancies like $57.8B vs $58.7B are NOT hallucinations); only flag clear
-            fabrications such as a named executive that does not exist in the research data or
-            a claim that contradicts the core nature of the business.
+          - **PRIORITIZE REAL-TIME DATA**: Financial data for companies changes quarterly. If the report 
+            provides a figure (e.g. $50B revenue) that contradicts your internal training data (e.g. $40B), 
+            TRUST THE REPORT. Do NOT flag it as a hallucination unless it is specifically refuted by the 
+            REAL-TIME VERIFICATION RESULTS or VERIFIED EVIDENCE.
+          - **Trust the Verifier Agents**: If a claim in the report is marked as "SUPPORTED" in the 
+            REAL-TIME VERIFICATION RESULTS, do NOT flag it as a hallucination, even if it is not in the 
+            VERIFIED EVIDENCE snippets.
+          - **Leniency for Missing Snippets**: The VERIFIED EVIDENCE is a sample of web snippets. If a 
+            numerical claim (revenue, headcount, etc.) is missing from the snippets but not contradicted 
+            by them, do NOT automatically flag it as a hallucination. Only flag if it appears completely 
+            fabricated or wildly implausible.
           - **Colt product descriptions**: Never flag Colt's own product/service descriptions
-            as hallucinations — these are not verifiable from scraped company evidence.
-          - **Only flag clear fabrications** when no evidence is provided.
+            as hallucinations.
         - **M13_policy_violation_count**: Count of statements that violate content policy
           (e.g., personal data exposure, discriminatory content, misleading claims). Each violation = 1.
 

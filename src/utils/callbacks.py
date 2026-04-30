@@ -22,6 +22,17 @@ from src.core.exceptions import InputValidationException
 
 from .guardrails import InputGuardrail
 from .telemetry import track_agent_end, track_agent_start
+from .url_utils import is_authoritative
+
+_QUERY_INJECTION_PATTERNS = [
+    "ignore previous", "ignore all instructions", "you are now",
+    "disregard your", "new instructions:", "system prompt", "jailbreak",
+]
+
+_SNIPPET_INJECTION_SIGNALS = [
+    "ignore previous", "ignore all instructions", "you are now",
+    "disregard your", "new instructions:", "override your",
+]
 
 # ============================================================================
 # BEFORE MODEL CALLBACK
@@ -128,7 +139,34 @@ def after_model_callback(
     except Exception as e:
         logger.debug(f"[Callback] Could not accumulate token counts: {e}")
 
-    return None
+    # NEW: grounding confidence + source authority from grounding metadata
+    try:
+        candidates = getattr(llm_response, "candidates", None) or []
+        if candidates:
+            metadata = getattr(candidates[0], "grounding_metadata", None)
+            if metadata:
+                for chunk in (getattr(metadata, "grounding_chunks", None) or []):
+                    uri = getattr(getattr(chunk, "web", None), "uri", None)
+                    if uri and not is_authoritative(uri):
+                        logger.warning(
+                            f"[Callback] Grounding used non-authoritative source: "
+                            f"{uri} agent={agent_name}"
+                        )
+                for support in (getattr(metadata, "grounding_supports", None) or []):
+                    scores = getattr(support, "confidence_scores", None) or []
+                    if any(s < 0.7 for s in scores):
+                        text = getattr(
+                            getattr(support, "segment", None), "text", ""
+                        )
+                        logger.warning(
+                            f"[Callback] Low-confidence grounding: "
+                            f"min={min(scores):.2f} claim={text[:100]!r} "
+                            f"agent={agent_name}"
+                        )
+    except Exception as e:
+        logger.debug(f"[Callback] Grounding metadata inspection failed: {e}")
+
+    return llm_response
 
 
 # ============================================================================
@@ -139,18 +177,31 @@ def after_model_callback(
 def before_agent_callback(callback_context: CallbackContext) -> None:
     """
     Called immediately before the agent's _run_async_impl method executes.
-
-    Performs:
-    - Agent entry logging
-    - Session state validation
-    - Performance timer initialization
-    - Resource setup
-
-    Args:
-        callback_context: Context containing agent name, invocation ID, and state
     """
     agent_name = callback_context.agent_name
     invocation_id = callback_context.invocation_id
+
+    # STAGGER LOGIC: Prevent QPM/Quota bursts in ParallelAgent environments
+    # AstraZeneca/Large companies trigger many parallel searches. Spacing them out
+    # by 1-4 seconds prevents the "Resource Exhausted" chain reaction.
+    try:
+        import random
+        import time
+        
+        # Don't stagger the main orchestrator, only the research/signals agents
+        _PARALLEL_RESEARCHERS = {
+            "FirmographicsGeographicAgent", "ExecutivePipeline", 
+            "StrategyComplianceAgent", "MarketEcosystemAgent", 
+            "TechStackPipeline", "SignalsOrchestrator",
+            "GrowthSignals", "RiskSignals", "CampaignSignals"
+        }
+        
+        if agent_name in _PARALLEL_RESEARCHERS:
+            delay = random.uniform(0.5, 4.5)
+            logger.debug(f"[Callback] Staggering {agent_name} start by {delay:.2f}s to protect quota")
+            time.sleep(delay)
+    except Exception as e:
+        logger.debug(f"[Callback] Staggering failed for {agent_name}: {e}")
 
     # Log agent entry
     logger.info(
@@ -216,6 +267,13 @@ def before_tool_callback(
     logger.info(
         f"\n[Callback] BEFORE TOOL Calling '{tool_name}' with original args: {args}"
     )
+
+    if tool_name == "google_search":
+        query = args.get("query", "")
+        if any(p in query.lower() for p in _QUERY_INJECTION_PATTERNS):
+            logger.warning(f"[Callback] Blocked injected search query: {query!r}")
+            return {"error": "Search query blocked by input policy"}
+
     return None
 
 
@@ -252,30 +310,50 @@ def after_tool_callback(
     except Exception as e:
         logger.debug(f"[Callback] Could not collect source domain: {e}")
 
-    # Cache raw google_search results as ground-truth evidence for hallucination checks
+    # Cache raw google_search results as ground-truth evidence for hallucination checks.
+    # Uses a unique key per tool call to avoid clobbering in parallel agents.
     try:
         if tool_name == "google_search":
             agent_name = getattr(tool_context, "agent_name", "unknown")
             query = args.get("query", "")
             entries = _extract_search_entries(tool_response, query, agent_name)
             if entries:
-                cache: list[dict] = list(
-                    tool_context.state.get("raw_search_cache") or []
-                )
-                existing_urls = {e["url"] for e in cache if e.get("url")}
-                added = 0
                 for entry in entries:
                     url = entry.get("url", "")
-                    if url and url in existing_urls:
-                        continue
-                    cache.append(entry)
+                    snippet = entry.get("snippet", "").lower()
+
+                    # Prompt injection check
+                    if any(sig in snippet for sig in _SNIPPET_INJECTION_SIGNALS):
+                        logger.warning(
+                            f"[Callback] Prompt injection in snippet: "
+                            f"url={url} agent={agent_name}"
+                        )
+                        entry["flagged_injection"] = True
+
+                    # Authority flag
+                    entry["authoritative"] = is_authoritative(url) if url else False
+                    if url and not entry["authoritative"]:
+                        logger.warning(
+                            f"[Callback] Non-authoritative source: {url} agent={agent_name}"
+                        )
+
+                    # Collect source domains from search results
                     if url:
-                        existing_urls.add(url)
-                    added += 1
-                tool_context.state["raw_search_cache"] = cache
+                        from urllib.parse import urlparse
+                        domain = urlparse(url).netloc
+                        if domain:
+                            domains = list(tool_context.state.get("mc_source_domains") or [])
+                            if domain not in domains:
+                                domains.append(domain)
+                            tool_context.state["mc_source_domains"] = domains
+
+                import uuid
+                unique_id = str(uuid.uuid4())[:8]
+                cache_key = f"raw_search_cache_{agent_name}_{unique_id}"
+                tool_context.state[cache_key] = entries
                 logger.debug(
-                    f"[Callback] raw_search_cache: +{added} entries "
-                    f"(total={len(cache)}) agent={agent_name} query={query!r}"
+                    f"[Callback] {cache_key}: cached {len(entries)} entries "
+                    f"agent={agent_name} query={query!r}"
                 )
     except Exception as e:
         logger.debug(f"[Callback] Could not cache search results: {e}")
