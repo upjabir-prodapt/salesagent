@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # IAP Configuration (Zero-Trust Security)
     AUTH_ENABLED: bool = Field(
-        default=False, description="Master toggle for authentication"
+        default=True, description="Master toggle for authentication"
     )
     IAP_AUDIENCE: str | None = Field(
         default=None, 
