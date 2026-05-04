@@ -61,8 +61,9 @@ def before_model_callback(
 
     # Secondary jailbreak scan on the most recent user-role message
     # (guards against prompt injection arriving through tool results or context)
+    # Skip for ReportCompiler as it processes trusted internal agent outputs
     try:
-        if llm_request.contents:
+        if agent_name != "ReportCompiler" and llm_request.contents:
             for content in reversed(llm_request.contents):
                 if getattr(content, "role", None) == "user" and content.parts:
                     user_text = " ".join(
@@ -174,7 +175,7 @@ def after_model_callback(
 # ============================================================================
 
 
-def before_agent_callback(callback_context: CallbackContext) -> None:
+async def before_agent_callback(callback_context: CallbackContext) -> None:
     """
     Called immediately before the agent's _run_async_impl method executes.
     """
@@ -183,10 +184,10 @@ def before_agent_callback(callback_context: CallbackContext) -> None:
 
     # STAGGER LOGIC: Prevent QPM/Quota bursts in ParallelAgent environments
     # AstraZeneca/Large companies trigger many parallel searches. Spacing them out
-    # by 1-4 seconds prevents the "Resource Exhausted" chain reaction.
+    # by 1-5 seconds prevents the "Resource Exhausted" chain reaction.
     try:
+        import asyncio
         import random
-        import time
         
         # Don't stagger the main orchestrator, only the research/signals agents
         _PARALLEL_RESEARCHERS = {
@@ -197,9 +198,10 @@ def before_agent_callback(callback_context: CallbackContext) -> None:
         }
         
         if agent_name in _PARALLEL_RESEARCHERS:
-            delay = random.uniform(0.5, 4.5)
+            # Use asyncio.sleep to avoid blocking the event loop while staggering
+            delay = random.uniform(1.0, 5.0)
             logger.debug(f"[Callback] Staggering {agent_name} start by {delay:.2f}s to protect quota")
-            time.sleep(delay)
+            await asyncio.sleep(delay)
     except Exception as e:
         logger.debug(f"[Callback] Staggering failed for {agent_name}: {e}")
 
@@ -303,10 +305,11 @@ def after_tool_callback(
             parsed = urlparse(args["url"])
             domain = parsed.netloc
             if domain:
-                domains = list(tool_context.state.get("mc_source_domains") or [])
+                state = tool_context.callback_context.state
+                domains = list(state.get("mc_source_domains") or [])
                 if domain not in domains:
                     domains.append(domain)
-                tool_context.state["mc_source_domains"] = domains
+                state["mc_source_domains"] = domains
     except Exception as e:
         logger.debug(f"[Callback] Could not collect source domain: {e}")
 
@@ -318,6 +321,7 @@ def after_tool_callback(
             query = args.get("query", "")
             entries = _extract_search_entries(tool_response, query, agent_name)
             if entries:
+                state = tool_context.callback_context.state
                 for entry in entries:
                     url = entry.get("url", "")
                     snippet = entry.get("snippet", "").lower()
@@ -342,15 +346,15 @@ def after_tool_callback(
                         from urllib.parse import urlparse
                         domain = urlparse(url).netloc
                         if domain:
-                            domains = list(tool_context.state.get("mc_source_domains") or [])
+                            domains = list(state.get("mc_source_domains") or [])
                             if domain not in domains:
                                 domains.append(domain)
-                            tool_context.state["mc_source_domains"] = domains
+                            state["mc_source_domains"] = domains
 
                 import uuid
                 unique_id = str(uuid.uuid4())[:8]
                 cache_key = f"raw_search_cache_{agent_name}_{unique_id}"
-                tool_context.state[cache_key] = entries
+                state[cache_key] = entries
                 logger.debug(
                     f"[Callback] {cache_key}: cached {len(entries)} entries "
                     f"agent={agent_name} query={query!r}"

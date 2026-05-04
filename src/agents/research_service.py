@@ -84,7 +84,7 @@ class ResearchService:
                         f"[OutputGuardrail] Retry {attempt}/{max_retries} for job {job_id}"
                     )
                 final_report, session_state = await self._run_sales_agent(
-                    job_id, company_name
+                    job_id, company_name, attempt=attempt
                 )
                 
                 # Aggregate raw search cache from all agents (to survive parallel merge clobbering)
@@ -276,7 +276,7 @@ class ResearchService:
             raise
 
     async def _run_sales_agent(
-        self, job_id: str, company_name: str
+        self, job_id: str, company_name: str, attempt: int = 0
     ) -> tuple[str, dict]:
         """Run the SalesAgent and return the final report and session state"""
         app = create_sales_agent_app()
@@ -287,7 +287,11 @@ class ResearchService:
             memory_service=InMemoryMemoryService(),
         )
 
+        # Append attempt number to session_id to ensure fresh execution on retries
         session_id = f"api_request_{job_id}"
+        if attempt > 0:
+            session_id += f"_retry_{attempt}"
+
         session = await runner.session_service.get_session(
             app_name=app.name, user_id="api_user", session_id=session_id
         )

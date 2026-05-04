@@ -622,7 +622,8 @@ Explicitly extract and list the following bullet points for the salesperson:
 - **Clear Colt Differentiation**: (Specific Colt products and SLA guarantees that win the deal)
 
 **SECTION 11 ANTI-HALLUCINATION MANDATE (strictly enforced — violations cause report rejection):**
-- Every bullet point in Section 11 MUST cite the specific evidence that supports it. Use the format: `[Source: <agent_output_key> — "<exact data point or quote>"]` at the end of each bullet.
+- Every bullet point in Section 11 MUST cite the specific evidence that supports it. Use the format: `[Source: <agent_output_key> — "<exact data point or quote>"]` at the end of each bullet string.
+- **JSON FORMAT REQUIREMENT:** The citations must be included INSIDE the string values of the lists (e.g., `"hooks": ["Claim X [Source: marketagent_output — \"Fact X\"]"]`).
 - Do NOT fabricate urgency. If no regulatory fine, AI initiative, or competitive signal was found in the research, write "No evidence found — omitted" for that sub-category. Do not invent a plausible-sounding claim.
 - Do NOT use Colt product details or SLA guarantees as evidence for a claim about the target company — Colt details describe Colt's offering only. The evidence for each Section 11 claim must come from the research data about the target company.
 - Do NOT include a claim in Section 11 if the supporting data point does not appear in at least one of: `strategyagent_output`, `complianceagent_output`, `techstackagent_output`, `marketagent_output`, `ecosystemagent_output`, `growthsignals_output`, `risksignals_output`, or `campaignsignals_output`.
@@ -769,13 +770,13 @@ Write 2–3 prose paragraphs (NO bullet points or lists). Cover: shared customer
 | Region | Revenue Contribution % | Key Sites / Offices | Estimated IT Spend | Colt Network Presence |
 
 ## 11. Strategic Opportunity & Live Call Readiness
-A concise summary answering "Why Colt? Why Now?" followed by a bulleted list of live-call ammunition:
-- **Hooks:** [extract]
-- **Executive Narratives:** [extract]
-- **Regulatory Triggers:** [extract]
-- **AI Urgency:** [extract]
-- **Competitive Displacement Angles:** [extract]
-- **Clear Colt Differentiation:** [extract]
+A concise summary answering "Why Colt? Why Now?" followed by a bulleted list of live-call ammunition. Each bullet MUST include the citation from the source data:
+- **Hooks:** [Bullet 1 with citation] [Bullet 2 with citation] ...
+- **Executive Narratives:** [Bullet 1 with citation] [Bullet 2 with citation] ...
+- **Regulatory Triggers:** [Bullet 1 with citation] [Bullet 2 with citation] ...
+- **AI Urgency:** [Bullet 1 with citation] [Bullet 2 with citation] ...
+- **Competitive Displacement Angles:** [Bullet 1 with citation] [Bullet 2 with citation] ...
+- **Clear Colt Differentiation:** [Bullet 1 with citation] [Bullet 2 with citation] ...
 
 **Use Case Recommendations Table:**
 | Use Case | Best Approach / Recommended Narrative |
