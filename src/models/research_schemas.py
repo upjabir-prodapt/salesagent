@@ -4,14 +4,13 @@ from pydantic import BaseModel, Field
 
 
 class ResearchInitiateRequest(BaseModel):
-    """Request model for initiating research with strict validation"""
+    """Request model for initiating research with identity tracking"""
 
     account_id: str = Field(
         ..., 
-        description="Salesforce Account ID", 
-        pattern=r"^001[a-zA-Z0-9]{12,15}$",
-        min_length=15,
-        max_length=18
+        description="Account identifier", 
+        min_length=2,
+        max_length=50
     )
     company_name: str = Field(
         ..., 
@@ -22,18 +21,37 @@ class ResearchInitiateRequest(BaseModel):
     )
     user_id: str = Field(
         ..., 
-        description="Salesforce User ID making the request", 
-        pattern=r"^005[a-zA-Z0-9]{12,15}$",
-        min_length=15,
-        max_length=18
+        description="User email address",
+        pattern=r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    )
+    username: str = Field(
+        ...,
+        description="Name of the person making the request",
+        min_length=2,
+        max_length=100
+    )
+    business_unit: str = Field(
+        ...,
+        description="Business unit of the requester",
+        min_length=2,
+        max_length=100
+    )
+    organization: str = Field(
+        ...,
+        description="Organization of the requester",
+        min_length=2,
+        max_length=100
     )
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "account_id": "001XXXXXXXXXXXX",
+                "account_id": "ACC-123",
                 "company_name": "Acme Corp",
-                "user_id": "005XXXXXXXXXXXX",
+                "user_id": "john.doe@example.com",
+                "username": "John Doe",
+                "business_unit": "Marketing",
+                "organization": "Acme Global"
             }
         }
     }
@@ -82,14 +100,14 @@ class ResearchStatusResponse(BaseModel):
 
 
 class ModelCard(BaseModel):
-    """Model metadata for the completed research run"""
+    """Cost and model metadata for the completed research run"""
 
     model_version: str | None = Field(None, description="Model used for research")
     tokens_used: int | None = Field(None, description="Total tokens consumed")
     latency_seconds: float | None = Field(
         None, description="End-to-end agent latency in seconds"
     )
-    cost_usd: float | None = Field(None, description="Estimated cost in USD")
+    cost_usd: float | None = Field(None, description="Total session cost in USD")
 
     model_config = {
         "json_schema_extra": {

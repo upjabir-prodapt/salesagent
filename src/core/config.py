@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     BIGQUERY_TABLE: str = Field(
         default="salesagent_requests", description="BigQuery table"
     )
-    BIGQUERY_MODEL_CARD_TABLE: str = Field(
-        default="salesagent_model_cards", description="BigQuery model card table"
+    BIGQUERY_COST_ATTRIBUTION_TABLE: str = Field(
+        default="cost_attribution", description="BigQuery cost attribution table"
     )
     BIGQUERY_AGENT_TELEMETRY_TABLE: str = Field(
         default="agent_telemetry", description="BigQuery per-agent telemetry table"

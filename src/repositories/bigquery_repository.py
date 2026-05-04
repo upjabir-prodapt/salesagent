@@ -21,8 +21,8 @@ class BigQueryRepository:
         self.table_ref = (
             f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.table_id}"
         )
-        self.model_card_table_id = settings.BIGQUERY_MODEL_CARD_TABLE
-        self.model_card_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.model_card_table_id}"
+        self.cost_attribution_table_id = settings.BIGQUERY_COST_ATTRIBUTION_TABLE
+        self.cost_attribution_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.cost_attribution_table_id}"
         self.agent_telemetry_table_id = settings.BIGQUERY_AGENT_TELEMETRY_TABLE
         self.agent_telemetry_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.agent_telemetry_table_id}"
 
@@ -86,15 +86,15 @@ class BigQueryRepository:
             logger.error(f"Unexpected error creating table: {e}")
             raise DatabaseError(f"Unexpected error creating BigQuery table: {e}") from e
 
-    def ensure_model_card_table_exists(self) -> bool:
-        """Ensure the model card table exists"""
+    def ensure_cost_attribution_table_exists(self) -> bool:
+        """Ensure the cost attribution table exists"""
         if self.client is None:
             return True
         try:
             try:
-                self.client.get_table(self.model_card_table_ref)
+                self.client.get_table(self.cost_attribution_table_ref)
                 logger.info(
-                    f"BigQuery model card table already exists: {self.model_card_table_ref}"
+                    f"BigQuery cost attribution table already exists: {self.cost_attribution_table_ref}"
                 )
                 return True
             except NotFound:
@@ -116,27 +116,27 @@ class BigQueryRepository:
                 bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
             ]
 
-            table = bigquery.Table(self.model_card_table_ref, schema=schema)
+            table = bigquery.Table(self.cost_attribution_table_ref, schema=schema)
             table.time_partitioning = bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.DAY,
                 field="created_at",
             )
             self.client.create_table(table)
             logger.info(
-                f"Created BigQuery model card table: {self.model_card_table_ref}"
+                f"Created BigQuery cost attribution table: {self.cost_attribution_table_ref}"
             )
             return True
 
         except GoogleCloudError as e:
-            logger.error(f"Google Cloud error creating model card table: {e}")
-            raise DatabaseError(f"Failed to create model card table: {e}") from e
+            logger.error(f"Google Cloud error creating cost attribution table: {e}")
+            raise DatabaseError(f"Failed to create cost attribution table: {e}") from e
         except Exception as e:
-            logger.error(f"Unexpected error creating model card table: {e}")
+            logger.error(f"Unexpected error creating cost attribution table: {e}")
             raise DatabaseError(
-                f"Unexpected error creating model card table: {e}"
+                f"Unexpected error creating cost attribution table: {e}"
             ) from e
 
-    def insert_model_card(
+    def insert_cost_attribution(
         self,
         job_id: str,
         model_version: str | None = None,
@@ -149,13 +149,13 @@ class BigQueryRepository:
         source_domains: list[str] | None = None,
         cost_usd: float | None = None,
     ) -> bool:
-        """Insert a model card record"""
+        """Insert a cost attribution record"""
         if self.client is None:
             return True
         try:
             now = datetime.now(UTC)
             query = f"""
-            INSERT INTO `{self.model_card_table_ref}` (
+            INSERT INTO `{self.cost_attribution_table_ref}` (
                 job_execution_id, model_version, temperature, prompt_template_version,
                 input_tokens, output_tokens, total_tokens, latency_seconds,
                 source_domains, cost_usd, created_at
@@ -205,15 +205,15 @@ class BigQueryRepository:
 
             query_job = self.client.query(query, job_config=job_config)
             query_job.result()
-            logger.info(f"Inserted model card for job {job_id}")
+            logger.info(f"Inserted cost attribution for job {job_id}")
             return True
 
         except GoogleCloudError as e:
-            logger.error(f"Google Cloud error inserting model card: {e}")
-            raise DatabaseError(f"Failed to insert model card: {e}") from e
+            logger.error(f"Google Cloud error inserting cost attribution: {e}")
+            raise DatabaseError(f"Failed to insert cost attribution: {e}") from e
         except Exception as e:
-            logger.error(f"Unexpected error inserting model card: {e}")
-            raise DatabaseError(f"Unexpected error inserting model card: {e}") from e
+            logger.error(f"Unexpected error inserting cost attribution: {e}")
+            raise DatabaseError(f"Unexpected error inserting cost attribution: {e}") from e
 
     def create_request(
         self, job_id: str, company_name: str, metadata: dict[str, Any] | None = None

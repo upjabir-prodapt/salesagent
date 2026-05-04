@@ -28,13 +28,22 @@ def setup_logging():
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
             "<magenta>{extra[trace_id]}</magenta> | "
-            "<yellow>{extra[user]}</yellow> | "
+            "<yellow>{extra[user_email]}</yellow> | "
+            "<yellow>{extra[username]}</yellow> | "
+            "<blue>{extra[business_unit]}</blue> | "
+            "<blue>{extra[organization]}</blue> | "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
             "<level>{message}</level>"
         ),
         colorize=True,
         # Default values for extra fields
-        filter=lambda record: record["extra"].setdefault("trace_id", "no-trace") and record["extra"].setdefault("user", "system") or True
+        filter=lambda record: (
+            record["extra"].setdefault("trace_id", "no-trace"),
+            record["extra"].setdefault("user_email", "anonymous"),
+            record["extra"].setdefault("username", "anonymous"),
+            record["extra"].setdefault("business_unit", "none"),
+            record["extra"].setdefault("organization", "none"),
+        ) or True
     )
 
     # Add file logging in production
@@ -45,8 +54,14 @@ def setup_logging():
             rotation="500 MB",
             retention="10 days",
             compression="zip",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[trace_id]} | {extra[user]} | {name}:{function}:{line} - {message}",
-            filter=lambda record: record["extra"].setdefault("trace_id", "no-trace") and record["extra"].setdefault("user", "system") or True
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[trace_id]} | {extra[user_email]} | {extra[username]} | {extra[business_unit]} | {extra[organization]} | {name}:{function}:{line} - {message}",
+            filter=lambda record: (
+                record["extra"].setdefault("trace_id", "no-trace"),
+                record["extra"].setdefault("user_email", "anonymous"),
+                record["extra"].setdefault("username", "anonymous"),
+                record["extra"].setdefault("business_unit", "none"),
+                record["extra"].setdefault("organization", "none"),
+            ) or True
         )
         logger.info("File logging enabled (production mode)")
 

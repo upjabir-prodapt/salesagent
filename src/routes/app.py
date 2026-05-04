@@ -62,16 +62,17 @@ async def lifespan(app: FastAPI):
 
 
 async def _init_bigquery():
-    """Initialize BigQuery table"""
+    # Ensure BigQuery dataset and jobs table exist
     try:
         logger.info("Initializing BigQuery table...")
         bigquery_repo = get_bigquery_repository()
         await asyncio.to_thread(bigquery_repo.ensure_table_exists)
-        await asyncio.to_thread(bigquery_repo.ensure_model_card_table_exists)
+        await asyncio.to_thread(bigquery_repo.ensure_cost_attribution_table_exists)
         await asyncio.to_thread(bigquery_repo.ensure_agent_telemetry_table_exists)
         logger.info("BigQuery table initialization completed successfully")
     except Exception as e:
         logger.error(f"Failed to initialize BigQuery table: {e}")
+
         # raise # Optional: raise if critical
 
 

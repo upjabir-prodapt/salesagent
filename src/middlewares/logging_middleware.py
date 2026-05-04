@@ -20,18 +20,20 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         trace_header = request.headers.get("X-Cloud-Trace-Context", "")
         trace_id = trace_header.split("/")[0] if trace_header else None
 
-        # 2. Extract IAP User (unverified just for logging context)
-        iap_header = request.headers.get("x-goog-iap-jwt-assertion")
+        # 2. Extract User Identity (will be populated by the route if available)
         user_email = "anonymous"
-        if iap_header:
-            try:
-                claims = jwt.get_unverified_claims(iap_header)
-                user_email = claims.get("email", "unknown")
-            except Exception:
-                pass
+        username = "anonymous"
+        business_unit = "none"
+        organization = "none"
 
         # Use loguru context to inject these into all logs during this request
-        with logger.contextualize(trace_id=trace_id, user=user_email):
+        with logger.contextualize(
+            trace_id=trace_id, 
+            user_email=user_email, 
+            username=username,
+            business_unit=business_unit,
+            organization=organization
+        ):
             logger.info(
                 "Request started",
                 extra={

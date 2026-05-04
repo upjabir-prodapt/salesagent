@@ -72,41 +72,52 @@ async def initiate_research(
 
     Returns immediately with a job_id while processing happens in the background.
     """
-    # --- Input Guardrail: scan company_name for PII and jailbreak ---
-    InputGuardrail().validate(request.company_name, field_name="company_name")
+    # Use logger.contextualize to ensure all logs for this request include the identity
+    with logger.contextualize(
+        user_email=request.user_id,
+        username=request.username,
+        business_unit=request.business_unit,
+        organization=request.organization
+    ):
+        # --- Input Guardrail: scan company_name for PII and jailbreak ---
+        InputGuardrail().validate(request.company_name, field_name="company_name")
 
-    job_id = f"{settings.JOB_ID_PREFIX}{uuid.uuid4()}"
+        job_id = f"{settings.JOB_ID_PREFIX}{uuid.uuid4()}"
 
-    metadata = {
-        "account_id": request.account_id,
-        "user_id": request.user_id,
-    }
+        metadata = {
+            "account_id": request.account_id,
+            "user_id": request.user_id,
+            "username": request.username,
+            "business_unit": request.business_unit,
+            "organization": request.organization,
+        }
 
-    success = await service.create_research_request(
-        job_id=job_id,
-        company_name=request.company_name,
-        metadata=metadata,
-    )
+        success = await service.create_research_request(
+            job_id=job_id,
+            company_name=request.company_name,
+            metadata=metadata,
+        )
 
-    if not success:
-        raise ServiceError("Failed to create job in database")
+        if not success:
+            raise ServiceError("Failed to create job in database")
 
-    background_tasks.add_task(
-        service.process_research_background,
-        job_id,
-        request.company_name,
-    )
+        background_tasks.add_task(
+            service.process_research_background,
+            job_id,
+            request.company_name,
+            metadata=metadata,
+        )
 
-    logger.info(
-        f"Initiated research job {job_id} for company '{request.company_name}' "
-        f"(account_id={request.account_id}, user_id={request.user_id})"
-    )
+        logger.info(
+            f"Initiated research job {job_id} for company '{request.company_name}' "
+            f"(account={request.account_id}, user={request.user_id}, unit={request.business_unit})"
+        )
 
-    return ResearchInitiateResponse(
-        job_id=job_id,
-        status="PENDING",
-        check_status_url=f"{settings.API_PREFIX}/research/status/{job_id}",
-    )
+        return ResearchInitiateResponse(
+            job_id=job_id,
+            status="PENDING",
+            check_status_url=f"{settings.API_PREFIX}/research/status/{job_id}",
+        )
 
 
 @router.get(
