@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 
 from loguru import logger
 
+from ..core.clients import client_pool
 from ..core.config import settings
 
 # ---------------------------------------------------------------------------
@@ -243,17 +244,11 @@ class EvaluationService:
         raw_search_cache: list[dict] | None = None,
     ) -> dict[str, Any]:
         """
-        Send the evaluation prompt to the configured LLM judge via Vertex AI
+        Send the evaluation prompt to the configured LLM judge via Google Gen AI
         and parse the JSON response.
         """
-        # Import here to avoid circular deps at module level
-        import vertexai
-        from vertexai.generative_models import GenerationConfig, GenerativeModel
-
-        vertexai.init(
-            project=settings.GOOGLE_CLOUD_PROJECT,
-            location=settings.GOOGLE_CLOUD_LOCATION,
-        )
+        from google.genai import types as genai_types
+        client = client_pool.get_genai_client()
 
         prompt = self._build_judge_prompt(
             final_report,
@@ -262,10 +257,10 @@ class EvaluationService:
             raw_search_cache=raw_search_cache or [],
         )
 
-        model = GenerativeModel(settings.EVALUATOR_MODEL)
-        response = model.generate_content(
-            prompt,
-            generation_config=GenerationConfig(
+        response = client.models.generate_content(
+            model=settings.EVALUATOR_MODEL,
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.0,
             ),

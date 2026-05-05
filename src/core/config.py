@@ -26,10 +26,10 @@ class Settings(BaseSettings):
 
     # Google Cloud Configuration
     GOOGLE_CLOUD_PROJECT: str = Field(
-        default="cloud-practice-dev-2", description="Google Cloud project ID"
+        default="aicoesandox", description="Google Cloud project ID"
     )
     GOOGLE_CLOUD_LOCATION: str = Field(
-        default="us-central1", description="Google Cloud region for resources"
+        default="europe-west1", description="Google Cloud region for resources"
     )
 
     # IAP Configuration (Zero-Trust Security)
@@ -46,15 +46,28 @@ class Settings(BaseSettings):
     )
 
     # BigQuery Configuration
-    BIGQUERY_DATASET: str = Field(default="colt_ingest", description="BigQuery dataset")
+    BIGQUERY_DATASET: str = Field(default="aicoesandox_sales_agent_dataset", description="BigQuery dataset")
     BIGQUERY_TABLE: str = Field(
-        default="salesagent_requests", description="BigQuery table"
+        default="research_requests", description="BigQuery table"
+    )
+    BIGQUERY_USERS_TABLE: str = Field(
+        default="users", description="BigQuery table for authorized users"
     )
     BIGQUERY_COST_ATTRIBUTION_TABLE: str = Field(
         default="cost_attribution", description="BigQuery cost attribution table"
     )
     BIGQUERY_AGENT_TELEMETRY_TABLE: str = Field(
         default="agent_telemetry", description="BigQuery per-agent telemetry table"
+    )
+
+    # Security Configuration
+    SECRET_KEY: str = Field(
+        default="09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7",
+        description="Secret key for JWT signing"
+    )
+    ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=30, description="Token expiration in minutes"
     )
     PROMPT_TEMPLATE_VERSION: str = Field(
         default="v1.0", description="Version of the prompt template used by agents"

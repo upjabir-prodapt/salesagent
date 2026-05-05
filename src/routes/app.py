@@ -13,9 +13,9 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from opentelemetry import trace
 from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 from opentelemetry.instrumentation.sqlite3 import SQLite3Instrumentor
-from opentelemetry.instrumentation.vertexai import VertexAIInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
@@ -26,7 +26,7 @@ from ..dependencies.service_dependencies import (
     get_gcs_repository,
 )
 from ..middlewares import error_handler_middleware, logging_middleware
-from . import research
+from . import auth, research
 
 # Load environment variables from .env file
 load_dotenv()
@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
     # Initialize resources concurrently
     try:
         await asyncio.gather(_init_bigquery(), _init_gcs())
-        _init_telemetry()
+        _init_telemetry(app)
     except Exception as e:
         logger.error(f"Error during resource initialization: {e}")
         # Note: Individual failures are logged in their respective functions.
@@ -69,6 +69,7 @@ async def _init_bigquery():
         await asyncio.to_thread(bigquery_repo.ensure_table_exists)
         await asyncio.to_thread(bigquery_repo.ensure_cost_attribution_table_exists)
         await asyncio.to_thread(bigquery_repo.ensure_agent_telemetry_table_exists)
+        await asyncio.to_thread(bigquery_repo.ensure_users_table_exists)
         logger.info("BigQuery table initialization completed successfully")
     except Exception as e:
         logger.error(f"Failed to initialize BigQuery table: {e}")
@@ -88,24 +89,23 @@ async def _init_gcs():
         # raise # Optional: raise if critical
 
 
-def _init_telemetry():
-    """Initialize OpenTelemetry with Google Cloud Trace and instrument GenAI libraries"""
-    if os.getenv("OTEL_SERVICE_NAME"):
-        try:
-            logger.info("Initializing OpenTelemetry...")
-            # Trace Setup — CloudTraceSpanExporter sends directly to GCP Cloud Trace
-            provider = TracerProvider()
-            processor = BatchSpanProcessor(CloudTraceSpanExporter())
-            provider.add_span_processor(processor)
-            trace.set_tracer_provider(provider)
+def _init_telemetry(app: FastAPI):
+    """Initialize OpenTelemetry with Google Cloud Trace and instrument libraries"""
+    try:
+        logger.info("Initializing OpenTelemetry...")
+        # Trace Setup — CloudTraceSpanExporter sends directly to GCP Cloud Trace
+        provider = TracerProvider()
+        processor = BatchSpanProcessor(CloudTraceSpanExporter())
+        provider.add_span_processor(processor)
+        trace.set_tracer_provider(provider)
 
-            # Auto-instrument ADK / GenAI libraries
-            GoogleGenAiSdkInstrumentor().instrument()
-            VertexAIInstrumentor().instrument()
-            SQLite3Instrumentor().instrument()
-            logger.info("OpenTelemetry initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize OpenTelemetry: {e}")
+        # Auto-instrument libraries
+        FastAPIInstrumentor.instrument_app(app)
+        GoogleGenAiSdkInstrumentor().instrument()
+        SQLite3Instrumentor().instrument()
+        logger.info("OpenTelemetry initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenTelemetry: {e}")
 
 
 # Create FastAPI app
@@ -134,6 +134,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router)
 app.include_router(research.router)
 
 

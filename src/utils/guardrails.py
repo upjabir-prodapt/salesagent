@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from loguru import logger
 
+from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.exceptions import InputValidationException
 
@@ -211,6 +212,60 @@ class InputGuardrail:
 
 
 # ---------------------------------------------------------------------------
+# Agent Guardrail (Iterative)
+# ---------------------------------------------------------------------------
+
+
+class AgentGuardrail:
+    """Scan individual agent outputs for PII and prohibited content."""
+
+    def scan_pii(self, text: str) -> list[GuardrailViolation]:
+        """Return violations for each PII pattern found."""
+        violations = []
+        for label, pattern in _PII_PATTERNS:
+            if re.search(pattern, text, re.IGNORECASE):
+                violations.append(
+                    GuardrailViolation(
+                        rule=f"agent:pii:{label}",
+                        detail=f"Detected {label} pattern in agent output",
+                    )
+                )
+        return violations
+
+    def scan_prohibited_content(self, text: str) -> list[GuardrailViolation]:
+        """Return violations for prohibited content (insider info, buy/sell recs)."""
+        violations = []
+        for label, pattern in _PROHIBITED_CONTENT_PATTERNS:
+            if re.search(pattern, text, re.IGNORECASE):
+                violations.append(
+                    GuardrailViolation(
+                        rule=f"agent:prohibited:{label}",
+                        detail=f"Agent output contains prohibited content pattern '{label}'",
+                    )
+                )
+        return violations
+
+    def validate(self, text: str, agent_name: str = "unknown") -> None:
+        """
+        Run PII and prohibited content scans on agent output.
+        Raises InputValidationException on any hit to block the pipeline.
+        """
+        violations = self.scan_pii(text) + self.scan_prohibited_content(text)
+        if violations:
+            rules = ", ".join(v.rule for v in violations)
+            logger.warning(
+                f"[AgentGuardrail] Blocked agent={agent_name!r} violations={rules}"
+            )
+            # Reusing InputValidationException as it results in a 400/500 depending on handler
+            raise InputValidationException(
+                message=f"Agent {agent_name} output blocked by guardrails: {rules}",
+                field=agent_name,
+                value=text[:100],
+            )
+        logger.debug(f"[AgentGuardrail] agent={agent_name!r} passed all checks")
+
+
+# ---------------------------------------------------------------------------
 # Output Guardrail
 # ---------------------------------------------------------------------------
 
@@ -379,13 +434,8 @@ class OutputGuardrail:
             return []
 
         try:
-            import vertexai
-            from vertexai.generative_models import GenerationConfig, GenerativeModel
-
-            vertexai.init(
-                project=settings.GOOGLE_CLOUD_PROJECT,
-                location=settings.GOOGLE_CLOUD_LOCATION,
-            )
+            from google.genai import types as genai_types
+            client = client_pool.get_genai_client()
 
             prompt = (
                 "You are a strict fact-checking auditor for a B2B sales intelligence report.\n\n"
@@ -437,10 +487,10 @@ class OutputGuardrail:
                 "}"
             )
 
-            model = GenerativeModel(settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL)
-            response = model.generate_content(
-                prompt,
-                generation_config=GenerationConfig(
+            response = client.models.generate_content(
+                model=settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL,
+                contents=prompt,
+                config=genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.0,
                 ),
@@ -496,13 +546,8 @@ class OutputGuardrail:
             return []
 
         try:
-            import vertexai
-            from vertexai.generative_models import GenerationConfig, GenerativeModel
-
-            vertexai.init(
-                project=settings.GOOGLE_CLOUD_PROJECT,
-                location=settings.GOOGLE_CLOUD_LOCATION,
-            )
+            from google.genai import types as genai_types
+            client = client_pool.get_genai_client()
 
             prompt = (
                 "You are a strict fact-checking auditor for a B2B sales intelligence report.\n\n"
@@ -575,10 +620,10 @@ class OutputGuardrail:
                 "}"
             )
 
-            model = GenerativeModel(settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL)
-            response = model.generate_content(
-                prompt,
-                generation_config=GenerationConfig(
+            response = client.models.generate_content(
+                model=settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL,
+                contents=prompt,
+                config=genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.0,
                 ),

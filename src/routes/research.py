@@ -15,6 +15,7 @@ from ..core.exceptions import (
     ResourceNotFoundError,
     ServiceError,
 )
+from ..dependencies.auth import get_current_user
 from ..dependencies.service_dependencies import get_research_service
 from ..models.common_schemas import ErrorResponse
 from ..models.research_schemas import (
@@ -66,6 +67,7 @@ async def initiate_research(
     request: ResearchInitiateRequest,
     background_tasks: BackgroundTasks,
     service: ResearchServiceDep,
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Trigger an asynchronous research swarm for the given company.
@@ -74,10 +76,9 @@ async def initiate_research(
     """
     # Use logger.contextualize to ensure all logs for this request include the identity
     with logger.contextualize(
-        user_email=request.user_id,
-        username=request.username,
-        business_unit=request.business_unit,
-        organization=request.organization
+        user_email=current_user["email"],
+        business_unit=current_user["business_unit"],
+        organization=current_user["organization"]
     ):
         # --- Input Guardrail: scan company_name for PII and jailbreak ---
         InputGuardrail().validate(request.company_name, field_name="company_name")
@@ -86,10 +87,9 @@ async def initiate_research(
 
         metadata = {
             "account_id": request.account_id,
-            "user_id": request.user_id,
-            "username": request.username,
-            "business_unit": request.business_unit,
-            "organization": request.organization,
+            "user_id": current_user["email"],
+            "business_unit": current_user["business_unit"],
+            "organization": current_user["organization"],
         }
 
         success = await service.create_research_request(
@@ -110,7 +110,7 @@ async def initiate_research(
 
         logger.info(
             f"Initiated research job {job_id} for company '{request.company_name}' "
-            f"(account={request.account_id}, user={request.user_id}, unit={request.business_unit})"
+            f"(account={request.account_id}, user={current_user['email']}, unit={current_user['business_unit']})"
         )
 
         return ResearchInitiateResponse(

@@ -19,7 +19,7 @@ from ..core.exceptions import OutputValidationException, ServiceError
 from ..repositories.bigquery_repository import BigQueryRepository
 from ..repositories.gcs_repository import GCSRepository
 from ..utils.agent import log_event
-from ..utils.guardrails import OutputGuardrail
+from ..utils.guardrails import AgentGuardrail, OutputGuardrail
 from ..utils.telemetry import TELEMETRY_RECORDS_KEY
 from .evaluation_service import EvaluationService
 from .salesAgent.agent import create_sales_agent_app
@@ -363,6 +363,17 @@ class ResearchService:
                                 None, 
                                 current_step=f"Agent: {event.author} ({agent_status})"
                             )
+
+                            # --- Iterative Guardrail: Validate agent output on completion ---
+                            if is_final and hasattr(event, "response") and event.response:
+                                try:
+                                    # event.response is an AgentResponse object
+                                    agent_text = getattr(event.response, "text", "")
+                                    if agent_text:
+                                        AgentGuardrail().validate(agent_text, agent_name=event.author)
+                                except Exception as guard_err:
+                                    logger.error(f"[AgentGuardrail] Violation in {event.author}: {guard_err}")
+                                    raise
 
                         # Update progress based on agent milestones
                         if event.author in progress_map and event.is_final_response():

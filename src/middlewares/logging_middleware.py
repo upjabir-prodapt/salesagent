@@ -6,7 +6,7 @@ from collections.abc import Callable
 from fastapi import Request, Response
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
-from jose import jwt
+from opentelemetry import trace
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -15,10 +15,25 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         start_time = time.time()
         
-        # 1. Extract Cloud Trace Context
-        # Format: "TRACE_ID/SPAN_ID;o=TRACE_TRUE"
-        trace_header = request.headers.get("X-Cloud-Trace-Context", "")
-        trace_id = trace_header.split("/")[0] if trace_header else None
+        # 1. Extract Cloud Trace Context from OpenTelemetry
+        current_span = trace.get_current_span()
+        span_context = current_span.get_span_context()
+        
+        trace_id = None
+        span_id = None
+        
+        if span_context and span_context.is_valid:
+            trace_id = format(span_context.trace_id, "032x")
+            span_id = format(span_context.span_id, "016x")
+        
+        # Fallback to header if trace_id still None (e.g. OTel failed to instrument)
+        if not trace_id:
+            trace_header = request.headers.get("X-Cloud-Trace-Context", "")
+            if trace_header:
+                parts = trace_header.split("/")
+                trace_id = parts[0]
+                if len(parts) > 1 and ";" in parts[1]:
+                    span_id = parts[1].split(";")[0].split(":")[0] # Handle hex span id
 
         # 2. Extract User Identity (will be populated by the route if available)
         user_email = "anonymous"
@@ -29,6 +44,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         # Use loguru context to inject these into all logs during this request
         with logger.contextualize(
             trace_id=trace_id, 
+            span_id=span_id,
             user_email=user_email, 
             username=username,
             business_unit=business_unit,

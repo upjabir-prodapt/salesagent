@@ -25,6 +25,8 @@ class BigQueryRepository:
         self.cost_attribution_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.cost_attribution_table_id}"
         self.agent_telemetry_table_id = settings.BIGQUERY_AGENT_TELEMETRY_TABLE
         self.agent_telemetry_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.agent_telemetry_table_id}"
+        self.users_table_id = settings.BIGQUERY_USERS_TABLE
+        self.users_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.users_table_id}"
 
     def ensure_table_exists(self) -> bool:
         """Ensure the main requests table exists in BigQuery"""
@@ -564,3 +566,74 @@ class BigQueryRepository:
         except Exception as e:
             logger.error(f"Unexpected error getting requests by status: {e}")
             raise DatabaseError(f"Unexpected database error: {e}") from e
+
+    def ensure_users_table_exists(self) -> bool:
+        """Ensure the users table exists in BigQuery"""
+        if self.client is None:
+            return True
+        try:
+            try:
+                self.client.get_table(self.users_table_ref)
+                logger.info(f"BigQuery users table already exists: {self.users_table_ref}")
+                return True
+            except NotFound:
+                pass
+
+            schema = [
+                bigquery.SchemaField("email", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("business_unit", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("organization", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+            ]
+
+            table = bigquery.Table(self.users_table_ref, schema=schema)
+            self.client.create_table(table)
+            logger.info(f"Created BigQuery users table: {self.users_table_ref}")
+            return True
+        except GoogleCloudError as e:
+            logger.error(f"Google Cloud error creating users table: {e}")
+            raise DatabaseError(f"Failed to create users table: {e}") from e
+        except Exception as e:
+            logger.error(f"Unexpected error creating users table: {e}")
+            raise DatabaseError(f"Unexpected error creating users table: {e}") from e
+
+    def verify_user(self, email: str, business_unit: str, organization: str) -> dict[str, Any] | None:
+        """Verify user details against BigQuery"""
+        if self.client is None:
+            # Local bypass for testing
+            return {
+                "email": email,
+                "business_unit": business_unit,
+                "organization": organization
+            }
+        try:
+            query = f"""
+            SELECT email, business_unit, organization
+            FROM `{self.users_table_ref}`
+            WHERE email = @email 
+              AND business_unit = @business_unit 
+              AND organization = @organization
+            LIMIT 1
+            """
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("email", "STRING", email),
+                    bigquery.ScalarQueryParameter("business_unit", "STRING", business_unit),
+                    bigquery.ScalarQueryParameter("organization", "STRING", organization),
+                ]
+            )
+            query_job = self.client.query(query, job_config=job_config)
+            results = list(query_job.result())
+
+            if not results:
+                return None
+
+            row = results[0]
+            return {
+                "email": row.email,
+                "business_unit": row.business_unit,
+                "organization": row.organization
+            }
+        except Exception as e:
+            logger.error(f"Error verifying user {email}: {e}")
+            return None

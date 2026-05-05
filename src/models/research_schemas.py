@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class ResearchInitiateRequest(BaseModel):
-    """Request model for initiating research with identity tracking"""
+    """Request model for initiating research"""
 
     account_id: str = Field(
         ..., 
@@ -19,39 +19,12 @@ class ResearchInitiateRequest(BaseModel):
         max_length=100,
         pattern=r"^[a-zA-Z0-9\s\&\.\-\',]+$"
     )
-    user_id: str = Field(
-        ..., 
-        description="User email address",
-        pattern=r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-    )
-    username: str = Field(
-        ...,
-        description="Name of the person making the request",
-        min_length=2,
-        max_length=100
-    )
-    business_unit: str = Field(
-        ...,
-        description="Business unit of the requester",
-        min_length=2,
-        max_length=100
-    )
-    organization: str = Field(
-        ...,
-        description="Organization of the requester",
-        min_length=2,
-        max_length=100
-    )
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "account_id": "ACC-123",
-                "company_name": "Acme Corp",
-                "user_id": "john.doe@example.com",
-                "username": "John Doe",
-                "business_unit": "Marketing",
-                "organization": "Acme Global"
+                "company_name": "Acme Corp"
             }
         }
     }
