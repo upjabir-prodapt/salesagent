@@ -87,9 +87,6 @@ async def initiate_research(
 
         metadata = {
             "account_id": request.account_id,
-            "user_id": current_user["email"],
-            "business_unit": current_user["business_unit"],
-            "organization": current_user["organization"],
         }
 
         success = await service.create_research_request(
