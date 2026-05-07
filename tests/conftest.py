@@ -82,8 +82,7 @@ def client():
     # Mock startup initialization to avoid real cloud calls
     with patch("src.routes.app._init_bigquery", new_callable=AsyncMock), \
          patch("src.routes.app._init_gcs", new_callable=AsyncMock), \
-         patch("src.routes.app._init_telemetry"), \
-         patch("src.routes.research.verify_iap_jwt"): # Bypass security for tests
+         patch("src.routes.app._init_telemetry"):
         with TestClient(app) as c:
             c.mock_service = mock_service
             yield c

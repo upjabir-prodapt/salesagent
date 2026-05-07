@@ -30,7 +30,7 @@ async def login_for_access_token(
     
     # Create token encoding the user's identity and details
     access_token = create_access_token(
-        data={
+        claims={
             "sub": request.email,
             "business_unit": request.business_unit,
             "organization": request.organization

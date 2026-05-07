@@ -1,36 +1,47 @@
 """Authentication Dependencies for FastAPI Routes"""
 
-from typing import Annotated
+from typing import Any
 
-import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from loguru import logger
+from fastapi.security import HTTPAuthorizationCredentials
 
-from ..core.config import settings
+from ..core.security import (
+    AuthenticatedUser,
+    decode_and_verify_token,
+    security,
+)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token")
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
-    """Dependency to validate JWT token and return current user details"""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
+async def verify_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
+) -> dict[str, Any]:
+    """Verify bearer token and return JWT payload."""
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return decode_and_verify_token(credentials.credentials)
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
+) -> dict[str, Any]:
+    """Backward-compatible dependency returning raw token payload with email mapping."""
+    payload = await verify_token(credentials)
+    if "sub" in payload and "email" not in payload:
+        payload["email"] = payload["sub"]
+    return payload
+
+
+async def get_current_user_context(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
+) -> AuthenticatedUser:
+    """FastAPI dependency to extract normalized user context from JWT."""
+    payload = await verify_token(credentials)
+    return AuthenticatedUser(
+        email=str(payload["sub"]),
+        business_unit=str(payload["business_unit"]),
+        organization=str(payload["organization"]),
     )
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-        
-        # User details were encoded in the token during creation
-        user_data = {
-            "email": email,
-            "business_unit": payload.get("business_unit"),
-            "organization": payload.get("organization")
-        }
-        return user_data
-    except jwt.PyJWTError as e:
-        logger.error(f"JWT validation error: {e}")
-        raise credentials_exception
