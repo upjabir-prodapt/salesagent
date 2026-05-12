@@ -146,13 +146,38 @@ def after_model_callback(
         if candidates:
             metadata = getattr(candidates[0], "grounding_metadata", None)
             if metadata:
+                grounding_entries = []
                 for chunk in (getattr(metadata, "grounding_chunks", None) or []):
-                    uri = getattr(getattr(chunk, "web", None), "uri", None)
-                    if uri and not is_authoritative(uri):
-                        logger.warning(
-                            f"[Callback] Grounding used non-authoritative source: "
-                            f"{uri} agent={agent_name}"
-                        )
+                    web = getattr(chunk, "web", None)
+                    if web:
+                        uri = getattr(web, "uri", None)
+                        title = getattr(web, "title", None) or "Grounded Source"
+                        if uri:
+                            # Flag non-authoritative sources
+                            if not is_authoritative(uri):
+                                logger.warning(
+                                    f"[Callback] Grounding used non-authoritative source: "
+                                    f"{uri} agent={agent_name}"
+                                )
+                            
+                            # Create an entry compatible with _extract_search_entries
+                            grounding_entries.append({
+                                "url": uri,
+                                "title": title,
+                                "snippet": "[Grounded Verification Chunk]",
+                                "query": "Native Grounding Search",
+                                "agent": agent_name,
+                                "authoritative": is_authoritative(uri)
+                            })
+
+                # Cache these as search results so they are included in citations
+                if grounding_entries:
+                    import uuid
+                    unique_id = str(uuid.uuid4())[:8]
+                    cache_key = f"raw_search_cache_grounding_{agent_name}_{unique_id}"
+                    callback_context.state[cache_key] = grounding_entries
+                    logger.debug(f"[Callback] Cached {len(grounding_entries)} grounding chunks to {cache_key}")
+
                 for support in (getattr(metadata, "grounding_supports", None) or []):
                     scores = getattr(support, "confidence_scores", None) or []
                     if any(s < 0.7 for s in scores):
@@ -289,29 +314,13 @@ def after_tool_callback(
     logger.info(f"[Callback] AFTER TOOL '{tool_name}' returned: {tool_response}")
 
     # Count tool calls as sources crawled if they are web tools
-    _WEB_TOOLS = {"google_search", "read_url"}
+    _WEB_TOOLS = {"google_search"}
     try:
-        state = tool_context.callback_context.state
+        state = callback_context.state
         if tool_name in _WEB_TOOLS:
             state["mc_tool_call_count"] = state.get("mc_tool_call_count", 0) + 1
     except Exception as e:
         logger.debug(f"[Callback] Could not increment tool call count: {e}")
-
-    # Collect source domains from read_url tool calls
-    try:
-        if tool_name == "read_url" and "url" in args:
-            from urllib.parse import urlparse
-
-            parsed = urlparse(args["url"])
-            domain = parsed.netloc
-            if domain:
-                state = tool_context.callback_context.state
-                domains = list(state.get("mc_source_domains") or [])
-                if domain not in domains:
-                    domains.append(domain)
-                state["mc_source_domains"] = domains
-    except Exception as e:
-        logger.debug(f"[Callback] Could not collect source domain: {e}")
 
     # Cache raw google_search results as ground-truth evidence for hallucination checks.
     # Uses a unique key per tool call to avoid clobbering in parallel agents.

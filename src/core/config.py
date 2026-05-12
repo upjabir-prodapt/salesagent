@@ -107,7 +107,7 @@ class Settings(BaseSettings):
         default=5, description="Delay between retries in seconds"
     )
     GEMINI_RETRY_MAX_DELAY: int = Field(
-        default=60, description="Max delay between retries in seconds"
+        default=120, description="Max delay between retries in seconds"
     )
     GEMINI_RETRY_EXP_BASE: int = Field(
         default=2, description="Backoff factor for retries"

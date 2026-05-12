@@ -32,7 +32,8 @@ from .schemas import (
 RESEARCH_GUIDELINES = """
 **CRITICAL RESEARCH & SEARCH GUIDELINES (READ CAREFULLY):**
 1. **DEEP SEARCH MANDATE:** You MUST execute at least 10 distinct queries using your `google_search` tool before you are allowed to generate your final JSON response. Do NOT stop after 1 or 2 searches.
-2. **ITERATIVE PROCESS (Chain of Thought):**
+2. **SEARCH DRILLING (Connectivity Restricted):** You do NOT have local internet access to visit URLs directly. If a search snippet mentions a high-value source (e.g., "Annual Report", "Transformation Plan", "2030 Strategy"), you MUST perform a "Drilling Search" by querying the specific source title or a sentence from the snippet to extract more context.
+3. **ITERATIVE PROCESS (Chain of Thought):**
    - Step 1: Execute initial broad searches based on the Target Sources.
    - Step 2: Read the search snippets returned, identify which specific data points from the Required Data list are still missing.
    - Step 3: Formulate and execute targeted, specific searches to fill in those gaps based on the previous snippets.

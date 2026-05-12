@@ -17,8 +17,10 @@ llm = Gemini(
     model=settings.GEMINI_MODEL,
     http_retry_options=retry_config,
     generate_content_config=genai_types.GenerateContentConfig(
-        thinking_config=genai_types.ThinkingConfig(
-            include_thoughts=True,
-        )
+        tools=[
+            genai_types.Tool(
+                google_search=genai_types.GoogleSearch()
+            )
+        ]
     ),
 )
