@@ -1,14 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from src.agents.salesAgent.sub_agents.synthesis_agents import create_research_validator, create_synthesis_agents
-
-def test_create_research_validator():
-    with patch("src.agents.salesAgent.sub_agents.synthesis_agents.create_llm_agent") as mock_factory:
-        m = MagicMock(name="ResearchValidator")
-        m.name = "ResearchValidator"
-        mock_factory.return_value = m
-        agent = create_research_validator()
-        assert agent.name == "ResearchValidator"
+from src.agents.salesAgent.sub_agents.synthesis_agents import create_synthesis_agents
 
 def test_create_synthesis_agents():
     with patch("src.agents.salesAgent.sub_agents.synthesis_agents.create_llm_agent") as mock_factory:

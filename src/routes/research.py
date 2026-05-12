@@ -89,7 +89,7 @@ async def initiate_research(
             "account_id": request.account_id,
         }
 
-        success = await service.create_research_request(
+        success = service.create_research_request(
             job_id=job_id,
             company_name=request.company_name,
             metadata=metadata,
@@ -148,7 +148,7 @@ async def get_research_status(job_id: str, service: ResearchServiceDep):
     """
     Poll the status and progress of a research job.
     """
-    status_data = await service.get_request_status(job_id)
+    status_data = service.get_request_status(job_id)
 
     if not status_data:
         raise ResourceNotFoundError(f"Job {job_id} not found")
@@ -193,7 +193,7 @@ async def get_research_result(job_id: str, service: ResearchServiceDep):
     """
     Retrieve the completed research report and model card for a job.
     """
-    result = await service.get_request_result(job_id)
+    result = service.get_request_result(job_id)
 
     if not result:
         raise ResourceNotFoundError(f"Job {job_id} not found")
@@ -243,7 +243,7 @@ async def download_pdf_report(job_id: str, service: ResearchServiceDep):
     Returns the PDF as an attachment once the job is COMPLETED.
     Poll /status/{job_id} first to confirm the job is done.
     """
-    result = await service.get_pdf_report(job_id)
+    result = service.get_pdf_report(job_id)
 
     if result is None:
         raise ResourceNotFoundError(f"Job {job_id} not found")

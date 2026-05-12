@@ -36,7 +36,7 @@ class ResearchService:
         self.bigquery_repo = bigquery_repository
         self.gcs_repo = gcs_repository
 
-    async def create_research_request(
+    def create_research_request(
         self, job_id: str, company_name: str, metadata: dict[str, Any] | None = None
     ) -> bool:
         """Create a new research job in the database"""
@@ -86,79 +86,19 @@ class ResearchService:
 
                 start_time = time.monotonic()
 
-                # Run the SalesAgent with blocking output guardrail gate (retry on failure)
-                max_retries = settings.OUTPUT_GUARDRAIL_MAX_RETRIES
-                final_report: str | None = None
-                session_state: dict = {}
-
-                all_violations = []
-                for attempt in range(max_retries + 1):
-                    if attempt > 0:
-                        logger.info(
-                            f"[OutputGuardrail] Retry {attempt}/{max_retries} for job {job_id}"
-                        )
-                    final_report, session_state = await self._run_sales_agent(
-                        job_id, company_name, attempt=attempt
-                    )
-                    
-                    # Aggregate raw search cache from all agents (to survive parallel merge clobbering)
-                    raw_search_cache = []
-                    for k, v in session_state.items():
-                        if k.startswith("raw_search_cache_") and isinstance(v, list):
-                            raw_search_cache.extend(v)
-                    
-                    output_validation = await OutputGuardrail().validate(
-                        final_report, raw_search_cache=raw_search_cache
-                    )
-                    if output_validation.is_valid:
-                        break
-                    
-                    all_violations.extend(output_validation.violations)
-                    violation_details = "; ".join(
-                        f"{v.rule}: {v.detail}" for v in output_validation.violations
-                    )
-                    if attempt < max_retries:
-                        logger.warning(
-                            f"[OutputGuardrail] Attempt {attempt + 1}/{max_retries + 1} "
-                            f"blocked for job {job_id}: {violation_details} — retrying"
-                        )
-                    else:
-                        failure_summary = self._build_failure_summary(all_violations)
-                        logger.error(
-                            f"[OutputGuardrail] All {max_retries + 1} attempt(s) blocked "
-                            f"for job {job_id}. Dominant rule: {failure_summary['dominant_rule']}"
-                        )
-                        self.bigquery_repo.update_status(
-                            job_id,
-                            "FAILED",
-                            error=f"Output blocked: {failure_summary['dominant_rule']}",
-                            metadata_update={"failure_summary": failure_summary},
-                        )
-                        return  # hard stop
+                # 1. Execute the main research loop with guardrails
+                final_report, session_state = await self._run_research_loop(
+                    job_id, company_name
+                )
+                if not final_report:
+                    return  # Early exit if loop failed and handled its own status update
 
                 latency = round(time.monotonic() - start_time, 2)
 
-                # Extract model card telemetry accumulated in session state by callbacks
-                mc_input_tokens = session_state.get("mc_input_tokens") or 0
-                mc_output_tokens = session_state.get("mc_output_tokens") or 0
-                mc_total_tokens = mc_input_tokens + mc_output_tokens
-                mc_temperature = session_state.get("mc_temperature")
-                mc_source_domains = session_state.get("mc_source_domains") or []
-                mc_cost_usd = (
-                    round(
-                        (mc_input_tokens / 1000) * settings.GEMINI_COST_PER_1K_INPUT_TOKENS
-                        + (mc_output_tokens / 1000)
-                        * settings.GEMINI_COST_PER_1K_OUTPUT_TOKENS,
-                        6,
-                    )
-                    if (
-                        settings.GEMINI_COST_PER_1K_INPUT_TOKENS
-                        or settings.GEMINI_COST_PER_1K_OUTPUT_TOKENS
-                    )
-                    else None
-                )
+                # 2. Extract metrics and telemetry
+                metrics = self._calculate_metrics(session_state, latency)
 
-                # Upload artifacts
+                # 3. Upload artifacts
                 logger.info(f"Uploading artifacts to GCS for job {job_id}")
                 self.bigquery_repo.update_status(
                     job_id,
@@ -169,94 +109,12 @@ class ResearchService:
                 self.gcs_repo.upload_json(job_id, session_state)
                 md_uri = self.gcs_repo.upload_markdown(job_id, final_report)
 
-                # Generate and upload PDF
-                side_op_failures = {}
-                pdf_available = False
+                # 4. Finalize side operations (PDF, Evaluation, Cost, Telemetry)
+                side_op_failures, pdf_available = await self._finalize_background_ops(
+                    job_id, final_report, session_state, metrics
+                )
 
-                async def _generate_and_upload_pdf():
-                    nonlocal pdf_available
-                    logger.info(f"Generating PDF for job {job_id}")
-                    pdf_bytes = await asyncio.to_thread(self._generate_pdf_static, final_report)
-                    pdf_uri = await asyncio.to_thread(self.gcs_repo.upload_pdf, job_id, pdf_bytes)
-                    logger.info(f"PDF uploaded successfully to {pdf_uri}")
-                    pdf_available = True
-
-                try:
-                    await self._with_retry(_generate_and_upload_pdf)
-                except Exception as pdf_err:
-                    logger.warning(
-                        f"PDF generation or upload failed permanently for job {job_id}: {pdf_err}"
-                    )
-                    side_op_failures["pdf"] = str(pdf_err)
-
-                # Run evaluation (non-fatal)
-                async def _run_evaluation():
-                    logger.info(f"Running evaluation for job {job_id}")
-                    self.bigquery_repo.update_status(
-                        job_id,
-                        "PROCESSING",
-                        progress=settings.RESEARCH_EVAL_PROGRESS,
-                        current_step=settings.RESEARCH_EVAL_STEP_LABEL,
-                    )
-                    evaluation_service = EvaluationService()
-                    evaluation_result = await evaluation_service.evaluate(
-                        request_id=job_id,
-                        final_report=final_report,
-                        session_state=session_state,
-                    )
-                    self.gcs_repo.upload_evaluation(job_id, evaluation_result)
-                    logger.info(
-                        f"Evaluation complete for job {job_id} — "
-                        f"Final Score: {evaluation_result.get('final_composite_score', 'N/A')}"
-                    )
-
-                try:
-                    await self._with_retry(_run_evaluation)
-                except Exception as eval_err:
-                    logger.warning(
-                        f"Evaluation failed permanently for job {job_id}: {eval_err}"
-                    )
-                    side_op_failures["evaluation"] = str(eval_err)
-
-                # Insert cost attribution record (non-fatal)
-                try:
-                    await self._with_retry_sync(lambda: self.bigquery_repo.insert_cost_attribution(
-                        job_id=job_id,
-                        model_version=settings.GEMINI_MODEL,
-                        temperature=mc_temperature,
-                        prompt_template_version=settings.PROMPT_TEMPLATE_VERSION,
-                        input_tokens=mc_input_tokens or None,
-                        output_tokens=mc_output_tokens or None,
-                        total_tokens=mc_total_tokens or None,
-                        latency_seconds=latency,
-                        source_domains=mc_source_domains or None,
-                        cost_usd=mc_cost_usd,
-                    ))
-                except Exception as mc_err:
-                    logger.warning(
-                        f"Cost attribution insertion failed permanently for job {job_id}: {mc_err}"
-                    )
-                    side_op_failures["cost_attribution"] = str(mc_err)
-
-                # Flush per-agent telemetry records to BigQuery (non-fatal)
-                telemetry_records = session_state.get(TELEMETRY_RECORDS_KEY) or []
-                if telemetry_records:
-                    try:
-                        await self._with_retry_sync(lambda: self.bigquery_repo.insert_agent_telemetry_batch(telemetry_records))
-                    except Exception as tel_err:
-                        logger.warning(
-                            f"Agent telemetry flush failed permanently — writing dead-letter: {tel_err}"
-                        )
-                        side_op_failures["telemetry"] = str(tel_err)
-                        try:
-                            self.gcs_repo.upload_json(
-                                f"{job_id}_telemetry_deadletter",
-                                {"records": telemetry_records, "error": str(tel_err)},
-                            )
-                        except Exception as dl_err:
-                            logger.error(f"Dead-letter write also failed for job {job_id}: {dl_err}")
-
-                # Mark COMPLETED, persist cost attribution data into metadata
+                # 5. Mark COMPLETED
                 self.bigquery_repo.update_status(
                     job_id,
                     "COMPLETED",
@@ -266,8 +124,8 @@ class ResearchService:
                     metadata_update={
                         "model_version": settings.GEMINI_MODEL,
                         "latency_seconds": latency,
-                        "tokens_used": mc_total_tokens or None,
-                        "cost_usd": mc_cost_usd,
+                        "tokens_used": metrics["total_tokens"] or None,
+                        "cost_usd": metrics["cost_usd"],
                         "pdf_available": pdf_available,
                         "side_op_failures": side_op_failures or None,
                     },
@@ -275,7 +133,7 @@ class ResearchService:
                 logger.info(f"Research completed successfully for job {job_id}")
 
             except Exception as e:
-                # Handle parallel execution crashes (Common in large AstraZeneca-style runs)
+                # Handle parallel execution crashes
                 error_msg = str(e)
                 if "GeneratorExit" in error_msg or "TaskGroup" in error_msg:
                     error_msg = "Parallel execution collapsed (likely Quota/QPM limit reached)"
@@ -289,6 +147,155 @@ class ResearchService:
                 )
                 raise
 
+    async def _run_research_loop(
+        self, job_id: str, company_name: str
+    ) -> tuple[str | None, dict]:
+        """Execute SalesAgent with blocking output guardrail gate (retry on failure)"""
+        max_retries = settings.OUTPUT_GUARDRAIL_MAX_RETRIES
+        all_violations = []
+        final_report: str | None = None
+        session_state: dict = {}
+
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                logger.info(f"[OutputGuardrail] Retry {attempt}/{max_retries} for job {job_id}")
+            
+            final_report, session_state = await self._run_sales_agent(
+                job_id, company_name, attempt=attempt
+            )
+            
+            # Aggregate raw search cache and persist back to session_state
+            # (EvaluationService and OutputGuardrail prefer a centralized cache key)
+            raw_search_cache = []
+            for k, v in session_state.items():
+                if k.startswith("raw_search_cache_") and isinstance(v, list):
+                    raw_search_cache.extend(v)
+            
+            session_state["raw_search_cache"] = raw_search_cache
+            
+            output_validation = await OutputGuardrail().validate(
+                final_report, raw_search_cache=raw_search_cache
+            )
+            
+            if output_validation.is_valid:
+                return final_report, session_state
+            
+            all_violations.extend(output_validation.violations)
+            violation_details = "; ".join(f"{v.rule}: {v.detail}" for v in output_validation.violations)
+            
+            if attempt < max_retries:
+                logger.warning(
+                    f"[OutputGuardrail] Attempt {attempt + 1}/{max_retries + 1} "
+                    f"blocked for job {job_id}: {violation_details} — retrying"
+                )
+            else:
+                failure_summary = self._build_failure_summary(all_violations)
+                logger.error(
+                    f"[OutputGuardrail] All {max_retries + 1} attempt(s) blocked "
+                    f"for job {job_id}. Dominant rule: {failure_summary['dominant_rule']}"
+                )
+                self.bigquery_repo.update_status(
+                    job_id,
+                    "FAILED",
+                    error=f"Output blocked: {failure_summary['dominant_rule']}",
+                    metadata_update={"failure_summary": failure_summary},
+                )
+                return None, session_state
+        
+        return final_report, session_state
+
+    def _calculate_metrics(self, session_state: dict, latency: float) -> dict:
+        """Extract and calculate model card metrics from session state"""
+        input_tokens = session_state.get("mc_input_tokens") or 0
+        output_tokens = session_state.get("mc_output_tokens") or 0
+        total_tokens = input_tokens + output_tokens
+        
+        cost_usd = None
+        if settings.GEMINI_COST_PER_1K_INPUT_TOKENS or settings.GEMINI_COST_PER_1K_OUTPUT_TOKENS:
+            cost_usd = round(
+                (input_tokens / 1000) * settings.GEMINI_COST_PER_1K_INPUT_TOKENS
+                + (output_tokens / 1000) * settings.GEMINI_COST_PER_1K_OUTPUT_TOKENS,
+                6,
+            )
+
+        return {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "latency": latency,
+            "cost_usd": cost_usd,
+            "temperature": session_state.get("mc_temperature"),
+            "source_domains": session_state.get("mc_source_domains") or [],
+        }
+
+    async def _finalize_background_ops(
+        self, job_id: str, final_report: str, session_state: dict, metrics: dict
+    ) -> tuple[dict, bool]:
+        """Run non-fatal side operations (PDF, Eval, Cost, Telemetry)"""
+        side_op_failures = {}
+        pdf_available = False
+
+        # 1. PDF Generation
+        async def _pdf_op():
+            nonlocal pdf_available
+            pdf_bytes = await asyncio.to_thread(self._generate_pdf_static, final_report)
+            await asyncio.to_thread(self.gcs_repo.upload_pdf, job_id, pdf_bytes)
+            pdf_available = True
+
+        try:
+            await self._with_retry(_pdf_op)
+        except Exception as e:
+            logger.warning(f"PDF op failed: {e}")
+            side_op_failures["pdf"] = str(e)
+
+        # 2. Evaluation
+        async def _eval_op():
+            self.bigquery_repo.update_status(
+                job_id, "PROCESSING",
+                progress=settings.RESEARCH_EVAL_PROGRESS,
+                current_step=settings.RESEARCH_EVAL_STEP_LABEL,
+            )
+            result = await EvaluationService().evaluate(job_id, final_report, session_state)
+            self.gcs_repo.upload_evaluation(job_id, result)
+
+        try:
+            await self._with_retry(_eval_op)
+        except Exception as e:
+            logger.warning(f"Eval op failed: {e}")
+            side_op_failures["evaluation"] = str(e)
+
+        # 3. Cost Attribution
+        try:
+            await self._with_retry_sync(lambda: self.bigquery_repo.insert_cost_attribution(
+                job_id=job_id,
+                model_version=settings.GEMINI_MODEL,
+                temperature=metrics["temperature"],
+                prompt_template_version=settings.PROMPT_TEMPLATE_VERSION,
+                input_tokens=metrics["input_tokens"] or None,
+                output_tokens=metrics["output_tokens"] or None,
+                total_tokens=metrics["total_tokens"] or None,
+                latency_seconds=metrics["latency"],
+                source_domains=metrics["source_domains"] or None,
+                cost_usd=metrics["cost_usd"],
+            ))
+        except Exception as e:
+            logger.warning(f"Cost op failed: {e}")
+            side_op_failures["cost_attribution"] = str(e)
+
+        # 4. Telemetry
+        telemetry_records = session_state.get(TELEMETRY_RECORDS_KEY) or []
+        if telemetry_records:
+            try:
+                await self._with_retry_sync(lambda: self.bigquery_repo.insert_agent_telemetry_batch(telemetry_records))
+            except Exception as e:
+                logger.warning(f"Telemetry op failed: {e}")
+                side_op_failures["telemetry"] = str(e)
+                try:
+                    self.gcs_repo.upload_json(f"{job_id}_telemetry_deadletter", {"records": telemetry_records, "error": str(e)})
+                except Exception: pass
+
+        return side_op_failures, pdf_available
+
     async def _run_sales_agent(
         self, job_id: str, company_name: str, attempt: int = 0
     ) -> tuple[str, dict]:
@@ -301,7 +308,26 @@ class ResearchService:
             memory_service=InMemoryMemoryService(),
         )
 
-        # Append attempt number to session_id to ensure fresh execution on retries
+        # 1. Initialize session
+        session = await self._get_or_create_runner_session(runner, app, job_id, company_name, attempt)
+
+        # 2. Run agents and handle events
+        await self._handle_agent_run(runner, session, job_id, company_name)
+
+        # 3. Fetch and validate final report
+        session = await runner.session_service.get_session(
+            app_name=app.name, user_id="api_user", session_id=session.id
+        )
+        final_report = session.state.get("final_report", "")
+
+        if not final_report:
+            raise ServiceError("No final report generated by SalesAgent")
+
+        logger.info(f"Retrieved final report for job {job_id}, length: {len(final_report)}")
+        return final_report, session.state
+
+    async def _get_or_create_runner_session(self, runner: Runner, app: Any, job_id: str, company_name: str, attempt: int):
+        """Helper to get or create a runner session"""
         session_id = f"api_request_{job_id}"
         if attempt > 0:
             session_id += f"_retry_{attempt}"
@@ -316,7 +342,10 @@ class ResearchService:
                 session_id=session_id,
                 state={"company_name": company_name, "job_execution_id": job_id},
             )
+        return session
 
+    async def _handle_agent_run(self, runner: Runner, session: Any, job_id: str, company_name: str):
+        """Helper to execute the agent run and handle streaming events"""
         run_config = RunConfig()
         last_invocation_id = None
         progress_map = settings.agent_progress_map
@@ -339,68 +368,47 @@ class ResearchService:
                         run_kwargs["invocation_id"] = last_invocation_id
                     else:
                         run_kwargs["new_message"] = types.UserContent(
-                            parts=[
-                                types.Part(
-                                    text=f"Run the Sales Research Agent for the company {company_name}"
-                                )
-                            ]
+                            parts=[types.Part(text=f"Run the Sales Research Agent for the company {company_name}")]
                         )
 
                     async for event in runner.run_async(**run_kwargs):
                         last_invocation_id = event.invocation_id
                         log_event(event, verbose=True)
-
-                        # Update individual agent progress in BigQuery
-                        if hasattr(event, "author") and event.author:
-                            is_final = getattr(
-                                event, "is_final_response", lambda: False
-                            )()
-                            agent_status = "COMPLETED" if is_final else "PROCESSING"
-                            
-                            # Log to BQ current_step for visibility
-                            self.bigquery_repo.update_status(
-                                job_id, 
-                                None, 
-                                current_step=f"Agent: {event.author} ({agent_status})"
-                            )
-
-                            # --- Iterative Guardrail: Validate agent output on completion ---
-                            if is_final and hasattr(event, "response") and event.response:
-                                try:
-                                    # event.response is an AgentResponse object
-                                    agent_text = getattr(event.response, "text", "")
-                                    if agent_text:
-                                        AgentGuardrail().validate(agent_text, agent_name=event.author)
-                                except Exception as guard_err:
-                                    logger.error(f"[AgentGuardrail] Violation in {event.author}: {guard_err}")
-                                    raise
-
-                        # Update progress based on agent milestones
-                        if event.author in progress_map and event.is_final_response():
-                            pct, label = progress_map[event.author]
-                            self.bigquery_repo.update_status(
-                                job_id, None, progress=pct, current_step=label
-                            )
+                        self._process_event_milestones(event, job_id, progress_map)
 
         except Exception as e:
             logger.error(f"Final failure after retries: {e}")
             raise
 
-        # Fetch final session state
-        session = await runner.session_service.get_session(
-            app_name=app.name, user_id="api_user", session_id=session_id
+    def _process_event_milestones(self, event: Any, job_id: str, progress_map: dict):
+        """Handle individual agent events and BQ progress updates"""
+        if not hasattr(event, "author") or not event.author:
+            return
+
+        is_final = getattr(event, "is_final_response", lambda: False)()
+        agent_status = "COMPLETED" if is_final else "PROCESSING"
+        
+        # Log current agent to BQ
+        self.bigquery_repo.update_status(
+            job_id, None, current_step=f"Agent: {event.author} ({agent_status})"
         )
-        final_report = session.state.get("final_report", "")
 
-        if not final_report:
-            raise ServiceError("No final report generated by SalesAgent")
+        # Validate agent output on completion
+        if is_final and hasattr(event, "response") and event.response:
+            agent_text = getattr(event.response, "text", "")
+            if agent_text:
+                try:
+                    AgentGuardrail().validate(agent_text, agent_name=event.author)
+                except Exception as guard_err:
+                    logger.error(f"[AgentGuardrail] Violation in {event.author}: {guard_err}")
+                    raise
 
-        logger.info(
-            f"Retrieved final report for job {job_id}, length: {len(final_report)} characters"
-        )
-        return final_report, session.state
+        # Update progress milestones
+        if event.author in progress_map and is_final:
+            pct, label = progress_map[event.author]
+            self.bigquery_repo.update_status(job_id, None, progress=pct, current_step=label)
 
-    async def get_request_status(self, job_id: str) -> dict[str, Any] | None:
+    def get_request_status(self, job_id: str) -> dict[str, Any] | None:
         """Get the current status of a research job"""
         try:
             return self.bigquery_repo.get_status(job_id)
@@ -408,7 +416,7 @@ class ResearchService:
             logger.error(f"Failed to get job status: {e}")
             raise ServiceError(f"Failed to get job status: {str(e)}") from e
 
-    async def get_pdf_report(self, job_id: str) -> tuple[bytes, str] | None:
+    def get_pdf_report(self, job_id: str) -> tuple[bytes, str] | None:
         """
         Return (pdf_bytes, company_name) for a COMPLETED job, or None if not found.
         Raises ServiceError if the job is not yet complete or PDF is missing from GCS.
@@ -438,7 +446,7 @@ class ResearchService:
         company_name = status_data.get("company_name", job_id)
         return pdf_bytes, company_name
 
-    async def get_request_result(self, job_id: str) -> dict[str, Any] | None:
+    def get_request_result(self, job_id: str) -> dict[str, Any] | None:
         """Get the result of a completed research job, including cost attribution"""
         try:
             result = self.bigquery_repo.get_request_result(job_id)
