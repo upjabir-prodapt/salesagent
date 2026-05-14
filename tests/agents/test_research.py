@@ -24,22 +24,23 @@ def test_create_research_agents():
         mock_sequential.side_effect = create_mock_sequential
         
         agents = create_research_agents()
-        
+
         assert len(agents) == 5
         # firmographics_geographic_agent
         assert agents[0].name == "FirmographicsGeographicAgent"
-        assert len(agents[0].sub_agents) == 2
-        
+        # 2 researchers + 2 verifiers = 4
+        assert len(agents[0].sub_agents) == 4        
         # executive_agent
         assert agents[1].name == "ExecutivePipeline"
         
         # strategy_compliance_agent
         assert agents[2].name == "StrategyComplianceAgent"
-        assert len(agents[2].sub_agents) == 2
+        assert len(agents[2].sub_agents) == 4
         
         # market_ecosystem_agent
         assert agents[3].name == "MarketEcosystemAgent"
-        assert len(agents[3].sub_agents) == 3
+        assert len(agents[3].sub_agents) == 6
         
         # tech_stack_agent
-        assert agents[4].name == "TechStackAgent"
+        assert agents[4].name == "TechStackPipeline"
+        assert len(agents[4].sub_agents) == 2

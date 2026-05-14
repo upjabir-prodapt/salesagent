@@ -33,9 +33,9 @@ def test_ensure_table_exists_not_found(bq_repo, mock_bq_client):
     assert mock_bq_client.create_dataset.called
     assert mock_bq_client.create_table.called
 
-def test_ensure_model_card_table_exists_not_found(bq_repo, mock_bq_client):
+def test_ensure_cost_attribution_table_exists_not_found(bq_repo, mock_bq_client):
     mock_bq_client.get_table.side_effect = NotFound("Table not found")
-    bq_repo.ensure_model_card_table_exists()
+    bq_repo.ensure_cost_attribution_table_exists()
     assert mock_bq_client.create_table.called
 
 def test_create_request_success(bq_repo, mock_bq_client):

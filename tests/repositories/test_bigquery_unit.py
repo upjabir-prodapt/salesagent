@@ -32,8 +32,8 @@ def test_get_status_error(repo, mock_bq_client):
     with pytest.raises(DatabaseError):
         repo.get_status("job_123")
 
-def test_insert_model_card(repo, mock_bq_client):
-    repo.insert_model_card("job_123", "gemini-pro", 0.7, 100, 50, 10.5, 0.01)
+def test_insert_cost_attribution(repo, mock_bq_client):
+    repo.insert_cost_attribution("job_123", "gemini-pro", 0.7, "v1", 100, 50, 150, 10.5, ["a.com"], 0.01)
     mock_bq_client.query.assert_called()
 
 def test_insert_agent_telemetry_batch(repo, mock_bq_client):

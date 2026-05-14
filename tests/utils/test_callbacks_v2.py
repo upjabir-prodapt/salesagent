@@ -69,6 +69,10 @@ def test_after_tool_callback_count(mock_callback_context):
     tool_context = MagicMock()
     tool_context.callback_context = mock_callback_context
     
+    # Initialize state
+    mock_callback_context.state["mc_tool_call_count"] = 0
+    mock_callback_context.state["mc_source_domains"] = []
+    
     tool_response = types.GenerateContentResponse(
         candidates=[
             types.Candidate(

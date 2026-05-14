@@ -16,6 +16,7 @@ def mock_settings():
         mock.BIGQUERY_TABLE = "test_table"
         mock.BIGQUERY_MODEL_CARD_TABLE = "test_model_card_table"
         mock.BIGQUERY_AGENT_TELEMETRY_TABLE = "test_telemetry_table"
+        mock.BIGQUERY_COST_ATTRIBUTION_TABLE = "test_cost_attribution_table"
         mock.GCS_BUCKET_NAME = "test-bucket"
         mock.GCS_PARENT_FOLDER = "research"
         mock.GOOGLE_CLOUD_LOCATION = "US"
@@ -75,9 +76,20 @@ def patch_repository_settings(mock_settings):
 def client():
     """FastAPI test client with mocked research service."""
     from src.dependencies.service_dependencies import get_research_service
+    from src.dependencies.auth import get_current_user
     
-    mock_service = AsyncMock()
+    # Use MagicMock for the service container
+    mock_service = MagicMock()
+    # Async methods
+    mock_service.process_research_background = AsyncMock()
+    # Sync methods (default is MagicMock, but let's be explicit if needed)
+    
     app.dependency_overrides[get_research_service] = lambda: mock_service
+    app.dependency_overrides[get_current_user] = lambda: {
+        "email": "test@example.com",
+        "business_unit": "Sales",
+        "organization": "Acme"
+    }
     
     # Mock startup initialization to avoid real cloud calls
     with patch("src.routes.app._init_bigquery", new_callable=AsyncMock), \

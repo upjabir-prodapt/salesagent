@@ -31,9 +31,10 @@ def test_after_model_callback(mock_context):
     assert mock_context.state["mc_input_tokens"] == 100
     assert mock_context.state["mc_output_tokens"] == 50
 
-def test_before_agent_callback(mock_context):
+@pytest.mark.asyncio
+async def test_before_agent_callback(mock_context):
     with patch("src.utils.callbacks.track_agent_start") as mock_track:
-        before_agent_callback(mock_context)
+        await before_agent_callback(mock_context)
         mock_track.assert_called_once()
 
 def test_after_agent_callback(mock_context):

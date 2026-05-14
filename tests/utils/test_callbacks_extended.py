@@ -1,7 +1,5 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.utils.callbacks import before_model_callback, after_model_callback, after_tool_callback
-
 from src.utils.callbacks import (
     before_model_callback, 
     after_model_callback, 
@@ -47,7 +45,6 @@ def test_before_model_callback_jailbreak(mock_context):
 def test_after_model_callback_tokens(mock_context):
     response = MagicMock()
     usage = MagicMock()
-    # Test both variants of naming in SDK
     usage.prompt_token_count = 10
     usage.candidates_token_count = 5
     response.usage_metadata = usage
@@ -56,9 +53,10 @@ def test_after_model_callback_tokens(mock_context):
     assert mock_context.state["mc_input_tokens"] == 10
     assert mock_context.state["mc_output_tokens"] == 5
 
-def test_before_agent_callback(mock_context):
+@pytest.mark.asyncio
+async def test_before_agent_callback(mock_context):
     with patch("src.utils.callbacks.track_agent_start") as mock_track:
-        before_agent_callback(mock_context)
+        await before_agent_callback(mock_context)
         mock_track.assert_called_once_with(mock_context)
 
 def test_after_agent_callback(mock_context):
@@ -80,14 +78,13 @@ def test_after_tool_callback_search(mock_context):
     
     tool_ctx = MagicMock()
     tool_ctx.callback_context = mock_context
-    # Crucial: tool_context.state is used in callbacks.py
     tool_ctx.state = mock_context.state
     
     # Initialize state
     mock_context.state["mc_tool_call_count"] = 0
+    mock_context.state["mc_source_domains"] = []
     
     part = MagicMock()
-    # It must have function_response and that must have 'response'
     mock_fr = MagicMock()
     mock_fr.response = {
         "results": [
@@ -103,8 +100,9 @@ def test_after_tool_callback_search(mock_context):
     after_tool_callback(tool, args, tool_ctx, tool_response)
     
     assert mock_context.state["mc_tool_call_count"] == 1
-    assert "raw_search_cache" in mock_context.state
-    assert len(mock_context.state["raw_search_cache"]) == 1
+    # Key is now prefixed with agent name
+    has_cache = any(k.startswith("raw_search_cache_") for k in mock_context.state.keys())
+    assert has_cache is True
 
 def test_after_tool_callback_read_url(mock_context):
     tool = MagicMock()
@@ -114,6 +112,10 @@ def test_after_tool_callback_read_url(mock_context):
     tool_ctx = MagicMock()
     tool_ctx.callback_context = mock_context
     tool_ctx.state = mock_context.state
+    
+    # Initialize state
+    mock_context.state["mc_tool_call_count"] = 0
+    mock_context.state["mc_source_domains"] = []
     
     tool_response = MagicMock()
     tool_response.parts = []
@@ -132,6 +134,7 @@ def test_after_tool_callback_google_search_count(mock_context):
     tool_ctx.state = mock_context.state
     # Initialize state
     mock_context.state["mc_tool_call_count"] = 0
+    mock_context.state["mc_source_domains"] = []
     after_tool_callback(tool, args, tool_ctx, MagicMock(parts=[]))
     assert mock_context.state["mc_tool_call_count"] == 1
 
@@ -145,6 +148,7 @@ def test_after_tool_callback_read_url_count(mock_context):
     tool_ctx.state = mock_context.state
     # Initialize state
     mock_context.state["mc_tool_call_count"] = 0
+    mock_context.state["mc_source_domains"] = []
     after_tool_callback(tool, args, tool_ctx, MagicMock(parts=[]))
     assert mock_context.state["mc_tool_call_count"] == 1
 

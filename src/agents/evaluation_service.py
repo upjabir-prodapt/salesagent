@@ -24,6 +24,7 @@ from loguru import logger
 
 from ..core.clients import client_pool
 from ..core.config import settings
+from ..tools.product_catalog_tool import colt_product_search
 
 # ---------------------------------------------------------------------------
 # Dimension weights for Section A (D1–D14)
@@ -108,10 +109,9 @@ MAX_SECTION_A_WEIGHTED_SCORE = 82.0
 
 # Section B weights
 SECTION_B_WEIGHTS = {
-    "M1_rouge1": 0.15,
-    "M2_rouge2": 0.10,
-    "M3_rougel": 0.10,
-    "M4_bertscore": 0.30,
+    "M1_rouge1": 0.30,
+    "M2_rouge2": 0.15,
+    "M3_rougel": 0.20,
     "M5_groundedness": 0.15,
     "M6_completeness": 0.10,
     "M7_source_diversity": 0.10,
@@ -131,8 +131,7 @@ class EvaluationService:
     """
 
     def __init__(self):
-        self._catalog_text: str | None = None
-        self._catalog_loaded: bool = False
+        self._catalog_context: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -150,10 +149,18 @@ class EvaluationService:
         """
         logger.info(f"[Evaluation] Starting evaluation for request {request_id}")
 
-        # Extract raw search cache — the ground-truth evidence for all metrics
-        raw_search_cache: list[dict] = session_state.get("raw_search_cache") or []
+        # Extract raw search cache — aggregate from all agents
+        raw_search_cache = []
+        for k, v in session_state.items():
+            if k.startswith("raw_search_cache_") and isinstance(v, list):
+                raw_search_cache.extend(v)
+
+        # Fallback to legacy key if exists and empty
+        if not raw_search_cache:
+            raw_search_cache = session_state.get("raw_search_cache") or []
+
         logger.info(
-            f"[Evaluation] raw_search_cache entries available: {len(raw_search_cache)}"
+            f"[Evaluation] Total aggregated raw_search_cache entries: {len(raw_search_cache)}"
         )
 
         # Build reference text for automated metrics.
@@ -200,7 +207,6 @@ class EvaluationService:
             "final_composite_score": round(final_score, 2),
             "evaluation_metadata": {
                 "evaluator_model": settings.EVALUATOR_MODEL,
-                "bertscore_model": settings.BERTSCORE_MODEL,
                 "evaluated_at": datetime.now(UTC).isoformat(),
                 "request_id": request_id,
             },
@@ -224,7 +230,8 @@ class EvaluationService:
     ) -> dict[str, Any]:
         """Call the LLM judge and compute Section A score."""
         try:
-            catalog_context = self._load_catalog_text()
+            # Dynamically fetch relevant catalog context using Vector Search
+            catalog_context = await self._fetch_relevant_catalog_context(final_report)
             raw_llm_response = await self._call_llm_judge(
                 final_report,
                 session_state,
@@ -235,6 +242,39 @@ class EvaluationService:
         except Exception as e:
             logger.error(f"[Evaluation] Section A failed: {e}")
             return self._empty_section_a(error=str(e))
+
+    async def _fetch_relevant_catalog_context(self, report: str) -> str:
+        """
+        Extract key technical needs from the report and perform a Vector Search
+        to get the most relevant catalog context for the judge.
+        """
+        if self._catalog_context:
+            return self._catalog_context
+
+        try:
+            # Extract keywords from the Technology Alignment section
+            alignment_section = self._extract_alignment_section(report)
+            search_query = alignment_section[:500] if alignment_section else "Colt product solutions"
+
+            # Perform Vector Search
+            logger.info(f"[Evaluation] Fetching catalog context for query: {search_query[:50]}...")
+            self._catalog_context = await asyncio.to_thread(colt_product_search, search_query)
+            return self._catalog_context
+        except Exception as e:
+            logger.warning(f"[Evaluation] Vector Search for catalog failed: {e}")
+            return ""
+
+    def _extract_alignment_section(self, report: str) -> str:
+        """Extract the text of the Colt Technology Alignment section."""
+        patterns = [
+            r"##\s*8\.?\s*Colt\s+Technology\s+Alignment(.*?)(?=\n##|\Z)",
+            r"##\s*Colt\s+Technology\s+Alignment(.*?)(?=\n##|\Z)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, report, re.IGNORECASE | re.DOTALL)
+            if match:
+                return match.group(1).strip()
+        return ""
 
     async def _call_llm_judge(
         self,
@@ -583,14 +623,6 @@ class EvaluationService:
             rouge_scores = {"rouge1": 0.0, "rouge2": 0.0, "rougeLsum": 0.0}
 
         try:
-            bert_f1 = await asyncio.to_thread(
-                self._compute_bertscore, final_report, reference_text
-            )
-        except Exception as e:
-            logger.warning(f"[Evaluation] BERTScore computation failed: {e}")
-            bert_f1 = 0.0
-
-        try:
             groundedness = self._compute_groundedness(
                 final_report, raw_search_cache=raw_search_cache or []
             )
@@ -615,7 +647,6 @@ class EvaluationService:
         m1 = round(rouge_scores.get("rouge1", 0.0), 4)
         m2 = round(rouge_scores.get("rouge2", 0.0), 4)
         m3 = round(rouge_scores.get("rougeLsum", 0.0), 4)
-        m4 = round(bert_f1, 4)
         m5 = round(groundedness, 4)
         m6 = round(completeness, 4)
         m7 = round(source_diversity, 4)
@@ -625,7 +656,6 @@ class EvaluationService:
             m1 * SECTION_B_WEIGHTS["M1_rouge1"]
             + m2 * SECTION_B_WEIGHTS["M2_rouge2"]
             + m3 * SECTION_B_WEIGHTS["M3_rougel"]
-            + m4 * SECTION_B_WEIGHTS["M4_bertscore"]
             + m5 * SECTION_B_WEIGHTS["M5_groundedness"]
             + m6 * SECTION_B_WEIGHTS["M6_completeness"]
             + m7 * SECTION_B_WEIGHTS["M7_source_diversity"]
@@ -638,9 +668,6 @@ class EvaluationService:
             "M2_rouge2_weight": SECTION_B_WEIGHTS["M2_rouge2"],
             "M3_rougel": m3,
             "M3_rougel_weight": SECTION_B_WEIGHTS["M3_rougel"],
-            "M4_bertscore": m4,
-            "M4_bertscore_model": settings.BERTSCORE_MODEL,
-            "M4_bertscore_weight": SECTION_B_WEIGHTS["M4_bertscore"],
             "M5_groundedness": m5,
             "M5_groundedness_weight": SECTION_B_WEIGHTS["M5_groundedness"],
             "M5_groundedness_method": "URL count in Section 13 Source Summary / total URLs expected",
@@ -667,28 +694,6 @@ class EvaluationService:
             "rouge2": scores["rouge2"].fmeasure,
             "rougeLsum": scores["rougeLsum"].fmeasure,
         }
-
-    def _compute_bertscore(self, hypothesis: str, reference: str) -> float:
-        """
-        Compute BERTScore F1 using the configured lightweight model.
-        Truncates text to avoid memory issues with large reports.
-        """
-        from bert_score import score as bert_score_fn
-
-        # Truncate to avoid excessive memory / time consumption
-        max_chars = 4000
-        hyp_trunc = hypothesis[:max_chars]
-        ref_trunc = reference[:max_chars]
-
-        P, R, F1 = bert_score_fn(
-            [hyp_trunc],
-            [ref_trunc],
-            model_type=settings.BERTSCORE_MODEL,
-            lang="en",
-            verbose=False,
-            rescale_with_baseline=False,
-        )
-        return float(F1[0])
 
     def _compute_groundedness(
         self,
@@ -931,47 +936,3 @@ class EvaluationService:
             lines.append(block)
             total += len(block)
         return "\n".join(lines)
-
-    def _load_catalog_text(self) -> str:
-        """
-        Load and cache Colt Product Catalog PDF text.
-        Returns empty string if file not found (non-fatal).
-        """
-        if self._catalog_loaded:
-            return self._catalog_text or ""
-
-        self._catalog_loaded = True
-        catalog_path = Path(settings.COLT_PRODUCT_CATALOG_PATH)
-
-        # Resolve relative path from project root (2 levels up from this file)
-        if not catalog_path.is_absolute():
-            project_root = Path(__file__).resolve().parents[2]
-            catalog_path = project_root / catalog_path
-
-        if not catalog_path.exists():
-            logger.warning(
-                f"[Evaluation] ColtProductCatalog not found at {catalog_path}. "
-                "LLM judge will operate without catalog context."
-            )
-            self._catalog_text = ""
-            return ""
-
-        try:
-            from pypdf import PdfReader
-
-            reader = PdfReader(str(catalog_path))
-            pages_text = []
-            for page in reader.pages:
-                text = page.extract_text()
-                if text:
-                    pages_text.append(text)
-            self._catalog_text = "\n\n".join(pages_text)
-            logger.info(
-                f"[Evaluation] Loaded ColtProductCatalog: "
-                f"{len(reader.pages)} pages, {len(self._catalog_text)} chars"
-            )
-        except Exception as e:
-            logger.warning(f"[Evaluation] Failed to load ColtProductCatalog: {e}")
-            self._catalog_text = ""
-
-        return self._catalog_text or ""

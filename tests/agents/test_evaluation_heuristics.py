@@ -17,23 +17,6 @@ def test_compute_rouge(evaluation_service):
         }
         scores = evaluation_service._compute_rouge("report", "reference")
         assert scores["rouge1"] == 0.5
-@pytest.mark.asyncio
-async def test_compute_bertscore(evaluation_service):
-    # Patch the library imported inside the method
-    with patch("bert_score.score") as mock_score_fn:
-        # bert_score.score returns (P, R, F1)
-        f1_mock = MagicMock()
-        # Ensure F1[0] returns something that can be float() converted
-        f1_mock.__getitem__.return_value = 0.8
-        # Ensure F1.mean().item() also returns something that can be float() converted
-        f1_mock.mean.return_value.item.return_value = 0.8
-        
-        mock_score_fn.return_value = (None, None, f1_mock)
-        
-        # evaluation_service._compute_bertscore is synchronous but we run it in a thread
-        score = await asyncio.to_thread(evaluation_service._compute_bertscore, "report", "reference")
-        # Ensure we check against float
-        assert abs(float(score) - 0.8) < 1e-6
 
 
 import asyncio

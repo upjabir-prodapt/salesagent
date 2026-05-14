@@ -1,6 +1,8 @@
 from google.adk.agents import LlmAgent
 from google.adk.tools import google_search
 
+from ..utils.agent_factory import create_llm_agent
+
 VERIFIER_INSTRUCTION = """
 You are a fact-checking agent. You receive:
 1. A claim extracted from a research section
@@ -21,9 +23,8 @@ Return ONLY valid JSON:
 
 def create_verifier_agent(agent_name: str) -> LlmAgent:
     """Create a specialized fact-checking agent for a specific research agent."""
-    return LlmAgent(
+    return create_llm_agent(
         name=f"{agent_name}_verifier",
-        model="gemini-2.5-flash",
         instruction=VERIFIER_INSTRUCTION,
         tools=[google_search],
         output_key=f"{agent_name}_verification_result",

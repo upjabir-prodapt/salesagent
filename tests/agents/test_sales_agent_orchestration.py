@@ -8,8 +8,7 @@ def test_create_sales_agent_app(mock_settings):
          patch("src.agents.salesAgent.agent.SequentialAgent"), \
          patch("src.agents.salesAgent.agent.create_research_agents", return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())), \
          patch("src.agents.salesAgent.agent.create_signals_orchestrator"), \
-         patch("src.agents.salesAgent.agent.create_synthesis_agents", return_value=(MagicMock(), MagicMock())), \
-         patch("src.agents.salesAgent.agent.create_research_validator"):
+         patch("src.agents.salesAgent.agent.create_synthesis_agents", return_value=(MagicMock(), MagicMock())):
         
         app = create_sales_agent_app()
         assert app is not None

@@ -140,54 +140,74 @@ def after_model_callback(
     except Exception as e:
         logger.debug(f"[Callback] Could not accumulate token counts: {e}")
 
-    # NEW: grounding confidence + source authority from grounding metadata
+    # Capturing grounding metadata as search evidence
     try:
-        candidates = getattr(llm_response, "candidates", None) or []
+        # Resolve candidates from ADK wrapper or raw response
+        candidates = getattr(llm_response, "candidates", None)
+        if not candidates and hasattr(llm_response, "response"):
+            candidates = getattr(llm_response.response, "candidates", None)
+        
+        candidates = candidates or []
         if candidates:
-            metadata = getattr(candidates[0], "grounding_metadata", None)
+            # Check both snake_case (SDK) and camelCase (JSON/ADK)
+            metadata = getattr(candidates[0], "grounding_metadata", None) or \
+                       getattr(candidates[0], "groundingMetadata", None)
+            
             if metadata:
+                logger.debug(f"[Callback] Found grounding metadata in response from {agent_name}")
                 grounding_entries = []
-                for chunk in (getattr(metadata, "grounding_chunks", None) or []):
-                    web = getattr(chunk, "web", None)
-                    if web:
-                        uri = getattr(web, "uri", None)
-                        title = getattr(web, "title", None) or "Grounded Source"
-                        if uri:
-                            # Flag non-authoritative sources
-                            if not is_authoritative(uri):
-                                logger.warning(
-                                    f"[Callback] Grounding used non-authoritative source: "
-                                    f"{uri} agent={agent_name}"
-                                )
-                            
-                            # Create an entry compatible with _extract_search_entries
-                            grounding_entries.append({
-                                "url": uri,
-                                "title": title,
-                                "snippet": "[Grounded Verification Chunk]",
-                                "query": "Native Grounding Search",
-                                "agent": agent_name,
-                                "authoritative": is_authoritative(uri)
-                            })
+                
+                chunks = getattr(metadata, "grounding_chunks", None) or \
+                         getattr(metadata, "groundingChunks", []) or []
+                supports = getattr(metadata, "grounding_supports", None) or \
+                           getattr(metadata, "groundingSupports", []) or []
 
-                # Cache these as search results so they are included in citations
+                logger.debug(f"[Callback] {len(chunks)} chunks, {len(supports)} supports found")
+                for support in supports:
+                    segment = getattr(support, "segment", None)
+                    text = getattr(segment, "text", "") if segment else ""
+                    
+                    indices = getattr(support, "grounding_chunk_indices", None) or \
+                              getattr(support, "groundingChunkIndices", []) or []
+                    
+                    for idx in indices:
+                        if idx < len(chunks):
+                            chunk = chunks[idx]
+                            # Web attribute might be a dict or object
+                            web = getattr(chunk, "web", None) or getattr(chunk, "get", lambda x, y: None)("web")
+                            if web:
+                                # Access as attribute or dict key
+                                uri = getattr(web, "uri", None) or getattr(web, "get", lambda x, y: None)("uri")
+                                title = getattr(web, "title", None) or getattr(web, "get", lambda x, y: "Grounded Source")("title")
+                                if uri:
+                                    grounding_entries.append({
+                                        "url": uri,
+                                        "title": title,
+                                        "snippet": text,
+                                        "query": "Native Grounding Search",
+                                        "agent": agent_name,
+                                        "authoritative": is_authoritative(uri)
+                                    })
+
+                # Cache as search results using the established prefix for aggregator discovery
                 if grounding_entries:
                     import uuid
                     unique_id = str(uuid.uuid4())[:8]
-                    cache_key = f"raw_search_cache_grounding_{agent_name}_{unique_id}"
+                    cache_key = f"raw_search_cache_{agent_name}_grounding_{unique_id}"
                     callback_context.state[cache_key] = grounding_entries
-                    logger.debug(f"[Callback] Cached {len(grounding_entries)} grounding chunks to {cache_key}")
+                    logger.debug(
+                        f"[Callback] Captured {len(grounding_entries)} grounding snippets "
+                        f"from {agent_name} model response."
+                    )
 
-                for support in (getattr(metadata, "grounding_supports", None) or []):
+                # Confidence logging
+                for support in supports:
                     scores = getattr(support, "confidence_scores", None) or []
                     if any(s < 0.7 for s in scores):
-                        text = getattr(
-                            getattr(support, "segment", None), "text", ""
-                        )
+                        text = getattr(getattr(support, "segment", None), "text", "")
                         logger.warning(
                             f"[Callback] Low-confidence grounding: "
-                            f"min={min(scores):.2f} claim={text[:100]!r} "
-                            f"agent={agent_name}"
+                            f"min={min(scores):.2f} claim={text[:100]!r} agent={agent_name}"
                         )
     except Exception as e:
         logger.debug(f"[Callback] Grounding metadata inspection failed: {e}")
@@ -314,11 +334,21 @@ def after_tool_callback(
     logger.info(f"[Callback] AFTER TOOL '{tool_name}' returned: {tool_response}")
 
     # Count tool calls as sources crawled if they are web tools
-    _WEB_TOOLS = {"google_search"}
+    _WEB_TOOLS = {"google_search", "read_url"}
     try:
-        state = callback_context.state
+        state = tool_context.callback_context.state
         if tool_name in _WEB_TOOLS:
             state["mc_tool_call_count"] = state.get("mc_tool_call_count", 0) + 1
+            
+            # For read_url, extract domain directly from args
+            if tool_name == "read_url" and "url" in args:
+                from urllib.parse import urlparse
+                domain = urlparse(args["url"]).netloc
+                if domain:
+                    domains = list(state.get("mc_source_domains") or [])
+                    if domain not in domains:
+                        domains.append(domain)
+                        state["mc_source_domains"] = domains
     except Exception as e:
         logger.debug(f"[Callback] Could not increment tool call count: {e}")
 
@@ -326,7 +356,7 @@ def after_tool_callback(
     # Uses a unique key per tool call to avoid clobbering in parallel agents.
     try:
         if tool_name == "google_search":
-            agent_name = getattr(tool_context, "agent_name", "unknown")
+            agent_name = getattr(tool_context.callback_context, "agent_name", "unknown")
             query = args.get("query", "")
             entries = _extract_search_entries(tool_response, query, agent_name)
             if entries:

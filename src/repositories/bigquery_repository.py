@@ -413,6 +413,7 @@ class BigQueryRepository:
             row = results[0]
             return {
                 "request_id": job_id,
+                "company_name": row.company_name,
                 "status": row.status,
                 "progress": row.progress if row.progress is not None else 0,
                 "current_step": row.current_step,

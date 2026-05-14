@@ -18,7 +18,7 @@ def service(mock_bq_repo, mock_gcs_repo):
 @pytest.mark.asyncio
 async def test_create_research_request_success(service, mock_bq_repo):
     mock_bq_repo.create_request.return_value = True
-    result = await service.create_research_request("job_123", "Acme Corp")
+    result = service.create_research_request("job_123", "Acme Corp")
     assert result is True
     mock_bq_repo.create_request.assert_called_once_with(
         job_id="job_123", company_name="Acme Corp", metadata=None
@@ -28,7 +28,7 @@ async def test_create_research_request_success(service, mock_bq_repo):
 async def test_create_research_request_failure(service, mock_bq_repo):
     mock_bq_repo.create_request.side_effect = Exception("DB Error")
     with pytest.raises(ServiceError):
-        await service.create_research_request("job_123", "Acme Corp")
+        service.create_research_request("job_123", "Acme Corp")
 
 @pytest.mark.asyncio
 async def test_process_research_background_orchestration(service, mock_bq_repo, mock_settings):

@@ -4,6 +4,7 @@ Synthesis Agents Module
 Contains agents for analyzing alignment and compiling the final report.
 """
 
+from ....tools.product_catalog_tool import colt_product_search
 from ..prompts import (
     ALIGNMENT_PROMPT,
     REPORT_COMPILER_PROMPT,
@@ -16,6 +17,7 @@ def create_synthesis_agents():
     alignment_analyst = create_llm_agent(
         name="AlignmentAnalyst",
         instruction=ALIGNMENT_PROMPT,
+        tools=[colt_product_search],
         output_key="alignment_output",
         description="Maps company challenges to Colt solutions.",
     )

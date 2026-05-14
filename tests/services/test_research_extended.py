@@ -35,12 +35,16 @@ async def test_run_sales_agent_functional(research_service, mock_bq_repo):
         event1.author = "ResearchOrchestrator"
         event1.invocation_id = "inv_1"
         event1.is_final_response.return_value = False
+        event1.response = None
         yield event1
         
         event2 = MagicMock()
         event2.author = "ResearchOrchestrator"
         event2.invocation_id = "inv_1"
         event2.is_final_response.return_value = True
+        mock_resp = MagicMock()
+        mock_resp.text = "Success report text"
+        event2.response = mock_resp
         yield event2
 
     mock_runner.run_async = mock_events
@@ -121,7 +125,7 @@ async def test_get_pdf_report_functional(research_service, mock_bq_repo, mock_gc
     mock_bq_repo.get_status.return_value = {"status": "COMPLETED", "company_name": "Acme"}
     mock_gcs_repo.download_pdf.return_value = b"pdf_data"
     
-    pdf_bytes, name = await research_service.get_pdf_report("job_123")
+    pdf_bytes, name = research_service.get_pdf_report("job_123")
     assert pdf_bytes == b"pdf_data"
     assert name == "Acme"
 
@@ -130,5 +134,5 @@ async def test_get_pdf_report_not_complete_functional(research_service, mock_bq_
     """Functional test: get_pdf_report should raise error if job not complete."""
     mock_bq_repo.get_status.return_value = {"status": "PROCESSING"}
     with pytest.raises(ServiceError) as exc:
-        await research_service.get_pdf_report("job_123")
+        research_service.get_pdf_report("job_123")
     assert exc.value.status_code == 409

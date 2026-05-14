@@ -31,7 +31,6 @@ async def test_lifespan_initialization_functional():
             assert mock_gcs.called
             # telemetry depends on env var, but let's see if it's called
             assert mock_tel.called
-
 def test_init_telemetry_functional():
     """Verify telemetry init logic when env var is set."""
     from src.routes.app import _init_telemetry
@@ -40,8 +39,7 @@ def test_init_telemetry_functional():
              patch("src.routes.app.BatchSpanProcessor"), \
              patch("src.routes.app.CloudTraceSpanExporter"), \
              patch("src.routes.app.GoogleGenAiSdkInstrumentor"), \
-             patch("src.routes.app.VertexAIInstrumentor"), \
              patch("src.routes.app.SQLite3Instrumentor"):
-            
-            _init_telemetry()
+
+            _init_telemetry(app)
             # If we reached here without error and it was invoked, good

@@ -13,7 +13,7 @@ def research_service():
 async def test_create_research_request_success(research_service):
     research_service.bigquery_repo.create_request.return_value = True
     
-    result = await research_service.create_research_request(
+    result = research_service.create_research_request(
         job_id="test-job", company_name="Test Company"
     )
     
@@ -27,7 +27,7 @@ async def test_create_research_request_failure(research_service):
     research_service.bigquery_repo.create_request.side_effect = Exception("BQ Error")
     
     with pytest.raises(ServiceError):
-        await research_service.create_research_request(
+        research_service.create_research_request(
             job_id="test-job", company_name="Test Company"
         )
 

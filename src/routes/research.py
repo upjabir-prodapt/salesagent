@@ -250,10 +250,10 @@ async def download_pdf_report(job_id: str, service: ResearchServiceDep):
 
     pdf_bytes, company_name = result
 
-    # Build a safe filename: "Research_Report_<CompanyName>.pdf"
+    # Build a safe filename: "<CompanyName>.pdf"
     safe_name = re.sub(r"[^\w\s-]", "", company_name).strip()
     safe_name = re.sub(r"\s+", "_", safe_name)
-    filename = f"Research_Report_{safe_name}.pdf"
+    filename = f"{safe_name}.pdf"
 
     logger.info(f"Serving PDF download for job {job_id}: {filename}")
 

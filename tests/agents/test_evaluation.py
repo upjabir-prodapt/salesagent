@@ -91,7 +91,6 @@ async def test_run_section_b_minimal(evaluation_service):
     with patch("src.agents.evaluation_service.logger"):
         # We need to mock metrics that require heavy libs
         with patch.object(evaluation_service, "_compute_rouge", return_value={"rouge1": 0.5}), \
-             patch.object(evaluation_service, "_compute_bertscore", return_value=0.6), \
              patch.object(evaluation_service, "_compute_groundedness", return_value=0.7), \
              patch.object(evaluation_service, "_compute_completeness", return_value=0.8), \
              patch.object(evaluation_service, "_compute_source_diversity", return_value=0.9):

@@ -91,39 +91,39 @@ Market data.
 
 @pytest.mark.asyncio
 async def test_output_guardrail_hallucination_check_legacy_failure_functional(mock_settings):
-    """Functional test: Verify hallucination detection logic in legacy mode."""
+    """Verify hallucination detection logic in legacy mode."""
     og = OutputGuardrail()
     report = "## 11. Strategic Opportunity\nClaim X\n## 12. Signals\nSource Y"
     
-    with patch("vertexai.init"), \
-         patch("vertexai.generative_models.GenerativeModel.generate_content") as mock_gen:
-        # Mocking an LLM response that flags a hallucination
-        mock_response = MagicMock()
-        mock_response.text = '{"has_unsupported_claims": true, "unsupported_count": 2, "category_results": {}, "examples": ["Claim X"]}'
-        mock_gen.return_value = mock_response
-        
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = '{"has_unsupported_claims": true, "unsupported_count": 2, "category_results": {}, "examples": ["Claim X"]}'
+    mock_client.models.generate_content.return_value = mock_response
+    
+    with patch("src.utils.guardrails.client_pool.get_genai_client", return_value=mock_client):
         with patch("src.utils.guardrails.settings") as mock_s:
             mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD = 1
+            mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL = "gemini-flash"
             violations = await og._check_hallucinations_legacy(report)
             assert len(violations) == 1
             assert "output:hallucination" in violations[0].rule
 
 @pytest.mark.asyncio
 async def test_output_guardrail_hallucination_check_with_cache_functional(mock_settings):
-    """Functional test: Verify hallucination check using raw search cache."""
+    """Verify hallucination check using raw search cache."""
     og = OutputGuardrail()
     report = "The company revenue is $5B."
     raw_cache = [{"agent": "Research", "title": "Finances", "url": "http://fin.com", "snippet": "Revenue was $2B"}]
     
-    with patch("vertexai.init"), \
-         patch("vertexai.generative_models.GenerativeModel.generate_content") as mock_gen:
-        mock_response = MagicMock()
-        # Mock response flagging a contradiction (5B in report vs 2B in cache)
-        mock_response.text = '{"has_unsupported_claims": true, "unsupported_count": 1, "category_results": {"numerical_facts": {"supported": false}}, "examples": ["$5B revenue"]}'
-        mock_gen.return_value = mock_response
-        
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = '{"has_unsupported_claims": true, "unsupported_count": 1, "category_results": {"numerical_facts": {"supported": false}}, "examples": ["$5B revenue"]}'
+    mock_client.models.generate_content.return_value = mock_response
+    
+    with patch("src.utils.guardrails.client_pool.get_genai_client", return_value=mock_client):
         with patch("src.utils.guardrails.settings") as mock_s:
             mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD = 1
+            mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL = "gemini-flash"
             violations = await og._check_hallucinations_with_cache(report, raw_cache)
             assert len(violations) == 1
             assert "numerical_facts" in violations[0].detail

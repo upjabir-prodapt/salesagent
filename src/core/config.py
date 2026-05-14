@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # IAP Configuration (Zero-Trust Security)
     AUTH_ENABLED: bool = Field(
-        default=False, description="Master toggle for authentication"
+        default=True, description="Master toggle for authentication"
     )
     IAP_AUDIENCE: str | None = Field(
         default=None, 
@@ -188,14 +188,6 @@ class Settings(BaseSettings):
     EVALUATOR_MODEL: str = Field(
         default="gemini-2.5-flash", description="LLM model used as evaluation judge"
     )
-    COLT_PRODUCT_CATALOG_PATH: str = Field(
-        default="ColtProductCatalog.pdf",
-        description="Path to Colt Product Catalog PDF (relative to project root)",
-    )
-    BERTSCORE_MODEL: str = Field(
-        default="distilbert-base-uncased",
-        description="HuggingFace model used for BERTScore computation",
-    )
 
     # Output Guardrail Configuration
     OUTPUT_GUARDRAIL_HALLUCINATION_MODEL: str = Field(
@@ -221,6 +213,26 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
     )
+    # Vector Search Configuration
+    VECTOR_SEARCH_INDEX_ENDPOINT_ID: str = Field(
+        default="8102226418290655232",
+        description="The numerical ID of your Vertex AI Index Endpoint",
+    )
+    VECTOR_SEARCH_DEPLOYED_INDEX_ID: str = Field(
+        default="aicoesandox_vertexai_endpoint",
+        description="The unique string ID you assigned when deploying the index",
+    )
+    VECTOR_SEARCH_EMBEDDING_MODEL: str = Field(
+        default="text-embedding-004",
+        description="The model ID used to generate vectors (must match the index)",
+    )
+    VECTOR_SEARCH_BUCKET: str = Field(
+        default="aicoesandox-vector-search",
+        description="The GCS bucket containing your catalog source PDF",
+    )
+
+
+    
 
     @property
     def agent_progress_map(self) -> dict[str, tuple[int, str]]:
