@@ -21,6 +21,7 @@ Return ONLY valid JSON:
 }
 """
 
+
 def create_verifier_agent(agent_name: str) -> LlmAgent:
     """Create a specialized fact-checking agent for a specific research agent."""
     return create_llm_agent(

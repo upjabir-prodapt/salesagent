@@ -1,17 +1,27 @@
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from fastapi.testclient import TestClient
-from src.routes.app import app
-from src.core.config import settings as real_settings
 import warnings
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.routes.app import app
 
 # Suppress experimental and user warnings during tests
 warnings.filterwarnings("ignore", category=UserWarning)
+
 
 @pytest.fixture
 def mock_settings():
     with patch("src.core.config.settings") as mock:
         mock.GOOGLE_CLOUD_PROJECT = "test-project"
+        mock.APP_NAME = "Sales Research API"
+        mock.APP_VERSION = "1.0.0"
+        mock.DEBUG = True
+        mock.LOG_LEVEL = "INFO"
+        mock.CORS_ALLOW_ORIGINS = ["http://localhost:3000"]
+        mock.CORS_ALLOW_CREDENTIALS = True
+        mock.CORS_ALLOW_METHODS = ["*"]
+        mock.CORS_ALLOW_HEADERS = ["*"]
         mock.BIGQUERY_DATASET = "test_dataset"
         mock.BIGQUERY_TABLE = "test_table"
         mock.BIGQUERY_MODEL_CARD_TABLE = "test_model_card_table"
@@ -33,6 +43,7 @@ def mock_settings():
         mock.RESEARCH_UPLOAD_STEP_LABEL = "Uploading"
         mock.RESEARCH_EVAL_PROGRESS = 95
         mock.RESEARCH_EVAL_STEP_LABEL = "Evaluating"
+        mock.OTEL_ENABLED = False
         mock.JOB_ID_PREFIX = "job_"
         mock.API_PREFIX = "/api/v1"
         mock.AUTH_ENABLED = False
@@ -46,57 +57,74 @@ def mock_settings():
         }
         yield mock
 
+
 @pytest.fixture
 def mock_bq_client():
     client = MagicMock()
     return client
+
 
 @pytest.fixture
 def mock_storage_client():
     client = MagicMock()
     return client
 
+
 @pytest.fixture(autouse=True)
 def mock_client_pool(mock_bq_client, mock_storage_client):
-    with patch("src.core.clients.client_pool") as mock:
-        mock.get_bq_client.return_value = mock_bq_client
-        mock.get_storage_client.return_value = mock_storage_client
-        yield mock
+    mock_pool = MagicMock()
+    mock_pool.get_bq_client.return_value = mock_bq_client
+    mock_pool.get_storage_client.return_value = mock_storage_client
+    with (
+        patch("src.core.clients.client_pool", mock_pool),
+        patch("src.dependencies.service_dependencies.client_pool", mock_pool),
+        patch("src.repositories.bigquery_repository.client_pool", mock_pool),
+        patch("src.repositories.gcs_repository.client_pool", mock_pool),
+    ):
+        yield mock_pool
+
 
 @pytest.fixture(autouse=True)
 def patch_repository_settings(mock_settings):
     """Ensure repositories use mock settings."""
-    with patch("src.repositories.bigquery_repository.settings", mock_settings), \
-         patch("src.repositories.gcs_repository.settings", mock_settings), \
-         patch("src.agents.research_service.settings", mock_settings), \
-         patch("src.core.security.settings", mock_settings):
+    with (
+        patch("src.repositories.bigquery_repository.settings", mock_settings),
+        patch("src.repositories.gcs_repository.settings", mock_settings),
+        patch("src.agents.research_service.settings", mock_settings),
+        patch("src.routes.app.settings", mock_settings),
+        patch("src.core.logging_config.settings", mock_settings),
+        patch("src.core.security.settings", mock_settings),
+    ):
         yield
+
 
 @pytest.fixture
 def client():
     """FastAPI test client with mocked research service."""
-    from src.dependencies.service_dependencies import get_research_service
     from src.dependencies.auth import get_current_user
-    
+    from src.dependencies.service_dependencies import get_research_service
+
     # Use MagicMock for the service container
     mock_service = MagicMock()
     # Async methods
     mock_service.process_research_background = AsyncMock()
     # Sync methods (default is MagicMock, but let's be explicit if needed)
-    
+
     app.dependency_overrides[get_research_service] = lambda: mock_service
     app.dependency_overrides[get_current_user] = lambda: {
         "email": "test@example.com",
         "business_unit": "Sales",
-        "organization": "Acme"
+        "organization": "Acme",
     }
-    
+
     # Mock startup initialization to avoid real cloud calls
-    with patch("src.routes.app._init_bigquery", new_callable=AsyncMock), \
-         patch("src.routes.app._init_gcs", new_callable=AsyncMock), \
-         patch("src.routes.app._init_telemetry"):
-        with TestClient(app) as c:
-            c.mock_service = mock_service
-            yield c
-            
+    with (
+        patch("src.routes.app._init_bigquery", new_callable=AsyncMock),
+        patch("src.routes.app._init_gcs", new_callable=AsyncMock),
+        patch("src.routes.app._init_telemetry"),
+        TestClient(app) as c,
+    ):
+        c.mock_service = mock_service
+        yield c
+
     app.dependency_overrides.clear()

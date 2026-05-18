@@ -1,13 +1,7 @@
 """Configuration Management using Pydantic Settings"""
 
-from pathlib import Path
-
-from dotenv import load_dotenv
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
-load_dotenv("/secrets/.env", override=True)
 
 
 class Settings(BaseSettings):
@@ -26,10 +20,16 @@ class Settings(BaseSettings):
 
     # Google Cloud Configuration
     GOOGLE_CLOUD_PROJECT: str = Field(
-        default="aicoesandox", description="Google Cloud project ID"
+        default="aicoesandox",
+        description="Google Cloud project ID",
+        validation_alias=AliasChoices("GOOGLE_CLOUD_PROJECT", "GOOGLE_PROJECT_ID"),
     )
     GOOGLE_CLOUD_LOCATION: str = Field(
-        default="europe-west1", description="Google Cloud region for resources"
+        default="europe-west1",
+        description="Google Cloud region for resources",
+        validation_alias=AliasChoices(
+            "GOOGLE_CLOUD_LOCATION", "GOOGLE_PROJECT_LOCATION"
+        ),
     )
 
     # IAP Configuration (Zero-Trust Security)
@@ -37,16 +37,18 @@ class Settings(BaseSettings):
         default=True, description="Master toggle for authentication"
     )
     IAP_AUDIENCE: str | None = Field(
-        default=None, 
-        description="IAP Backend Audience (format: /projects/PROJECT_NUMBER/global/backendServices/SERVICE_ID)"
+        default=None,
+        description="IAP Backend Audience (format: /projects/PROJECT_NUMBER/global/backendServices/SERVICE_ID)",
     )
     IAP_EXPECTED_ISSUER: str = Field(
         default="https://cloud.google.com/iap",
-        description="Standard Google IAP Issuer URL"
+        description="Standard Google IAP Issuer URL",
     )
 
     # BigQuery Configuration
-    BIGQUERY_DATASET: str = Field(default="aicoesandox_sales_agent_dataset", description="BigQuery dataset")
+    BIGQUERY_DATASET: str = Field(
+        default="aicoesandox_sales_agent_dataset", description="BigQuery dataset"
+    )
     BIGQUERY_TABLE: str = Field(
         default="research_requests", description="BigQuery table"
     )
@@ -61,9 +63,11 @@ class Settings(BaseSettings):
     )
 
     # Security Configuration
+    DEFAULT_INSECURE_SECRET_KEY: str = (
+        "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+    )
     SECRET_KEY: str = Field(
-        default="09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7",
-        description="Secret key for JWT signing"
+        default=DEFAULT_INSECURE_SECRET_KEY, description="Secret key for JWT signing"
     )
     ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
@@ -95,10 +99,34 @@ class Settings(BaseSettings):
 
     # Logging Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
+    OTEL_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Enable OpenTelemetry exports. Set false to run with a no-op tracer "
+            "provider when telemetry causes runtime issues."
+        ),
+    )
+    OTEL_SERVICE_NAME: str = Field(
+        default="sales-agent-api", description="OpenTelemetry service.name value"
+    )
 
     # Research Configuration
     GEMINI_MODEL: str = Field(
         default="gemini-2.5-pro", description="Advanced GenAI model"
+    )
+    USE_PLAN_REACT_PLANNER: bool = Field(
+        default=True,
+        description=(
+            "Enable PlanReActPlanner for research agents to drive "
+            "plan-reason-act tool usage."
+        ),
+    )
+    RESEARCH_STATUS_MIN_UPDATE_INTERVAL_SECONDS: float = Field(
+        default=5.0,
+        description=(
+            "Minimum interval between repeated BigQuery progress updates "
+            "for the same progress/current_step tuple."
+        ),
     )
     GEMINI_RETRY_ATTEMPTS: int = Field(
         default=3, description="Number of retry attempts"
@@ -146,12 +174,6 @@ class Settings(BaseSettings):
     # Job ID config
     JOB_ID_PREFIX: str = Field(
         default="job_", description="Prefix for generated job IDs"
-    )
-
-    # Progress milestone config (maps agent name → [progress_pct, step_label])
-    AGENT_PROGRESS_MAP: str = Field(
-        default='{"ResearchOrchestrator": [10, "Research Orchestrator: Gathering intelligence"], "AlignmentAnalyst": [75, "Alignment Analyst: Mapping solutions"], "ReportCompiler": [90, "Report Compiler: Generating final report"]}',
-        description="JSON map of agent name to [progress_pct, step_label]",
     )
 
     # Model cost — Gemini 2.5 Pro standard rates (non-cached, ≤200K context)
@@ -230,17 +252,13 @@ class Settings(BaseSettings):
         default="aicoesandox-vector-search",
         description="The GCS bucket containing your catalog source PDF",
     )
-
-
-    
-
-    @property
-    def agent_progress_map(self) -> dict[str, tuple[int, str]]:
-        """Parse AGENT_PROGRESS_MAP JSON into agent_name → (progress_pct, step_label)"""
-        import json
-
-        raw = json.loads(self.AGENT_PROGRESS_MAP)
-        return {k: (v[0], v[1]) for k, v in raw.items()}
+    VECTOR_SEARCH_CATALOG_CHUNKS_BLOB: str = Field(
+        default="catalog/chunks.json",
+        description=(
+            "GCS object path (inside VECTOR_SEARCH_BUCKET) containing JSON mapping "
+            "vector IDs to catalog text chunks."
+        ),
+    )
 
     @property
     def bigquery_table_ref(self) -> str:

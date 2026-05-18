@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from google.adk.agents.callback_context import CallbackContext
-from loguru import logger
 
 from ..core.config import settings
+from ..core.logging_config import logger
 
 # ---------------------------------------------------------------------------
 # Agent classification maps

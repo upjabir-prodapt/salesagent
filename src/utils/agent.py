@@ -1,5 +1,6 @@
 from google.adk.events.event import Event
-from loguru import logger
+
+from ..core.logging_config import logger
 
 
 def _truncate(text: str, max_len: int) -> str:

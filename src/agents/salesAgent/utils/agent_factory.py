@@ -6,8 +6,9 @@ safety guardrails, and ADK callbacks.
 """
 
 from google.adk.agents import LlmAgent
-from loguru import logger
+from google.adk.planners import BasePlanner
 
+from ....core.logging_config import logger
 from ....core.model import llm
 from ....utils.callbacks import (
     after_agent_callback,
@@ -26,6 +27,7 @@ def create_llm_agent(
     description: str | None = None,
     tools: list | None = None,
     output_key: str | None = None,
+    planner: BasePlanner | None = None,
 ) -> LlmAgent:
     """Create an LLM agent with standard configuration, safety guardrails, and ADK callbacks.
 
@@ -35,6 +37,7 @@ def create_llm_agent(
         description: Human-readable description of what the agent does.
         tools: List of tools to provide to the agent.
         output_key: Key to use for the agent's output. Defaults to {name.lower()}_output.
+        planner: Optional ADK planner (e.g. PlanReActPlanner) for tool reasoning loops.
 
     Returns:
         Configured LlmAgent instance with safety settings and callbacks.
@@ -53,6 +56,7 @@ def create_llm_agent(
         output_key=output_key,
         description=description or f"Agent for {name}",
         generate_content_config=safety_config,
+        planner=planner,
         # ADK Callbacks for comprehensive monitoring
         before_model_callback=before_model_callback,
         after_model_callback=after_model_callback,

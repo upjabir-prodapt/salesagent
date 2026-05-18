@@ -8,8 +8,8 @@ from google.adk.agents import ParallelAgent, SequentialAgent
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.apps import App, ResumabilityConfig
 from google.adk.plugins import ReflectAndRetryToolPlugin
-from loguru import logger
 
+from ...core.logging_config import logger
 from .sub_agents.research_agents import create_research_agents
 from .sub_agents.signals_agent import create_signals_orchestrator
 from .sub_agents.synthesis_agents import (
@@ -63,7 +63,7 @@ def create_sales_agent_app():
         "SalesResearchAgent pipeline: ResearchOrchestrator -> AlignmentAnalyst -> ReportCompiler"
     )
 
-    logger.success("SalesResearchAgent fully initialized and ready")
+    logger.info("SalesResearchAgent fully initialized and ready")
 
     app = App(
         name="sales_research_app",

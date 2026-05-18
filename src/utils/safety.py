@@ -8,7 +8,8 @@ for managing content safety across all AI agents in the Colt-AI system.
 from typing import Any
 
 from google.genai import types
-from loguru import logger
+
+from ..core.logging_config import logger
 
 
 def get_default_safety_settings() -> list[types.SafetySetting]:

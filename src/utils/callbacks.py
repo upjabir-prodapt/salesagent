@@ -16,23 +16,47 @@ from google.adk.models import LlmRequest, LlmResponse
 from google.adk.tools.base_tool import BaseTool  # Required for type hinting in callback
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
-from loguru import logger
+from opentelemetry import trace
 
 from src.core.exceptions import InputValidationException
+from src.core.logging_config import logger
 
 from .guardrails import InputGuardrail
 from .telemetry import track_agent_end, track_agent_start
 from .url_utils import is_authoritative
 
 _QUERY_INJECTION_PATTERNS = [
-    "ignore previous", "ignore all instructions", "you are now",
-    "disregard your", "new instructions:", "system prompt", "jailbreak",
+    "ignore previous",
+    "ignore all instructions",
+    "you are now",
+    "disregard your",
+    "new instructions:",
+    "system prompt",
+    "jailbreak",
 ]
 
 _SNIPPET_INJECTION_SIGNALS = [
-    "ignore previous", "ignore all instructions", "you are now",
-    "disregard your", "new instructions:", "override your",
+    "ignore previous",
+    "ignore all instructions",
+    "you are now",
+    "disregard your",
+    "new instructions:",
+    "override your",
 ]
+
+
+def _record_callback_span_event(
+    event_name: str, attributes: dict[str, Any] | None = None
+) -> None:
+    """Attach lightweight callback events to the current span when available."""
+    current_span = trace.get_current_span()
+    if not current_span:
+        return
+    span_context = current_span.get_span_context()
+    if not span_context or not span_context.is_valid:
+        return
+    current_span.add_event(event_name, attributes=attributes or {})
+
 
 # ============================================================================
 # BEFORE MODEL CALLBACK
@@ -46,6 +70,10 @@ def before_model_callback(
     invocation_id = callback_context.invocation_id
     logger.info(
         f"[Callback] Before model callback for {agent_name} : invocation id :{invocation_id}"
+    )
+    _record_callback_span_event(
+        "adk.before_model",
+        {"agent_name": agent_name, "invocation_id": invocation_id},
     )
 
     # Capture temperature into session state (first non-None value wins)
@@ -139,6 +167,15 @@ def after_model_callback(
             callback_context.state["mc_output_tokens"] = prev_out + output_t
     except Exception as e:
         logger.debug(f"[Callback] Could not accumulate token counts: {e}")
+    _record_callback_span_event(
+        "adk.after_model",
+        {
+            "agent_name": agent_name,
+            "invocation_id": invocation_id,
+            "input_tokens": int(callback_context.state.get("mc_input_tokens") or 0),
+            "output_tokens": int(callback_context.state.get("mc_output_tokens") or 0),
+        },
+    )
 
     # Capturing grounding metadata as search evidence
     try:
@@ -146,52 +183,75 @@ def after_model_callback(
         candidates = getattr(llm_response, "candidates", None)
         if not candidates and hasattr(llm_response, "response"):
             candidates = getattr(llm_response.response, "candidates", None)
-        
+
         candidates = candidates or []
         if candidates:
             # Check both snake_case (SDK) and camelCase (JSON/ADK)
-            metadata = getattr(candidates[0], "grounding_metadata", None) or \
-                       getattr(candidates[0], "groundingMetadata", None)
-            
-            if metadata:
-                logger.debug(f"[Callback] Found grounding metadata in response from {agent_name}")
-                grounding_entries = []
-                
-                chunks = getattr(metadata, "grounding_chunks", None) or \
-                         getattr(metadata, "groundingChunks", []) or []
-                supports = getattr(metadata, "grounding_supports", None) or \
-                           getattr(metadata, "groundingSupports", []) or []
+            metadata = getattr(candidates[0], "grounding_metadata", None) or getattr(
+                candidates[0], "groundingMetadata", None
+            )
 
-                logger.debug(f"[Callback] {len(chunks)} chunks, {len(supports)} supports found")
+            if metadata:
+                logger.debug(
+                    f"[Callback] Found grounding metadata in response from {agent_name}"
+                )
+                grounding_entries = []
+
+                chunks = (
+                    getattr(metadata, "grounding_chunks", None)
+                    or getattr(metadata, "groundingChunks", [])
+                    or []
+                )
+                supports = (
+                    getattr(metadata, "grounding_supports", None)
+                    or getattr(metadata, "groundingSupports", [])
+                    or []
+                )
+
+                logger.debug(
+                    f"[Callback] {len(chunks)} chunks, {len(supports)} supports found"
+                )
                 for support in supports:
                     segment = getattr(support, "segment", None)
                     text = getattr(segment, "text", "") if segment else ""
-                    
-                    indices = getattr(support, "grounding_chunk_indices", None) or \
-                              getattr(support, "groundingChunkIndices", []) or []
-                    
+
+                    indices = (
+                        getattr(support, "grounding_chunk_indices", None)
+                        or getattr(support, "groundingChunkIndices", [])
+                        or []
+                    )
+
                     for idx in indices:
                         if idx < len(chunks):
                             chunk = chunks[idx]
                             # Web attribute might be a dict or object
-                            web = getattr(chunk, "web", None) or getattr(chunk, "get", lambda x, y: None)("web")
+                            web = getattr(chunk, "web", None) or getattr(
+                                chunk, "get", lambda x, y: None
+                            )("web")
                             if web:
                                 # Access as attribute or dict key
-                                uri = getattr(web, "uri", None) or getattr(web, "get", lambda x, y: None)("uri")
-                                title = getattr(web, "title", None) or getattr(web, "get", lambda x, y: "Grounded Source")("title")
+                                uri = getattr(web, "uri", None) or getattr(
+                                    web, "get", lambda x, y: None
+                                )("uri")
+                                title = getattr(web, "title", None) or getattr(
+                                    web, "get", lambda x, y: "Grounded Source"
+                                )("title")
                                 if uri:
-                                    grounding_entries.append({
-                                        "url": uri,
-                                        "title": title,
-                                        "snippet": text,
-                                        "query": "Native Grounding Search",
-                                        "agent": agent_name,
-                                        "authoritative": is_authoritative(uri)
-                                    })
+                                    grounding_entries.append(
+                                        {
+                                            "url": uri,
+                                            "title": title,
+                                            "snippet": text,
+                                            "query": "Native Grounding Search",
+                                            "agent": agent_name,
+                                            "authoritative": is_authoritative(uri),
+                                        }
+                                    )
 
                 # Cache as search results using the established prefix for aggregator discovery
                 if grounding_entries:
                     import uuid
+
                     unique_id = str(uuid.uuid4())[:8]
                     cache_key = f"raw_search_cache_{agent_name}_grounding_{unique_id}"
                     callback_context.state[cache_key] = grounding_entries
@@ -233,19 +293,26 @@ async def before_agent_callback(callback_context: CallbackContext) -> None:
     try:
         import asyncio
         import random
-        
+
         # Don't stagger the main orchestrator, only the research/signals agents
         _PARALLEL_RESEARCHERS = {
-            "FirmographicsGeographicAgent", "ExecutivePipeline", 
-            "StrategyComplianceAgent", "MarketEcosystemAgent", 
-            "TechStackPipeline", "SignalsOrchestrator",
-            "GrowthSignals", "RiskSignals", "CampaignSignals"
+            "FirmographicsGeographicAgent",
+            "ExecutivePipeline",
+            "StrategyComplianceAgent",
+            "MarketEcosystemAgent",
+            "TechStackPipeline",
+            "SignalsOrchestrator",
+            "GrowthSignals",
+            "RiskSignals",
+            "CampaignSignals",
         }
-        
+
         if agent_name in _PARALLEL_RESEARCHERS:
             # Use asyncio.sleep to avoid blocking the event loop while staggering
             delay = random.uniform(1.0, 5.0)
-            logger.debug(f"[Callback] Staggering {agent_name} start by {delay:.2f}s to protect quota")
+            logger.debug(
+                f"[Callback] Staggering {agent_name} start by {delay:.2f}s to protect quota"
+            )
             await asyncio.sleep(delay)
     except Exception as e:
         logger.debug(f"[Callback] Staggering failed for {agent_name}: {e}")
@@ -255,6 +322,10 @@ async def before_agent_callback(callback_context: CallbackContext) -> None:
         f"[Callback] Before Agent starting: {agent_name}",
         agent=agent_name,
         invocation=invocation_id,
+    )
+    _record_callback_span_event(
+        "adk.before_agent",
+        {"agent_name": agent_name, "invocation_id": invocation_id},
     )
 
     # Record per-agent start snapshot for telemetry
@@ -296,6 +367,10 @@ def after_agent_callback(callback_context: CallbackContext) -> types.Content | N
         agent=agent_name,
         invocation=invocation_id,
     )
+    _record_callback_span_event(
+        "adk.after_agent",
+        {"agent_name": agent_name, "invocation_id": invocation_id},
+    )
 
     # Compute per-agent telemetry and accumulate record in session state
     try:
@@ -313,6 +388,10 @@ def before_tool_callback(
     tool_name = tool.name
     logger.info(
         f"\n[Callback] BEFORE TOOL Calling '{tool_name}' with original args: {args}"
+    )
+    _record_callback_span_event(
+        "adk.before_tool",
+        {"tool_name": tool_name, "has_args": bool(args)},
     )
 
     if tool_name == "google_search":
@@ -332,6 +411,10 @@ def after_tool_callback(
 ) -> dict[str, Any] | None:
     tool_name = tool.name
     logger.info(f"[Callback] AFTER TOOL '{tool_name}' returned: {tool_response}")
+    _record_callback_span_event(
+        "adk.after_tool",
+        {"tool_name": tool_name},
+    )
 
     # Count tool calls as sources crawled if they are web tools
     _WEB_TOOLS = {"google_search", "read_url"}
@@ -339,10 +422,11 @@ def after_tool_callback(
         state = tool_context.callback_context.state
         if tool_name in _WEB_TOOLS:
             state["mc_tool_call_count"] = state.get("mc_tool_call_count", 0) + 1
-            
+
             # For read_url, extract domain directly from args
             if tool_name == "read_url" and "url" in args:
                 from urllib.parse import urlparse
+
                 domain = urlparse(args["url"]).netloc
                 if domain:
                     domains = list(state.get("mc_source_domains") or [])
@@ -383,6 +467,7 @@ def after_tool_callback(
                     # Collect source domains from search results
                     if url:
                         from urllib.parse import urlparse
+
                         domain = urlparse(url).netloc
                         if domain:
                             domains = list(state.get("mc_source_domains") or [])
@@ -391,6 +476,7 @@ def after_tool_callback(
                             state["mc_source_domains"] = domains
 
                 import uuid
+
                 unique_id = str(uuid.uuid4())[:8]
                 cache_key = f"raw_search_cache_{agent_name}_{unique_id}"
                 state[cache_key] = entries

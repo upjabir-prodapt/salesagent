@@ -90,6 +90,38 @@ ENVIRONMENT=development
 
 ```
 
+### Telemetry Requirements (Google Cloud)
+
+This app uses ADK OpenTelemetry bootstrap semantics (`otel_to_cloud` style) with a direct no-collector export path.
+
+- Enable APIs:
+  - `telemetry.googleapis.com`
+  - `logging.googleapis.com`
+  - `cloudtrace.googleapis.com`
+  - `monitoring.googleapis.com`
+- Minimum IAM on the runtime identity:
+  - `roles/telemetry.tracesWriter`
+  - `roles/logging.logWriter`
+  - `roles/monitoring.metricWriter`
+
+Telemetry behavior is controlled with `.env` flags such as:
+
+- `OTEL_ENABLED`
+- `OTEL_SERVICE_NAME`
+- `OTEL_EXPORTER_OTLP_ENDPOINT=https://telemetry.googleapis.com`
+- `OTEL_RESOURCE_ATTRIBUTES` (include `gcp.project_id=...`)
+- `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED`
+- `OTEL_SEMCONV_STABILITY_OPT_IN`
+- `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS`
+
+Logs are emitted with Cloud Logging correlation fields (`logging.googleapis.com/trace`, `logging.googleapis.com/spanId`, `logging.googleapis.com/trace_sampled`) so you can pivot between logs and traces in GCP.
+
+Detailed setup and troubleshooting steps are in `docs/telemetry-runbook.md`.
+
+### Known Telemetry Follow-ups
+
+- `src/utils/telemetry.py` tracks only agents listed in `_AGENT_TYPE_MAP`; newly added agent names should be added there if they must emit per-agent telemetry rows.
+
 ## 🛡️ Guardrails
 
 Colt-AI implements comprehensive safety and security guardrails:
@@ -123,7 +155,7 @@ Once running, you can access the interactive API docs at:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/research/ingest` | Submit a new company for research |
+| `POST` | `/api/v1/research/initiate` | Submit a new company for research |
 | `GET`  | `/api/v1/research/status/{id}` | Check research status |
 | `GET`  | `/api/v1/research/result/{id}` | Get research output and download URLs |
 

@@ -15,15 +15,12 @@ import json
 import re
 import textwrap
 from datetime import UTC, datetime
-from functools import partial
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from loguru import logger
-
 from ..core.clients import client_pool
 from ..core.config import settings
+from ..core.logging_config import logger
 from ..tools.product_catalog_tool import colt_product_search
 
 # ---------------------------------------------------------------------------
@@ -212,7 +209,7 @@ class EvaluationService:
             },
         }
 
-        logger.success(
+        logger.info(
             f"[Evaluation] Completed for request {request_id} — "
             f"Final Score: {final_score:.2f}"
         )
@@ -254,11 +251,19 @@ class EvaluationService:
         try:
             # Extract keywords from the Technology Alignment section
             alignment_section = self._extract_alignment_section(report)
-            search_query = alignment_section[:500] if alignment_section else "Colt product solutions"
+            search_query = (
+                alignment_section[:500]
+                if alignment_section
+                else "Colt product solutions"
+            )
 
             # Perform Vector Search
-            logger.info(f"[Evaluation] Fetching catalog context for query: {search_query[:50]}...")
-            self._catalog_context = await asyncio.to_thread(colt_product_search, search_query)
+            logger.info(
+                f"[Evaluation] Fetching catalog context for query: {search_query[:50]}..."
+            )
+            self._catalog_context = await asyncio.to_thread(
+                colt_product_search, search_query
+            )
             return self._catalog_context
         except Exception as e:
             logger.warning(f"[Evaluation] Vector Search for catalog failed: {e}")
@@ -288,6 +293,7 @@ class EvaluationService:
         and parse the JSON response.
         """
         from google.genai import types as genai_types
+
         client = client_pool.get_genai_client()
 
         prompt = self._build_judge_prompt(

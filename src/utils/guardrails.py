@@ -17,11 +17,10 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from loguru import logger
-
 from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.exceptions import InputValidationException
+from ..core.logging_config import logger
 
 # ---------------------------------------------------------------------------
 # PII patterns — label → regex
@@ -435,6 +434,7 @@ class OutputGuardrail:
 
         try:
             from google.genai import types as genai_types
+
             client = client_pool.get_genai_client()
 
             prompt = (
@@ -547,6 +547,7 @@ class OutputGuardrail:
 
         try:
             from google.genai import types as genai_types
+
             client = client_pool.get_genai_client()
 
             prompt = (
@@ -554,7 +555,7 @@ class OutputGuardrail:
                 "Your task is to verify that every claim in Section 11 (Strategic Opportunity) "
                 "is directly evidenced by concrete signals, data points, or citations present in "
                 "Section 12 (Signals) OR by an explicit inline citation within Section 11 itself "
-                "(e.g., `[Source: marketagent_output — \"...\"]`). Section 11 is written by a "
+                '(e.g., `[Source: marketagent_output — "..."]`). Section 11 is written by a '
                 "synthesis agent that may hallucinate urgency, regulatory events, or AI initiatives "
                 "that were never found in the underlying research.\n\n"
                 "## Section 11 — Strategic Opportunity & Live Call Readiness:\n"
@@ -579,7 +580,7 @@ class OutputGuardrail:
                 "  - **Named Strategies**: Do not flag plausible-sounding strategy names (e.g. 'Reshaping for Growth') "
                 "even if the search snippet is missing.\n"
                 "  - **Claims with explicit inline citations**: If a bullet point ends with "
-                "`[Source: <agent_output_key> — \"<exact data point or quote>\"]`, it is ALWAYS VALID.\n"
+                '`[Source: <agent_output_key> — "<exact data point or quote>"]`, it is ALWAYS VALID.\n'
                 "  - **Strategic Suggestions or Recommendations**: Any advice or proposed solution.\n"
                 "  - **Mentions of Incumbent Providers**: References to existing vendors (e.g. BT, Orange, Vodafone).\n"
                 "  - **Sales Hypotheses / Pain Points**: Claims about 'aging infrastructure' or 'legacy bottlenecks'.\n"

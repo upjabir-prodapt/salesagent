@@ -3,34 +3,28 @@
 import asyncio
 
 # OpenTelemetry imports
-import os
 from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
+import google.auth
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from loguru import logger
+from google.adk.telemetry.google_cloud import get_gcp_exporters, get_gcp_resource
+from google.adk.telemetry.setup import maybe_set_otel_providers
 from opentelemetry import trace
-from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
-from opentelemetry.instrumentation.sqlite3 import SQLite3Instrumentor
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import NoOpTracerProvider
 
 from ..core.config import settings
-from ..core.logging_config import setup_logging
+from ..core.exceptions import ConfigurationError
+from ..core.logging_config import logger, setup_logging
 from ..dependencies.service_dependencies import (
     get_bigquery_repository,
     get_gcs_repository,
 )
 from ..middlewares import error_handler_middleware, logging_middleware
 from . import auth, research
-
-# Load environment variables from .env file
-load_dotenv()
-load_dotenv("/secrets/.env", override=True)
 
 # Configure logging
 setup_logging()
@@ -39,25 +33,25 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    # Startup
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"Environment: {'DEBUG' if settings.DEBUG else 'PRODUCTION'}")
     logger.info(f"Google Cloud Project: {settings.GOOGLE_CLOUD_PROJECT}")
 
-    # Initialize resources concurrently
+    _validate_runtime_config()
+
     try:
         await asyncio.gather(_init_bigquery(), _init_gcs())
         _init_telemetry(app)
-    except Exception as e:
-        logger.error(f"Error during resource initialization: {e}")
-        # Note: Individual failures are logged in their respective functions.
-        # We catch here ensuring one failure doesn't crash the entire startup if we want graceful degradation,
-        # though typically for DB/Storage we might want to fail hard.
-        # Given previous code swallowed errors (with comments), we continue that pattern but log the aggregate error.
+    except Exception:
+        logger.exception("Error during resource initialization")
+        if not settings.DEBUG:
+            raise
+        logger.warning(
+            "Continuing startup in DEBUG mode despite initialization failures."
+        )
 
     yield
 
-    # Shutdown
     logger.info("Shutting down application")
 
 
@@ -73,8 +67,7 @@ async def _init_bigquery():
         logger.info("BigQuery table initialization completed successfully")
     except Exception as e:
         logger.error(f"Failed to initialize BigQuery table: {e}")
-
-        # raise # Optional: raise if critical
+        raise
 
 
 async def _init_gcs():
@@ -86,26 +79,56 @@ async def _init_gcs():
         logger.info("GCS bucket initialization completed successfully")
     except Exception as e:
         logger.error(f"Failed to initialize GCS bucket: {e}")
-        # raise # Optional: raise if critical
+        raise
 
 
 def _init_telemetry(app: FastAPI):
-    """Initialize OpenTelemetry with Google Cloud Trace and instrument libraries"""
+    """Initialize OpenTelemetry using ADK otel_to_cloud primitives."""
     try:
-        logger.info("Initializing OpenTelemetry...")
-        # Trace Setup — CloudTraceSpanExporter sends directly to GCP Cloud Trace
-        provider = TracerProvider()
-        processor = BatchSpanProcessor(CloudTraceSpanExporter())
-        provider.add_span_processor(processor)
-        trace.set_tracer_provider(provider)
+        if not settings.OTEL_ENABLED:
+            trace.set_tracer_provider(NoOpTracerProvider())
+            logger.info(
+                "OpenTelemetry export disabled (OTEL_ENABLED=false); "
+                "running with no-op tracer provider."
+            )
+            return
 
-        # Auto-instrument libraries
+        logger.info("Initializing OpenTelemetry...")
+        credentials, project_id = google.auth.default()
+        hooks = get_gcp_exporters(
+            enable_cloud_tracing=True,
+            enable_cloud_metrics=True,
+            enable_cloud_logging=True,
+            google_auth=(credentials, project_id),
+        )
+        resource = get_gcp_resource(project_id)
+        maybe_set_otel_providers(
+            otel_hooks_to_setup=[hooks],
+            otel_resource=resource,
+        )
+
+        # App-level HTTP instrumentation is not done automatically by ADK web bootstrap.
         FastAPIInstrumentor.instrument_app(app)
-        GoogleGenAiSdkInstrumentor().instrument()
-        SQLite3Instrumentor().instrument()
+        try:
+            GoogleGenAiSdkInstrumentor().instrument()
+        except Exception as instrument_error:
+            logger.warning(f"Unable to instrument google-genai SDK: {instrument_error}")
         logger.info("OpenTelemetry initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize OpenTelemetry: {e}")
+        raise
+
+
+def _validate_runtime_config() -> None:
+    """Fail fast on unsafe runtime configuration."""
+    if (
+        not settings.DEBUG
+        and settings.AUTH_ENABLED
+        and settings.SECRET_KEY == settings.DEFAULT_INSECURE_SECRET_KEY
+    ):
+        raise ConfigurationError(
+            "Unsafe configuration: default SECRET_KEY is not allowed in production."
+        )
 
 
 # Create FastAPI app

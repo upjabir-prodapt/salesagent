@@ -7,25 +7,19 @@ class ResearchInitiateRequest(BaseModel):
     """Request model for initiating research"""
 
     account_id: str = Field(
-        ..., 
-        description="Account identifier", 
-        min_length=2,
-        max_length=50
+        ..., description="Account identifier", min_length=2, max_length=50
     )
     company_name: str = Field(
-        ..., 
-        description="Company name to research", 
-        min_length=2, 
+        ...,
+        description="Company name to research",
+        min_length=2,
         max_length=100,
-        pattern=r"^[a-zA-Z0-9\s\&\.\-\',]+$"
+        pattern=r"^[a-zA-Z0-9\s\&\.\-\',]+$",
     )
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "account_id": "ACC-123",
-                "company_name": "Acme Corp"
-            }
+            "example": {"account_id": "ACC-123", "company_name": "Acme Corp"}
         }
     }
 

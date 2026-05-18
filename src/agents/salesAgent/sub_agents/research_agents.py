@@ -4,9 +4,13 @@ Research Agents Module
 Contains specialized LLM agents for researching different aspects of a company.
 """
 
+from dataclasses import dataclass
+
 from google.adk.agents import SequentialAgent
+from google.adk.planners import PlanReActPlanner
 from google.adk.tools import google_search
 
+from ....core.config import settings
 from ..prompts import (
     COMPLIANCE_PROMPT,
     ECOSYSTEM_PROMPT,
@@ -19,125 +23,123 @@ from ..prompts import (
     TECH_STACK_PROMPT,
 )
 from ..utils.agent_factory import create_llm_agent
-from .verifier_agents import create_verifier_agent
 
 
-def create_research_agents():
-    """Create fresh instances of all research agents with integrated verifiers."""
-    firmographics_agent = create_llm_agent(
+@dataclass
+class AgentConfig:
+    name: str
+    prompt: str
+    description: str
+
+
+_AGENT_CONFIGS = [
+    AgentConfig(
         "FirmographicsAgent",
         FIRMOGRAPHICS_PROMPT,
         "Researches company snapshot including revenue, employees, market cap, ownership structure.",
-        tools=[google_search],
-    )
-
-    geographic_agent = create_llm_agent(
+    ),
+    AgentConfig(
         "GeographicAgent",
         GEOGRAPHIC_PROMPT,
         "Maps global operations, office locations, data centers, and regional revenue distribution.",
-        tools=[google_search],
-    )
-
-    executive_agent = create_llm_agent(
+    ),
+    AgentConfig(
         "ExecutiveAgent",
         EXECUTIVE_PROMPT,
         "Identifies leadership team, board members, key influencers with detailed profiles.",
-        tools=[google_search],
-    )
-
-    strategy_agent = create_llm_agent(
+    ),
+    AgentConfig(
         "StrategyAgent",
         STRATEGY_PROMPT,
         "Analyzes strategic priorities, M&A strategy, competitive advantages, and key challenges.",
-        tools=[google_search],
-    )
-
-    compliance_agent = create_llm_agent(
+    ),
+    AgentConfig(
         "ComplianceAgent",
         COMPLIANCE_PROMPT,
         "Identifies regulations, certifications, audit history, and compliance issues.",
-        tools=[google_search],
-    )
-
-    market_agent = create_llm_agent(
+    ),
+    AgentConfig(
         "MarketAgent",
         MARKET_PROMPT,
         "Analyzes market position, revenue breakdown, competitors, and commercial leverage points.",
-        tools=[google_search],
-    )
-
-    ecosystem_agent = create_llm_agent(
+    ),
+    AgentConfig(
         "EcosystemAgent",
         ECOSYSTEM_PROMPT,
         "Maps partnerships, strategic alliances, Colt dependencies, and co-innovation potential.",
-        tools=[google_search],
-    )
-
-    tech_stack_agent = create_llm_agent(
+    ),
+    AgentConfig(
         "TechStackAgent",
         TECH_STACK_PROMPT,
         "Profiles technology landscape, cloud strategy, infrastructure models, and digital investments.",
-        tools=[google_search],
-    )
-
-    procurement_agent = create_llm_agent(
+    ),
+    AgentConfig(
         "ProcurementAgent",
         PROCUREMENT_PROMPT,
         "Analyzes procurement patterns, contract cycles, RFP activity, and vendor reviews.",
-        tools=[google_search],
-    )
+    ),
+]
+
+
+def _planner():
+    """Create planner instance per agent when enabled."""
+    return PlanReActPlanner() if settings.USE_PLAN_REACT_PLANNER else None
+
+
+def create_research_agents():
+    """Create fresh instances of all research agents."""
+    agents = {}
+    for config in _AGENT_CONFIGS:
+        agents[config.name] = create_llm_agent(
+            config.name,
+            config.prompt,
+            config.description,
+            tools=[google_search],
+            planner=_planner(),
+        )
 
     firmographics_geographic_agent = SequentialAgent(
         name="FirmographicsGeographicAgent",
         sub_agents=[
-            firmographics_agent,
-            create_verifier_agent("firmographics"),
-            geographic_agent,
-            create_verifier_agent("geographic"),
+            agents["FirmographicsAgent"],
+            agents["GeographicAgent"],
         ],
-        description="Runs firmographics then geographic research with per-step verification.",
+        description="Runs firmographics then geographic research.",
     )
 
     strategy_compliance_agent = SequentialAgent(
         name="StrategyComplianceAgent",
         sub_agents=[
-            strategy_agent,
-            create_verifier_agent("strategy"),
-            compliance_agent,
-            create_verifier_agent("compliance"),
+            agents["StrategyAgent"],
+            agents["ComplianceAgent"],
         ],
-        description="Runs strategy then compliance research with per-step verification.",
+        description="Runs strategy then compliance research.",
     )
 
     market_ecosystem_agent = SequentialAgent(
         name="MarketEcosystemAgent",
         sub_agents=[
-            market_agent,
-            create_verifier_agent("market"),
-            ecosystem_agent,
-            create_verifier_agent("ecosystem"),
-            procurement_agent,
-            create_verifier_agent("procurement"),
+            agents["MarketAgent"],
+            agents["EcosystemAgent"],
+            agents["ProcurementAgent"],
         ],
-        description="Runs market, ecosystem, and procurement research with per-step verification.",
+        description="Runs market, ecosystem, and procurement research.",
     )
 
     tech_stack_pipeline = SequentialAgent(
         name="TechStackPipeline",
         sub_agents=[
-            tech_stack_agent,
-            create_verifier_agent("tech_stack"),
+            agents["TechStackAgent"],
         ],
-        description="Runs tech stack research with verification.",
+        description="Runs tech stack research.",
     )
 
     executive_pipeline = SequentialAgent(
         name="ExecutivePipeline",
         sub_agents=[
-            executive_agent,
-            create_verifier_agent("executive"),
+            agents["ExecutiveAgent"],
         ],
-        description="Identifies leadership team with verification.",
+        description="Identifies leadership team.",
     )
 
     return (

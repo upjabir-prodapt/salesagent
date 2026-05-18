@@ -1,20 +1,16 @@
 """Security utilities for authentication and authorization."""
 
-from datetime import UTC
-from datetime import datetime
-from datetime import timedelta
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import HTTPException
-from fastapi import status
 import jwt
+from fastapi import HTTPException, status
+from fastapi.security import HTTPBearer
 from jwt import InvalidTokenError
 from pydantic import BaseModel
 
 from ..core.config import settings
-
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +28,14 @@ class AuthenticatedUser(BaseModel):
 
 def _jwt_secret() -> str:
     """Return configured JWT secret with safe local fallback."""
+    if (
+        not settings.DEBUG
+        and settings.SECRET_KEY == settings.DEFAULT_INSECURE_SECRET_KEY
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unsafe JWT secret is configured",
+        )
     if settings.SECRET_KEY:
         return settings.SECRET_KEY
     if settings.DEBUG:
@@ -81,6 +85,25 @@ def decode_and_verify_token(token: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Missing required token claims: {', '.join(missing)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    expected_issuer = settings.IAP_EXPECTED_ISSUER
+    if expected_issuer and payload.get("iss") and payload["iss"] != expected_issuer:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token issuer",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if (
+        settings.IAP_AUDIENCE
+        and payload.get("aud")
+        and payload["aud"] != settings.IAP_AUDIENCE
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token audience",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

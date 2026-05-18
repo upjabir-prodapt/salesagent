@@ -1,14 +1,13 @@
 import json
-import os
 from datetime import timedelta
 from typing import Any
 
 from google.cloud import storage
-from loguru import logger
 
 from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.exceptions import StorageError
+from ..core.logging_config import logger
 
 
 class GCSRepository:
@@ -43,7 +42,9 @@ class GCSRepository:
             blob.upload_from_string(
                 data=json.dumps(data, indent=2), content_type="application/json"
             )
-            logger.info(f"Uploaded JSON data to GCS: gs://{self.bucket_name}/{blob_name}")
+            logger.info(
+                f"Uploaded JSON data to GCS: gs://{self.bucket_name}/{blob_name}"
+            )
             return f"gs://{self.bucket_name}/{blob_name}"
         except Exception as e:
             logger.error(f"Unexpected error uploading JSON: {e}")
@@ -69,7 +70,9 @@ class GCSRepository:
             blob_name = f"{settings.GCS_PARENT_FOLDER}/{request_id}/final_report.pdf"
             blob = self.bucket.blob(blob_name)
             blob.upload_from_string(data=pdf_bytes, content_type="application/pdf")
-            logger.info(f"Uploaded PDF report to GCS: gs://{self.bucket_name}/{blob_name}")
+            logger.info(
+                f"Uploaded PDF report to GCS: gs://{self.bucket_name}/{blob_name}"
+            )
             return f"gs://{self.bucket_name}/{blob_name}"
         except Exception as e:
             logger.error(f"Unexpected error uploading PDF: {e}")

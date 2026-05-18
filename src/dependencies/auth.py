@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 
+from ..core.config import settings
 from ..core.security import (
     AuthenticatedUser,
     decode_and_verify_token,
@@ -16,6 +17,16 @@ async def verify_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
 ) -> dict[str, Any]:
     """Verify bearer token and return JWT payload."""
+    if not settings.AUTH_ENABLED:
+        # Explicit auth bypass for local/dev environments.
+        return {
+            "sub": "local-dev-user@colt.net",
+            "email": "local-dev-user@colt.net",
+            "business_unit": "Engineering",
+            "organization": "Local",
+            "auth_mode": "bypass",
+        }
+
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

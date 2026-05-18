@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
-from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from ..core.exceptions import (
@@ -25,6 +24,7 @@ from ..core.exceptions import (
     TimeoutException,
     ValidationError,
 )
+from ..core.logging_config import logger
 
 
 class GlobalErrorHandler(BaseHTTPMiddleware):

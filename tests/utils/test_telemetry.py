@@ -1,6 +1,9 @@
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
-from src.utils.telemetry import track_agent_start, track_agent_end
+
+from src.utils.telemetry import track_agent_end, track_agent_start
+
 
 @pytest.fixture
 def mock_context():
@@ -10,9 +13,11 @@ def mock_context():
     ctx.state = {}
     return ctx
 
+
 def test_track_agent_start(mock_context):
     track_agent_start(mock_context)
     assert "at_start_FirmographicsAgent" in mock_context.state
+
 
 def test_track_agent_end(mock_context):
     track_agent_start(mock_context)

@@ -1,21 +1,25 @@
+from unittest.mock import MagicMock
+
 import pytest
-from fastapi import Request, status
-from unittest.mock import MagicMock, AsyncMock
+from fastapi import Request
+
+from src.core.exceptions import ServiceError, ValidationError
 from src.middlewares.error_handler import GlobalErrorHandler
-from src.core.exceptions import ValidationError, ServiceError
+
 
 @pytest.mark.asyncio
 async def test_error_handler_validation_error():
     async def call_next(request):
         raise ValidationError("Invalid input")
-    
+
     app = MagicMock()
     middleware = GlobalErrorHandler(app)
     request = MagicMock(spec=Request)
     request.url.path = "/test"
-    
+
     response = await middleware.dispatch(request, call_next)
     assert response.status_code == 400
+
 
 @pytest.mark.asyncio
 async def test_error_handler_service_error():
@@ -24,11 +28,11 @@ async def test_error_handler_service_error():
         err = ServiceError("Service down")
         err.status_code = 503
         raise err
-    
+
     app = MagicMock()
     middleware = GlobalErrorHandler(app)
     request = MagicMock(spec=Request)
     request.url.path = "/test"
-    
+
     response = await middleware.dispatch(request, call_next)
     assert response.status_code == 503

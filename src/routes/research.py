@@ -7,7 +7,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from fastapi.responses import StreamingResponse
-from loguru import logger
+from opentelemetry import trace
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from ..agents.research_service import ResearchService
 from ..core.config import settings
@@ -15,9 +16,9 @@ from ..core.exceptions import (
     ResourceNotFoundError,
     ServiceError,
 )
+from ..core.logging_config import contextualize, logger
 from ..dependencies.auth import get_current_user
 from ..dependencies.service_dependencies import get_research_service
-from ..models.common_schemas import ErrorResponse
 from ..models.research_schemas import (
     ModelCard,
     ResearchInitiateRequest,
@@ -28,7 +29,7 @@ from ..models.research_schemas import (
 from ..utils.guardrails import InputGuardrail
 
 router = APIRouter(
-    prefix=f"{settings.API_PREFIX}/research", 
+    prefix=f"{settings.API_PREFIX}/research",
     tags=["research"],
 )
 
@@ -40,28 +41,6 @@ ResearchServiceDep = Annotated[ResearchService, Depends(get_research_service)]
     "/initiate",
     response_model=ResearchInitiateResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    responses={
-        status.HTTP_202_ACCEPTED: {
-            "description": "Research job accepted for processing",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "job_id": "job_123e4567-e89b-12d3-a456-426614174000",
-                        "status": "PENDING",
-                        "check_status_url": "/api/v1/research/status/job_123e4567-e89b-12d3-a456-426614174000",
-                    }
-                }
-            },
-        },
-        status.HTTP_400_BAD_REQUEST: {
-            "model": ErrorResponse,
-            "description": "Validation Error",
-        },
-        status.HTTP_500_INTERNAL_SERVER_ERROR: {
-            "model": ErrorResponse,
-            "description": "Internal Server Error",
-        },
-    },
 )
 async def initiate_research(
     request: ResearchInitiateRequest,
@@ -74,75 +53,67 @@ async def initiate_research(
 
     Returns immediately with a job_id while processing happens in the background.
     """
-    # Use logger.contextualize to ensure all logs for this request include the identity
-    with logger.contextualize(
+    # Use contextualize to ensure all logs for this request include the identity
+    with contextualize(
         user_email=current_user["email"],
         business_unit=current_user["business_unit"],
-        organization=current_user["organization"]
+        organization=current_user["organization"],
     ):
-        # --- Input Guardrail: scan company_name for PII and jailbreak ---
-        InputGuardrail().validate(request.company_name, field_name="company_name")
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span("research.request.accepted") as span:
+            span.set_attribute("research.company_name", request.company_name)
+            span.set_attribute("research.account_id", request.account_id)
+            # --- Input Guardrail: scan company_name for PII and jailbreak ---
+            InputGuardrail().validate(request.company_name, field_name="company_name")
 
-        job_id = f"{settings.JOB_ID_PREFIX}{uuid.uuid4()}"
+            job_id = f"{settings.JOB_ID_PREFIX}{uuid.uuid4()}"
+            span.set_attribute("research.job_id", job_id)
 
-        metadata = {
-            "account_id": request.account_id,
-        }
+            metadata = {
+                "account_id": request.account_id,
+                "user_id": current_user["email"],
+                "username": current_user["email"].split("@")[0],
+                "business_unit": current_user["business_unit"],
+                "organization": current_user["organization"],
+            }
+            trace_carrier: dict[str, str] = {}
+            TraceContextTextMapPropagator().inject(trace_carrier)
 
-        success = service.create_research_request(
-            job_id=job_id,
-            company_name=request.company_name,
-            metadata=metadata,
-        )
+            success = service.create_research_request(
+                job_id=job_id,
+                company_name=request.company_name,
+                metadata=metadata,
+            )
 
-        if not success:
-            raise ServiceError("Failed to create job in database")
+            if not success:
+                span.set_attribute("research.db_write_success", False)
+                raise ServiceError("Failed to create job in database")
+            span.set_attribute("research.db_write_success", True)
 
-        background_tasks.add_task(
-            service.process_research_background,
-            job_id,
-            request.company_name,
-            metadata=metadata,
-        )
+            background_tasks.add_task(
+                service.process_research_background,
+                job_id,
+                request.company_name,
+                metadata=metadata,
+                trace_context_headers=trace_carrier,
+            )
+            span.set_attribute("research.background_enqueued", True)
 
-        logger.info(
-            f"Initiated research job {job_id} for company '{request.company_name}' "
-            f"(account={request.account_id}, user={current_user['email']}, unit={current_user['business_unit']})"
-        )
+            logger.info(
+                f"Initiated research job {job_id} for company '{request.company_name}' "
+                f"(account={request.account_id}, user={current_user['email']}, unit={current_user['business_unit']})"
+            )
 
-        return ResearchInitiateResponse(
-            job_id=job_id,
-            status="PENDING",
-            check_status_url=f"{settings.API_PREFIX}/research/status/{job_id}",
-        )
+            return ResearchInitiateResponse(
+                job_id=job_id,
+                status="PENDING",
+                check_status_url=f"{settings.API_PREFIX}/research/status/{job_id}",
+            )
 
 
 @router.get(
     "/status/{job_id}",
     response_model=ResearchStatusResponse,
-    responses={
-        status.HTTP_200_OK: {
-            "description": "Status retrieved successfully",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "request_id": "job_123e4567-e89b-12d3-a456-426614174000",
-                        "status": "PROCESSING",
-                        "progress": 45,
-                        "current_step": "Strategy Agent: Analyzing Annual Report",
-                    }
-                }
-            },
-        },
-        status.HTTP_404_NOT_FOUND: {
-            "model": ErrorResponse,
-            "description": "Job Not Found",
-        },
-        status.HTTP_500_INTERNAL_SERVER_ERROR: {
-            "model": ErrorResponse,
-            "description": "Internal Server Error",
-        },
-    },
 )
 async def get_research_status(job_id: str, service: ResearchServiceDep):
     """
@@ -159,35 +130,6 @@ async def get_research_status(job_id: str, service: ResearchServiceDep):
 @router.get(
     "/result/{job_id}",
     response_model=ResearchResultResponse,
-    responses={
-        status.HTTP_200_OK: {
-            "description": "Result retrieved successfully",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "request_id": "job_123e4567-e89b-12d3-a456-426614174000",
-                        "status": "COMPLETED",
-                        "report_content": "# Sales Report for Acme Corp\n\n...",
-                        "download_url": "https://storage.googleapis.com/...",
-                        "model_card": {
-                            "model_version": "gemini-2.5-pro",
-                            "tokens_used": 28500,
-                            "latency_seconds": 185.0,
-                            "cost_usd": 0.35,
-                        },
-                    }
-                }
-            },
-        },
-        status.HTTP_404_NOT_FOUND: {
-            "model": ErrorResponse,
-            "description": "Job Not Found",
-        },
-        status.HTTP_500_INTERNAL_SERVER_ERROR: {
-            "model": ErrorResponse,
-            "description": "Internal Server Error",
-        },
-    },
 )
 async def get_research_result(job_id: str, service: ResearchServiceDep):
     """
@@ -215,27 +157,14 @@ async def get_research_result(job_id: str, service: ResearchServiceDep):
     )
 
 
-@router.get(
-    "/download/{job_id}",
-    responses={
-        status.HTTP_200_OK: {
-            "description": "PDF report download",
-            "content": {"application/pdf": {}},
-        },
-        status.HTTP_404_NOT_FOUND: {
-            "model": ErrorResponse,
-            "description": "Job not found",
-        },
-        status.HTTP_409_CONFLICT: {
-            "model": ErrorResponse,
-            "description": "Job not yet completed",
-        },
-        status.HTTP_500_INTERNAL_SERVER_ERROR: {
-            "model": ErrorResponse,
-            "description": "Internal Server Error",
-        },
-    },
-)
+def _sanitize_filename(name: str) -> str:
+    """Build a safe filename from a string."""
+    safe_name = re.sub(r"[^\w\s-]", "", name).strip()
+    safe_name = re.sub(r"\s+", "_", safe_name)
+    return f"{safe_name}.pdf"
+
+
+@router.get("/download/{job_id}")
 async def download_pdf_report(job_id: str, service: ResearchServiceDep):
     """
     Download the final research report as a PDF file.
@@ -251,9 +180,7 @@ async def download_pdf_report(job_id: str, service: ResearchServiceDep):
     pdf_bytes, company_name = result
 
     # Build a safe filename: "<CompanyName>.pdf"
-    safe_name = re.sub(r"[^\w\s-]", "", company_name).strip()
-    safe_name = re.sub(r"\s+", "_", safe_name)
-    filename = f"{safe_name}.pdf"
+    filename = _sanitize_filename(company_name)
 
     logger.info(f"Serving PDF download for job {job_id}: {filename}")
 
