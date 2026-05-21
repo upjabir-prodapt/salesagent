@@ -5,6 +5,7 @@ Contains agents for analyzing alignment and compiling the final report.
 """
 
 from ....tools.product_catalog_tool import colt_product_search
+from ..utils import create_plan_react_agent
 from ..prompts import (
     ALIGNMENT_PROMPT,
     REPORT_COMPILER_PROMPT,
@@ -14,12 +15,12 @@ from ..utils.agent_factory import create_llm_agent
 
 def create_synthesis_agents():
     """Create fresh synthesis agent instances. Must be called per-run to avoid parent conflicts."""
-    alignment_analyst = create_llm_agent(
+    alignment_analyst = create_plan_react_agent(
         name="AlignmentAnalyst",
         instruction=ALIGNMENT_PROMPT,
-        tools=[colt_product_search],
         output_key="alignment_output",
         description="Maps company challenges to Colt solutions.",
+        extra_tools=[colt_product_search],
     )
 
     report_compiler = create_llm_agent(

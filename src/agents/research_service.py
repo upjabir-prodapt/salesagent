@@ -9,9 +9,8 @@ from google.adk.agents.run_config import RunConfig
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
-from google.adk.sessions.in_memory_session_service import InMemorySessionService
+from .session_service_factory import build_session_service
 from google.genai import types
-from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.propagate import extract
 from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
@@ -26,6 +25,8 @@ from ..utils.guardrails import AgentGuardrail, OutputGuardrail
 from ..utils.telemetry import TELEMETRY_RECORDS_KEY
 from .evaluation_service import EvaluationService
 from .salesAgent.agent import create_sales_agent_app
+
+tracer = trace.get_tracer(__name__)
 
 
 class ResearchService:
@@ -70,13 +71,9 @@ class ResearchService:
         trace_context_headers: dict[str, str] | None = None,
     ) -> None:
         """Process research request in background using SalesAgent"""
-        tracer = trace.get_tracer(__name__)
         parent_context = (
-            extract(carrier=trace_context_headers)
-            if trace_context_headers
-            else otel_context.get_current()
+            extract(carrier=trace_context_headers) if trace_context_headers else None
         )
-        context_token = otel_context.attach(parent_context)
 
         # Contextualize logger if metadata is provided
         context_metadata = {}
@@ -89,76 +86,86 @@ class ResearchService:
                 "trace_id": job_id,
             }
 
-        try:
-            with tracer.start_as_current_span("research.background.process") as span:
-                span.set_attribute("research.job_id", job_id)
-                span.set_attribute("research.company_name", company_name)
-                span.set_attribute("research.has_metadata", bool(metadata))
-                span.set_attribute("research.status", "started")
-                with contextualize(**context_metadata):
+        with tracer.start_as_current_span(
+            "research.background.process",
+            context=parent_context,
+        ) as span:
+            span.set_attribute("research.job_id", job_id)
+            span.set_attribute("research.company_name", company_name)
+            span.set_attribute("research.has_metadata", bool(metadata))
+            span.set_attribute("research.status", "started")
+            with contextualize(**context_metadata):
+                try:
+                    logger.info(
+                        f"Starting research for job {job_id}: {company_name}"
+                    )
+
+                    self.bigquery_repo.update_status(
+                        job_id,
+                        "PROCESSING",
+                        progress=settings.RESEARCH_INIT_PROGRESS,
+                        current_step=settings.RESEARCH_INIT_STEP_LABEL,
+                    )
+
+                    start_time = time.monotonic()
+
+                    # 1. Execute the main research loop with guardrails
+                    final_report, session_state = await self._run_research_loop(
+                        job_id, company_name
+                    )
+                    if not final_report:
+                        return  # Early exit if loop failed and handled its own status update
+
+                    latency = round(time.monotonic() - start_time, 2)
+                    span.set_attribute("research.latency_seconds", latency)
+
+                    # 2. Extract metrics and telemetry
+                    metrics = self._calculate_metrics(session_state, latency)
+                    if metrics["total_tokens"]:
+                        span.set_attribute(
+                            "research.total_tokens", int(metrics["total_tokens"])
+                        )
+                    if metrics["cost_usd"] is not None:
+                        span.set_attribute(
+                            "research.cost_usd", float(metrics["cost_usd"])
+                        )
+
+                    # 2b. Cost reconciliation vs per-agent telemetry
+                    reconciliation = self._reconcile_cost(session_state, metrics)
+
+                    # 3. Upload artifacts (final report + session state)
+                    md_uri = self._upload_artifacts(
+                        job_id, final_report, session_state
+                    )
+
+                    # 3b. Upload per-agent output artifacts
                     try:
-                        logger.info(
-                            f"Starting research for job {job_id}: {company_name}"
-                        )
-
-                        self.bigquery_repo.update_status(
-                            job_id,
-                            "PROCESSING",
-                            progress=settings.RESEARCH_INIT_PROGRESS,
-                            current_step=settings.RESEARCH_INIT_STEP_LABEL,
-                        )
-
-                        start_time = time.monotonic()
-
-                        # 1. Execute the main research loop with guardrails
-                        final_report, session_state = await self._run_research_loop(
-                            job_id, company_name
-                        )
-                        if not final_report:
-                            return  # Early exit if loop failed and handled its own status update
-
-                        latency = round(time.monotonic() - start_time, 2)
-                        span.set_attribute("research.latency_seconds", latency)
-
-                        # 2. Extract metrics and telemetry
-                        metrics = self._calculate_metrics(session_state, latency)
-                        if metrics["total_tokens"]:
-                            span.set_attribute(
-                                "research.total_tokens", int(metrics["total_tokens"])
-                            )
-                        if metrics["cost_usd"] is not None:
-                            span.set_attribute(
-                                "research.cost_usd", float(metrics["cost_usd"])
-                            )
-
-                        # 3. Upload artifacts
-                        md_uri = self._upload_artifacts(
-                            job_id, final_report, session_state
-                        )
-
-                        # 4. Finalize side operations (PDF, Evaluation, Cost, Telemetry)
-                        (
-                            side_op_failures,
-                            pdf_available,
-                        ) = await self._finalize_background_ops(
-                            job_id, final_report, session_state, metrics
-                        )
-
-                        # 5. Mark COMPLETED
-                        self._mark_completed(
-                            job_id,
-                            md_uri,
-                            latency,
-                            metrics,
-                            pdf_available,
-                            side_op_failures,
-                        )
-                        span.set_attribute("research.status", "completed")
+                        await self._upload_agent_artifacts(job_id, session_state)
                     except Exception as e:
-                        self._handle_failure(e, job_id, span)
-                        raise
-        finally:
-            otel_context.detach(context_token)
+                        logger.warning(f"Per-agent artifact upload failed: {e}")
+
+                    # 4. Finalize side operations (PDF, Evaluation, Cost, Telemetry)
+                    (
+                        side_op_failures,
+                        pdf_available,
+                    ) = await self._finalize_background_ops(
+                        job_id, final_report, session_state, metrics
+                    )
+
+                    # 5. Mark COMPLETED
+                    self._mark_completed(
+                        job_id,
+                        md_uri,
+                        latency,
+                        metrics,
+                        pdf_available,
+                        side_op_failures,
+                        reconciliation=reconciliation,
+                    )
+                    span.set_attribute("research.status", "completed")
+                except Exception as e:
+                    self._handle_failure(e, job_id, span)
+                    raise
 
     def _upload_artifacts(
         self, job_id: str, final_report: str, session_state: dict
@@ -182,22 +189,27 @@ class ResearchService:
         metrics: dict,
         pdf_available: bool,
         side_op_failures: dict,
+        reconciliation: dict | None = None,
     ) -> None:
         """Mark job as COMPLETED in the database."""
+        meta: dict[str, Any] = {
+            "model_version": settings.GEMINI_MODEL,
+            "latency_seconds": latency,
+            "tokens_used": metrics["total_tokens"] or None,
+            "cost_usd": metrics["cost_usd"],
+            "pdf_available": pdf_available,
+            "side_op_failures": side_op_failures or None,
+            "current_agent": None,
+        }
+        if reconciliation:
+            meta["cost_reconciliation"] = reconciliation
         self.bigquery_repo.update_status(
             job_id,
             "COMPLETED",
             gcs_uri=md_uri,
             progress=100,
             current_step="Completed",
-            metadata_update={
-                "model_version": settings.GEMINI_MODEL,
-                "latency_seconds": latency,
-                "tokens_used": metrics["total_tokens"] or None,
-                "cost_usd": metrics["cost_usd"],
-                "pdf_available": pdf_available,
-                "side_op_failures": side_op_failures or None,
-            },
+            metadata_update=meta,
         )
         logger.info(f"Research completed successfully for job {job_id}")
 
@@ -343,8 +355,9 @@ class ResearchService:
             logger.warning(f"Eval op failed: {e}")
             side_op_failures["evaluation"] = str(e)
 
-        # 3. Cost Attribution
+        # 3. Cost Attribution + reconciliation
         try:
+            reconciliation = self._reconcile_cost(session_state, metrics)
             await self._with_retry_sync(
                 lambda: self.bigquery_repo.insert_cost_attribution(
                     job_id=job_id,
@@ -389,16 +402,16 @@ class ResearchService:
         self, job_id: str, company_name: str, attempt: int = 0
     ) -> tuple[str, dict]:
         """Run the SalesAgent and return the final report and session state"""
-        tracer = trace.get_tracer(__name__)
         with tracer.start_as_current_span("research.adk.run") as span:
             span.set_attribute("research.job_id", job_id)
             span.set_attribute("research.company_name", company_name)
             span.set_attribute("research.retry_attempt", attempt)
             app = create_sales_agent_app()
+            session_service = build_session_service()
             runner = Runner(
                 app=app,
                 artifact_service=InMemoryArtifactService(),
-                session_service=InMemorySessionService(),
+                session_service=session_service,
                 memory_service=InMemoryMemoryService(),
             )
 
@@ -406,6 +419,15 @@ class ResearchService:
             session = await self._get_or_create_runner_session(
                 runner, app, job_id, company_name, attempt
             )
+
+            # Persist ADK session id for status tracking
+            try:
+                self.bigquery_repo.update_status(
+                    job_id, None,
+                    metadata_update={"adk_session_id": session.id},
+                )
+            except Exception as e:
+                logger.debug(f"Could not persist adk_session_id: {e}")
 
             # 2. Run agents and handle events
             await self._handle_agent_run(runner, session, job_id, company_name, app)
@@ -449,7 +471,6 @@ class ResearchService:
         self, runner: Runner, session: Any, job_id: str, company_name: str, app: Any
     ):
         """Helper to execute the agent run and handle streaming events"""
-        tracer = trace.get_tracer(__name__)
         run_config = RunConfig()
         last_invocation_id = None
 
@@ -457,12 +478,13 @@ class ResearchService:
         all_agents = self._get_all_agents(app.root_agent)
         total_agents = len(all_agents)
         agent_descriptions = {a.name: a.description for a in all_agents}
-        completed_agents = set()
+        completed_agents: set[str] = set()
 
         status_write_state = {
             "last_progress": None,
             "last_step": None,
             "last_write_ts": 0.0,
+            "seen_authors": set(),
         }
 
         try:
@@ -498,6 +520,17 @@ class ResearchService:
                         async for event in runner.run_async(**run_kwargs):
                             last_invocation_id = event.invocation_id
                             log_event(event, verbose=True)
+
+                            # Hard-fail on agent error events
+                            error_code = getattr(event, "error_code", None)
+                            error_message = getattr(event, "error_message", None)
+                            if error_code or error_message:
+                                author = getattr(event, "author", "unknown_agent")
+                                err_detail = error_message or f"error_code={error_code}"
+                                raise ServiceError(
+                                    f"Agent '{author}' failed: {err_detail}"
+                                )
+
                             self._process_event_milestones(
                                 event,
                                 job_id,
@@ -531,32 +564,51 @@ class ResearchService:
         if not hasattr(event, "author") or not event.author:
             return
 
+        author = event.author
         is_final = getattr(event, "is_final_response", lambda: False)()
+
+        # Detect new agent starting (first event from this author)
+        seen_authors: set[str] = status_write_state.setdefault("seen_authors", set())
+        if (
+            author not in seen_authors
+            and author not in completed_agents
+            and author not in ("user",)
+        ):
+            seen_authors.add(author)
+            try:
+                self.bigquery_repo.update_status(
+                    job_id,
+                    None,
+                    current_step=f"Running: {author}",
+                    metadata_update={"current_agent": author},
+                )
+            except Exception as e:
+                logger.debug(f"Failed to write agent-start status for {author}: {e}")
 
         # Validate agent output on completion
         if is_final and hasattr(event, "response") and event.response:
             agent_text = getattr(event.response, "text", "")
             if agent_text:
                 try:
-                    AgentGuardrail().validate(agent_text, agent_name=event.author)
+                    AgentGuardrail().validate(agent_text, agent_name=author)
                 except Exception as guard_err:
                     logger.error(
-                        f"[AgentGuardrail] Violation in {event.author}: {guard_err}"
+                        f"[AgentGuardrail] Violation in {author}: {guard_err}"
                     )
                     raise
 
         # Update progress milestones
         if is_final:
-            completed_agents.add(event.author)
+            completed_agents.add(author)
             pct = int((len(completed_agents) / total_agents) * 100)
             # Ensure it doesn't exceed 99% here, 100% is reserved for COMPLETED status
             pct = min(pct, 99)
 
-            description = agent_descriptions.get(event.author, "")
+            description = agent_descriptions.get(author, "")
             label = (
-                f"{event.author}: {description}"
+                f"{author}: {description}"
                 if description
-                else f"{event.author} completed"
+                else f"{author} completed"
             )
 
             if self._should_write_status_update(
@@ -667,6 +719,87 @@ class ResearchService:
                 {"rule": v.rule, "detail": v.detail} for v in violations
             ],
         }
+
+    async def _upload_agent_artifacts(
+        self, job_id: str, session_state: dict
+    ) -> dict[str, str]:
+        """Upload each agent's output artifact to GCS under the exact path.
+
+        Path: salesagent_response/<session_id>/artifacts/<agent_name>_output.json
+        """
+        session_id = f"api_request_{job_id}"
+        agent_output_keys = [k for k in session_state if k.endswith("_output")]
+        uris: dict[str, str] = {}
+        for key in agent_output_keys:
+            content = session_state.get(key)
+            if not content:
+                continue
+            agent_name = key[: -len("_output")]
+            try:
+                payload = (
+                    content if isinstance(content, str) else str(content)
+                )
+                uri = await asyncio.to_thread(
+                    self.gcs_repo.upload_agent_artifact,
+                    session_id,
+                    agent_name,
+                    payload,
+                )
+                uris[key] = uri
+            except Exception as e:
+                logger.warning(f"Failed to upload artifact for {agent_name}: {e}")
+        if uris:
+            logger.info(
+                f"Uploaded {len(uris)} per-agent artifacts for job {job_id}"
+            )
+        return uris
+
+    def _reconcile_cost(self, session_state: dict, metrics: dict) -> dict:
+        """Cross-check session-level cost against per-agent telemetry aggregation."""
+        telemetry_records = session_state.get("agent_telemetry_records") or []
+        per_agent_input = sum(r.get("tokens_input") or 0 for r in telemetry_records)
+        per_agent_output = sum(r.get("tokens_output") or 0 for r in telemetry_records)
+        per_agent_cost = sum(r.get("cost_usd") or 0.0 for r in telemetry_records)
+
+        session_input = metrics.get("input_tokens") or 0
+        session_output = metrics.get("output_tokens") or 0
+        session_cost = metrics.get("cost_usd") or 0.0
+
+        delta_input = abs(session_input - per_agent_input)
+        delta_output = abs(session_output - per_agent_output)
+        delta_cost = abs(session_cost - per_agent_cost)
+
+        reconciliation = {
+            "session_input_tokens": session_input,
+            "session_output_tokens": session_output,
+            "per_agent_input_tokens": per_agent_input,
+            "per_agent_output_tokens": per_agent_output,
+            "delta_input_tokens": delta_input,
+            "delta_output_tokens": delta_output,
+            "per_agent_cost_usd": round(per_agent_cost, 6),
+            "session_cost_usd": round(session_cost, 6),
+            "delta_cost_usd": round(delta_cost, 6),
+            "agent_record_count": len(telemetry_records),
+        }
+
+        if delta_cost > 0.10 or delta_input > 5000 or delta_output > 5000:
+            logger.warning(
+                "[CostReconciliation] Notable discrepancy — "
+                "session_tokens=%d per_agent_tokens=%d delta_cost=$%.4f",
+                session_input + session_output,
+                per_agent_input + per_agent_output,
+                delta_cost,
+            )
+        else:
+            logger.info(
+                "[CostReconciliation] OK — session_tokens=%d per_agent_tokens=%d "
+                "delta_cost=$%.6f agent_records=%d",
+                session_input + session_output,
+                per_agent_input + per_agent_output,
+                delta_cost,
+                len(telemetry_records),
+            )
+        return reconciliation
 
     async def _with_retry(self, coro_fn, retries: int = 1, delay: float = 3.0):
         """Simple async retry wrapper."""

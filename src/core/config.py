@@ -109,7 +109,14 @@ class Settings(BaseSettings):
     OTEL_SERVICE_NAME: str = Field(
         default="sales-agent-api", description="OpenTelemetry service.name value"
     )
-
+    SERVICE_NAME: str | None = Field(
+        default=None,
+        description="Cloud Trace service.name (overrides OTEL_SERVICE_NAME when set)",
+    )
+    COMMIT_SHA: str | None = Field(
+        default=None,
+        description="Deployment revision for service.version on spans",
+    )
     # Research Configuration
     GEMINI_MODEL: str = Field(
         default="gemini-2.5-pro", description="Advanced GenAI model"

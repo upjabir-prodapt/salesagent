@@ -23,9 +23,10 @@ from ..core.logging_config import logger
 # Agent classification maps
 # ---------------------------------------------------------------------------
 
-# Leaf LLM research agents to track — orchestrators, synthesis agents, and
-# pipeline wrappers are intentionally excluded.
+# LLM agents to track — leaf research agents + synthesis agents that make
+# substantive LLM calls and contribute to token cost.
 _AGENT_TYPE_MAP: dict[str, str] = {
+    # Research leaf agents
     "FirmographicsAgent": "LlmAgent",
     "GeographicAgent": "LlmAgent",
     "StrategyAgent": "LlmAgent",
@@ -37,9 +38,12 @@ _AGENT_TYPE_MAP: dict[str, str] = {
     "GrowthSignals": "LlmAgent",
     "RiskSignals": "LlmAgent",
     "CampaignSignals": "LlmAgent",
+    # Synthesis agents — included for cost attribution coverage
+    "AlignmentAnalyst": "LlmAgent",
+    "ReportCompiler": "LlmAgent",
 }
 
-# Maps each tracked agent → the report section it produces.
+# Maps each tracked agent → the report section(s) it produces.
 _AGENT_SECTIONS_MAP: dict[str, list[str]] = {
     "FirmographicsAgent": ["firmographics"],
     "GeographicAgent": ["geographic"],
@@ -52,6 +56,8 @@ _AGENT_SECTIONS_MAP: dict[str, list[str]] = {
     "GrowthSignals": ["growth_signals"],
     "RiskSignals": ["risk_signals"],
     "CampaignSignals": ["campaign_signals"],
+    "AlignmentAnalyst": ["alignment_mappings", "strategic_opportunity"],
+    "ReportCompiler": ["final_report"],
 }
 
 # Session-state key prefix constants (keep consistent across start/end)

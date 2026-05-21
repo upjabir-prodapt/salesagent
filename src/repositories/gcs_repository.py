@@ -2,19 +2,19 @@ import json
 from datetime import timedelta
 from typing import Any
 
-from google.cloud import storage
+from google.cloud import storage  # type: ignore
 
-from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.exceptions import StorageError
 from ..core.logging_config import logger
+from ..dependencies.service_dependencies import get_storage_client
 
 
 class GCSRepository:
     """Repository for Google Cloud Storage operations"""
 
-    def __init__(self, client: storage.Client = None):
-        self.client = client or client_pool.get_storage_client()
+    def __init__(self, client: storage.Client | None = None):
+        self.client = client or get_storage_client()
         self.bucket_name = settings.GCS_BUCKET_NAME
         self.bucket = self.client.bucket(self.bucket_name)
 
@@ -76,6 +76,25 @@ class GCSRepository:
             return f"gs://{self.bucket_name}/{blob_name}"
         except Exception as e:
             logger.error(f"Unexpected error uploading PDF: {e}")
+            raise StorageError(f"Unexpected storage error: {e}") from e
+
+    def upload_agent_artifact(
+        self, session_id: str, agent_name: str, content: str
+    ) -> str:
+        """Upload a per-agent output artifact to GCS.
+
+        Writes to: salesagent_response/<session_id>/artifacts/<agent_name>_output.json
+        """
+        try:
+            filename = f"{agent_name.lower()}_output.json"
+            blob_name = f"{settings.GCS_PARENT_FOLDER}/{session_id}/artifacts/{filename}"
+            blob = self.bucket.blob(blob_name)
+            blob.upload_from_string(data=content, content_type="application/json")
+            uri = f"gs://{self.bucket_name}/{blob_name}"
+            logger.info(f"Uploaded agent artifact to GCS: {uri}")
+            return uri
+        except Exception as e:
+            logger.error(f"Error uploading agent artifact for {agent_name}: {e}")
             raise StorageError(f"Unexpected storage error: {e}") from e
 
     def upload_evaluation(

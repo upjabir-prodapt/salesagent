@@ -237,7 +237,7 @@ def create_safety_summary(safety_events: list[dict[str, Any]]) -> dict[str, Any]
     Returns:
         Summary dictionary with counts, categories, and statistics
     """
-    summary = {
+    summary: dict[str, Any] = {
         "total_events": len(safety_events),
         "blocked_count": 0,
         "categories_triggered": {},

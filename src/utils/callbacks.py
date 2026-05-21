@@ -177,6 +177,28 @@ def after_model_callback(
         },
     )
 
+    # Annotate content capture status for OTEL observability
+    try:
+        import os
+        has_content = bool(
+            llm_response.content
+            and getattr(llm_response.content, "parts", None)
+        )
+        capture_mode = os.environ.get(
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "not_set"
+        )
+        _record_callback_span_event(
+            "adk.llm_content_capture",
+            {
+                "agent_name": agent_name,
+                "capture_mode": capture_mode,
+                "has_content": has_content,
+                "parts_count": len(llm_response.content.parts) if has_content else 0,
+            },
+        )
+    except Exception:
+        pass
+
     # Capturing grounding metadata as search evidence
     try:
         # Resolve candidates from ADK wrapper or raw response
@@ -226,15 +248,15 @@ def after_model_callback(
                             chunk = chunks[idx]
                             # Web attribute might be a dict or object
                             web = getattr(chunk, "web", None) or getattr(
-                                chunk, "get", lambda x, y: None
+                                chunk, "get", lambda x, default=None: None
                             )("web")
                             if web:
                                 # Access as attribute or dict key
                                 uri = getattr(web, "uri", None) or getattr(
-                                    web, "get", lambda x, y: None
+                                    web, "get", lambda x, default=None: None
                                 )("uri")
                                 title = getattr(web, "title", None) or getattr(
-                                    web, "get", lambda x, y: "Grounded Source"
+                                    web, "get", lambda x, default="Grounded Source": default
                                 )("title")
                                 if uri:
                                     grounding_entries.append(
@@ -320,8 +342,7 @@ async def before_agent_callback(callback_context: CallbackContext) -> None:
     # Log agent entry
     logger.info(
         f"[Callback] Before Agent starting: {agent_name}",
-        agent=agent_name,
-        invocation=invocation_id,
+        extra={"agent": agent_name, "invocation": invocation_id},
     )
     _record_callback_span_event(
         "adk.before_agent",
@@ -333,6 +354,15 @@ async def before_agent_callback(callback_context: CallbackContext) -> None:
         track_agent_start(callback_context)
     except Exception as e:
         logger.debug(f"[Telemetry] track_agent_start failed for {agent_name}: {e}")
+
+    # Track current executing agent in session state (for status endpoint)
+    try:
+        callback_context.state["current_executing_agent"] = agent_name
+        agent_status_map = dict(callback_context.state.get("agent_status_map") or {})
+        agent_status_map[agent_name] = "running"
+        callback_context.state["agent_status_map"] = agent_status_map
+    except Exception as e:
+        logger.debug(f"[Callback] Could not set current_executing_agent: {e}")
 
     return None
 
@@ -364,8 +394,7 @@ def after_agent_callback(callback_context: CallbackContext) -> types.Content | N
 
     logger.info(
         f"[Callback] After Agent starting: {agent_name}",
-        agent=agent_name,
-        invocation=invocation_id,
+        extra={"agent": agent_name, "invocation": invocation_id},
     )
     _record_callback_span_event(
         "adk.after_agent",
@@ -377,6 +406,15 @@ def after_agent_callback(callback_context: CallbackContext) -> types.Content | N
         track_agent_end(callback_context)
     except Exception as e:
         logger.debug(f"[Telemetry] track_agent_end failed for {agent_name}: {e}")
+
+    # Update agent status map in session state
+    try:
+        callback_context.state["last_completed_agent"] = agent_name
+        agent_status_map = dict(callback_context.state.get("agent_status_map") or {})
+        agent_status_map[agent_name] = "completed"
+        callback_context.state["agent_status_map"] = agent_status_map
+    except Exception as e:
+        logger.debug(f"[Callback] Could not update agent_status_map: {e}")
 
     # Use agent's original output
     return None
@@ -585,11 +623,13 @@ def _log_model_request(
 
         logger.info(
             "[Callback] LLM request initiated",
-            agent=agent_name,
-            request_id=request_id,
-            invocation=invocation_id,
-            message_preview=last_message,
-            num_contents=len(llm_request.contents) if llm_request.contents else 0,
+            extra={
+                "agent": agent_name,
+                "request_id": request_id,
+                "invocation": invocation_id,
+                "message_preview": last_message,
+                "num_contents": len(llm_request.contents) if llm_request.contents else 0,
+            },
         )
     except Exception as e:
         logger.warning(f"[Callback] Failed to log request: {e}")
@@ -609,11 +649,13 @@ def _log_model_response(
 
         logger.info(
             "[Callback] LLM response received",
-            agent=agent_name,
-            request_id=request_id,
-            invocation=invocation_id,
-            response_preview=response_preview,
-            has_content=bool(llm_response.content),
+            extra={
+                "agent": agent_name,
+                "request_id": request_id,
+                "invocation": invocation_id,
+                "response_preview": response_preview,
+                "has_content": bool(llm_response.content),
+            },
         )
     except Exception as e:
         logger.warning(f"[Callback] Failed to log response: {e}")
@@ -651,9 +693,11 @@ def _validate_response_safety(
                 if finish_reason and "SAFETY" in str(finish_reason):
                     logger.warning(
                         "[Callback] Safety block detected in response",
-                        agent=agent_name,
-                        request_id=request_id,
-                        finish_reason=finish_reason,
+                        extra={
+                            "agent": agent_name,
+                            "request_id": request_id,
+                            "finish_reason": finish_reason,
+                        },
                     )
     except Exception as e:
         logger.debug(f"[Callback] Could not validate response safety: {e}")
@@ -691,9 +735,11 @@ def _track_request_tokens(
         estimated_tokens = total_chars // 4
         logger.debug(
             "[Callback] Request token estimate",
-            agent=agent_name,
-            request_id=request_id,
-            estimated_tokens=estimated_tokens,
+            extra={
+                "agent": agent_name,
+                "request_id": request_id,
+                "estimated_tokens": estimated_tokens,
+            },
         )
     except Exception as e:
         logger.debug(f"[Callback] Could not track tokens: {e}")
@@ -708,9 +754,11 @@ def _track_response_metrics(
         has_content = bool(llm_response.content)
         logger.debug(
             "[Callback] Response metrics",
-            agent=agent_name,
-            request_id=request_id,
-            has_content=has_content,
+            extra={
+                "agent": agent_name,
+                "request_id": request_id,
+                "has_content": has_content,
+            },
         )
     except Exception as e:
         logger.debug(f"[Callback] Could not track response metrics: {e}")
@@ -743,10 +791,12 @@ def _collect_agent_metrics(agent_name: str, duration: float, request_id: str) ->
     try:
         logger.info(
             "[Metrics] Agent performance",
-            agent=agent_name,
-            request_id=request_id,
-            duration_seconds=round(duration, 2),
-            duration_ms=round(duration * 1000, 0),
+            extra={
+                "agent": agent_name,
+                "request_id": request_id,
+                "duration_seconds": round(duration, 2),
+                "duration_ms": round(duration * 1000, 0),
+            },
         )
 
         # Additional metrics collection (e.g., to BigQuery) can be added here

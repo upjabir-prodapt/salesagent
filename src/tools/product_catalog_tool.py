@@ -8,9 +8,9 @@ from typing import Any
 import google.cloud.aiplatform as aiplatform
 from vertexai.language_models import TextEmbeddingModel
 
-from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.logging_config import logger
+from ..dependencies.service_dependencies import get_storage_client
 
 # Initialize AI Platform
 aiplatform.init(
@@ -46,7 +46,7 @@ class ProductCatalogService:
             return self._catalog_chunks
 
         try:
-            storage_client = client_pool.get_storage_client()
+            storage_client = get_storage_client()
             blob = storage_client.bucket(settings.VECTOR_SEARCH_BUCKET).blob(
                 settings.VECTOR_SEARCH_CATALOG_CHUNKS_BLOB
             )

@@ -1,0 +1,43 @@
+---
+description: Use uv for all Python package and environment operations
+alwaysApply: true
+---
+
+# Python tooling: use uv
+
+This project is managed with [uv](https://github.com/astral-sh/uv). Use `uv` for dependencies, virtual environments, and running commands — not `pip`, `pipenv`, `poetry`, or `python -m venv` unless the user explicitly asks otherwise.
+
+## Commands to use
+
+| Task | Command |
+|------|---------|
+| Install / sync deps | `uv sync` |
+| CI / reproducible install | `uv sync --frozen` |
+| Run a script or tool | `uv run <command>` |
+| Run tests | `uv run pytest` |
+| Add a dependency | `uv add <package>` |
+| Add a dev dependency | `uv add --group dev <package>` |
+| Remove a dependency | `uv remove <package>` |
+| Update lock file | `uv lock` |
+| Create venv (if needed) | `uv venv` |
+
+## Examples
+
+```bash
+# ❌ BAD
+pip install pytest
+python -m venv .venv
+poetry add requests
+
+# ✅ GOOD
+uv sync
+uv add requests
+uv run pytest
+uv run uvicorn src.routes.app:app --reload --host 0.0.0.0 --port 8000
+```
+
+## Notes
+
+- Prefer `uv sync` over `uv pip install` — the lock file is `uv.lock`.
+- Use `uv run` so commands use the project environment without manual activation.
+- After changing `pyproject.toml` dependencies, run `uv lock` (if needed) and `uv sync`.

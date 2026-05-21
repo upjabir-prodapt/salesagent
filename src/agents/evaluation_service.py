@@ -18,15 +18,15 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.logging_config import logger
+from ..dependencies.service_dependencies import get_genai_client
 from ..tools.product_catalog_tool import colt_product_search
 
 # ---------------------------------------------------------------------------
 # Dimension weights for Section A (D1–D14)
 # ---------------------------------------------------------------------------
-DIMENSION_CONFIG = {
+DIMENSION_CONFIG: dict[str, dict[str, Any]] = {
     "D1_data_currency_recency": {
         "weight": 2.0,
         "category": "Factual Accuracy",
@@ -294,7 +294,7 @@ class EvaluationService:
         """
         from google.genai import types as genai_types
 
-        client = client_pool.get_genai_client()
+        client = get_genai_client()
 
         prompt = self._build_judge_prompt(
             final_report,
@@ -312,7 +312,7 @@ class EvaluationService:
             ),
         )
 
-        raw_text = response.text.strip()
+        raw_text = response.text.strip() if response.text else ""
         # Strip markdown fences if present
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```(?:json)?\n?", "", raw_text)
@@ -344,7 +344,7 @@ class EvaluationService:
         )
         strategy = json.dumps(session_state.get("strategyagent_output", {}), indent=2)
         executive = json.dumps(
-            session_state.get("executivepipeline_output", {}), indent=2
+            session_state.get("executiveagent_output", {}), indent=2
         )
         compliance = json.dumps(
             session_state.get("complianceagent_output", {}), indent=2

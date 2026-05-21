@@ -17,10 +17,10 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.exceptions import InputValidationException
 from ..core.logging_config import logger
+from ..dependencies.service_dependencies import get_genai_client
 
 # ---------------------------------------------------------------------------
 # PII patterns — label → regex
@@ -435,7 +435,7 @@ class OutputGuardrail:
         try:
             from google.genai import types as genai_types
 
-            client = client_pool.get_genai_client()
+            client = get_genai_client()
 
             prompt = (
                 "You are a strict fact-checking auditor for a B2B sales intelligence report.\n\n"
@@ -496,7 +496,7 @@ class OutputGuardrail:
                 ),
             )
 
-            raw = response.text.strip()
+            raw = response.text.strip() if response.text else ""
             if raw.startswith("```"):
                 raw = re.sub(r"^```(?:json)?\n?", "", raw)
                 raw = re.sub(r"\n?```$", "", raw)
@@ -548,7 +548,7 @@ class OutputGuardrail:
         try:
             from google.genai import types as genai_types
 
-            client = client_pool.get_genai_client()
+            client = get_genai_client()
 
             prompt = (
                 "You are a strict fact-checking auditor for a B2B sales intelligence report.\n\n"
@@ -632,7 +632,7 @@ class OutputGuardrail:
                 ),
             )
 
-            raw = response.text.strip()
+            raw = response.text.strip() if response.text else ""
             if raw.startswith("```"):
                 raw = re.sub(r"^```(?:json)?\n?", "", raw)
                 raw = re.sub(r"\n?```$", "", raw)

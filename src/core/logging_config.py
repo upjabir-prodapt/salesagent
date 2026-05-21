@@ -14,7 +14,7 @@ from opentelemetry import trace
 
 from .config import settings
 
-_CONTEXT_DEFAULTS = {
+_CONTEXT_DEFAULTS: dict[str, Any] = {
     "trace_id": "no-trace",
     "span_id": None,
     "trace_sampled": None,

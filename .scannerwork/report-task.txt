@@ -1,6 +1,0 @@
-projectKey=sales-agent
-serverUrl=http://localhost:9000
-serverVersion=26.4.0.121862
-dashboardUrl=http://localhost:9000/dashboard?id=sales-agent
-ceTaskId=2623ac5e-e8f9-42a8-a6da-cf6469cfa802
-ceTaskUrl=http://localhost:9000/api/ce/task?id=2623ac5e-e8f9-42a8-a6da-cf6469cfa802

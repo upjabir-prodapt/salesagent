@@ -47,11 +47,14 @@ class ResearchStatusResponse(BaseModel):
 
     request_id: str = Field(..., description="Job ID")
     status: str = Field(
-        ..., description="Current status: PENDING, PROCESSING, COMPLETED, FAILED"
+        ..., description="Current status: QUEUED, PROCESSING, COMPLETED, FAILED"
     )
     progress: int = Field(..., description="Progress percentage (0-100)")
     current_step: str | None = Field(
         None, description="Human-readable current processing step"
+    )
+    current_agent: str | None = Field(
+        None, description="Name of the agent currently executing (PROCESSING only)"
     )
 
     model_config = {
@@ -60,7 +63,8 @@ class ResearchStatusResponse(BaseModel):
                 "request_id": "job_123e4567-e89b-12d3-a456-426614174000",
                 "status": "PROCESSING",
                 "progress": 45,
-                "current_step": "Strategy Agent: Analyzing Annual Report",
+                "current_step": "Running: StrategyAgent",
+                "current_agent": "StrategyAgent",
             }
         }
     }

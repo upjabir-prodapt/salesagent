@@ -7,17 +7,17 @@ from typing import Any
 from google.cloud import bigquery
 from google.cloud.exceptions import GoogleCloudError, NotFound
 
-from ..core.clients import client_pool
 from ..core.config import settings
 from ..core.exceptions import DatabaseError
 from ..core.logging_config import logger
+from ..dependencies.service_dependencies import get_bigquery_client
 
 
 class BigQueryRepository:
     """Repository for BigQuery operations with local bypass support"""
 
-    def __init__(self, client: bigquery.Client = None):
-        self.client = client or client_pool.get_bq_client()
+    def __init__(self, client: bigquery.Client | None = None):
+        self.client = client or get_bigquery_client()
         self.dataset_id = settings.BIGQUERY_DATASET
         self.table_id = settings.BIGQUERY_TABLE
         self.table_ref = (
@@ -221,7 +221,7 @@ class BigQueryRepository:
         query_parameters = [
             bigquery.ScalarQueryParameter("job_execution_id", "STRING", job_id),
             bigquery.ScalarQueryParameter("company_name", "STRING", company_name),
-            bigquery.ScalarQueryParameter("status", "STRING", "PENDING"),
+            bigquery.ScalarQueryParameter("status", "STRING", "QUEUED"),
             bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", now),
             bigquery.ScalarQueryParameter("updated_at", "TIMESTAMP", now),
             bigquery.ScalarQueryParameter("gcs_uri", "STRING", None),
@@ -331,9 +331,10 @@ class BigQueryRepository:
                 "status": "PROCESSING",
                 "progress": 50,
                 "current_step": "Local Step",
+                "current_agent": None,
             }
         query = f"""
-        SELECT status, updated_at, company_name, progress, current_step
+        SELECT status, updated_at, company_name, progress, current_step, metadata
         FROM `{self.table_ref}`
         WHERE job_execution_id = @job_execution_id
         ORDER BY updated_at DESC
@@ -350,12 +351,25 @@ class BigQueryRepository:
             return None
 
         row = results[0]
+
+        # Parse metadata to surface current_agent
+        metadata_dict: dict = {}
+        if getattr(row, "metadata", None):
+            try:
+                raw = row.metadata
+                metadata_dict = (
+                    json.loads(raw) if isinstance(raw, str) else (raw or {})
+                )
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         return {
             "request_id": job_id,
             "company_name": row.company_name,
             "status": row.status,
             "progress": row.progress if row.progress is not None else 0,
             "current_step": row.current_step,
+            "current_agent": metadata_dict.get("current_agent"),
         }
 
     def get_request_result(

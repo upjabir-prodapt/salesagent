@@ -1,16 +1,15 @@
 """
 Research Agents Module
 
-Contains specialized LLM agents for researching different aspects of a company.
+Nine PlanReAct LlmAgents in three multi-step Sequential lanes plus two parallel leaves.
+Workflow per leaf: PLANNING → google_search_agent → REASONING → verify_draft_answer → FINAL_ANSWER
 """
 
 from dataclasses import dataclass
 
 from google.adk.agents import SequentialAgent
-from google.adk.planners import PlanReActPlanner
-from google.adk.tools import google_search
 
-from ....core.config import settings
+from ..utils import create_plan_react_agent
 from ..prompts import (
     COMPLIANCE_PROMPT,
     ECOSYSTEM_PROMPT,
@@ -22,7 +21,6 @@ from ..prompts import (
     STRATEGY_PROMPT,
     TECH_STACK_PROMPT,
 )
-from ..utils.agent_factory import create_llm_agent
 
 
 @dataclass
@@ -81,38 +79,24 @@ _AGENT_CONFIGS = [
 ]
 
 
-def _planner():
-    """Create planner instance per agent when enabled."""
-    return PlanReActPlanner() if settings.USE_PLAN_REACT_PLANNER else None
-
-
 def create_research_agents():
-    """Create fresh instances of all research agents."""
-    agents = {}
-    for config in _AGENT_CONFIGS:
-        agents[config.name] = create_llm_agent(
-            config.name,
-            config.prompt,
-            config.description,
-            tools=[google_search],
-            planner=_planner(),
+    """Create research agents and sequential lanes for ResearchOrchestrator."""
+    agents = {
+        config.name: create_plan_react_agent(
+            config.name, config.prompt, config.description
         )
+        for config in _AGENT_CONFIGS
+    }
 
     firmographics_geographic_agent = SequentialAgent(
         name="FirmographicsGeographicAgent",
-        sub_agents=[
-            agents["FirmographicsAgent"],
-            agents["GeographicAgent"],
-        ],
+        sub_agents=[agents["FirmographicsAgent"], agents["GeographicAgent"]],
         description="Runs firmographics then geographic research.",
     )
 
     strategy_compliance_agent = SequentialAgent(
         name="StrategyComplianceAgent",
-        sub_agents=[
-            agents["StrategyAgent"],
-            agents["ComplianceAgent"],
-        ],
+        sub_agents=[agents["StrategyAgent"], agents["ComplianceAgent"]],
         description="Runs strategy then compliance research.",
     )
 
@@ -126,26 +110,10 @@ def create_research_agents():
         description="Runs market, ecosystem, and procurement research.",
     )
 
-    tech_stack_pipeline = SequentialAgent(
-        name="TechStackPipeline",
-        sub_agents=[
-            agents["TechStackAgent"],
-        ],
-        description="Runs tech stack research.",
-    )
-
-    executive_pipeline = SequentialAgent(
-        name="ExecutivePipeline",
-        sub_agents=[
-            agents["ExecutiveAgent"],
-        ],
-        description="Identifies leadership team.",
-    )
-
     return (
         firmographics_geographic_agent,
-        executive_pipeline,
+        agents["ExecutiveAgent"],
         strategy_compliance_agent,
         market_ecosystem_agent,
-        tech_stack_pipeline,
+        agents["TechStackAgent"],
     )

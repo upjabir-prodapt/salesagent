@@ -106,7 +106,7 @@ async def initiate_research(
 
             return ResearchInitiateResponse(
                 job_id=job_id,
-                status="PENDING",
+                status="QUEUED",
                 check_status_url=f"{settings.API_PREFIX}/research/status/{job_id}",
             )
 
@@ -124,7 +124,13 @@ async def get_research_status(job_id: str, service: ResearchServiceDep):
     if not status_data:
         raise ResourceNotFoundError(f"Job {job_id} not found")
 
-    return ResearchStatusResponse(**status_data)
+    return ResearchStatusResponse(
+        request_id=status_data["request_id"],
+        status=status_data["status"],
+        progress=status_data.get("progress", 0),
+        current_step=status_data.get("current_step"),
+        current_agent=status_data.get("current_agent"),
+    )
 
 
 @router.get(
@@ -149,8 +155,8 @@ async def get_research_result(job_id: str, service: ResearchServiceDep):
     )
 
     return ResearchResultResponse(
-        request_id=result.get("request_id"),
-        status=result.get("status"),
+        request_id=str(result.get("request_id", "")),
+        status=str(result.get("status", "")),
         report_content=result.get("report_content"),
         download_url=result.get("download_url"),
         model_card=model_card,

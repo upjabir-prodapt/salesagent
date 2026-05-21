@@ -72,16 +72,13 @@ def mock_storage_client():
 
 @pytest.fixture(autouse=True)
 def mock_client_pool(mock_bq_client, mock_storage_client):
-    mock_pool = MagicMock()
-    mock_pool.get_bq_client.return_value = mock_bq_client
-    mock_pool.get_storage_client.return_value = mock_storage_client
     with (
-        patch("src.core.clients.client_pool", mock_pool),
-        patch("src.dependencies.service_dependencies.client_pool", mock_pool),
-        patch("src.repositories.bigquery_repository.client_pool", mock_pool),
-        patch("src.repositories.gcs_repository.client_pool", mock_pool),
+        patch("src.dependencies.service_dependencies.get_bigquery_client", return_value=mock_bq_client),
+        patch("src.dependencies.service_dependencies.get_storage_client", return_value=mock_storage_client),
+        patch("src.repositories.bigquery_repository.get_bigquery_client", return_value=mock_bq_client),
+        patch("src.repositories.gcs_repository.get_storage_client", return_value=mock_storage_client),
     ):
-        yield mock_pool
+        yield
 
 
 @pytest.fixture(autouse=True)

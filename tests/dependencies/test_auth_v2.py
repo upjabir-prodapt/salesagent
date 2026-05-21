@@ -16,7 +16,8 @@ async def test_get_current_user_success():
     token = jwt.encode(payload, secret, algorithm="HS256")
     auth_creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-    with patch("src.core.security.settings") as mock_s:
+    with patch("src.dependencies.auth.settings") as mock_auth_settings, patch("src.core.security.settings") as mock_s:
+        mock_auth_settings.AUTH_ENABLED = True
         mock_s.SECRET_KEY = secret
         mock_s.ALGORITHM = "HS256"
         user = await get_current_user(auth_creds)
@@ -31,7 +32,8 @@ async def test_get_current_user_missing_sub():
     token = jwt.encode(payload, secret, algorithm="HS256")
     auth_creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-    with patch("src.core.security.settings") as mock_s:
+    with patch("src.dependencies.auth.settings") as mock_auth_settings, patch("src.core.security.settings") as mock_s:
+        mock_auth_settings.AUTH_ENABLED = True
         mock_s.SECRET_KEY = secret
         mock_s.ALGORITHM = "HS256"
         with pytest.raises(HTTPException) as excinfo:
@@ -45,7 +47,8 @@ async def test_get_current_user_invalid_token():
         scheme="Bearer", credentials="invalid-token"
     )
 
-    with patch("src.core.security.settings") as mock_s:
+    with patch("src.dependencies.auth.settings") as mock_auth_settings, patch("src.core.security.settings") as mock_s:
+        mock_auth_settings.AUTH_ENABLED = True
         mock_s.SECRET_KEY = "key"
         mock_s.ALGORITHM = "HS256"
         with pytest.raises(HTTPException) as excinfo:

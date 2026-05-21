@@ -1,35 +1,53 @@
 """Service dependencies and shared GCP client pooling."""
 
+import threading
+from typing import Optional
 from google import genai
-from google.cloud import bigquery, storage
+from google.cloud import bigquery, storage  # type: ignore
 
-from ..core.clients import client_pool
-from ..repositories.bigquery_repository import BigQueryRepository
-from ..repositories.gcs_repository import GCSRepository
+from ..core.config import settings
 
+_bq_client: Optional[bigquery.Client] = None
+_storage_client: Optional[storage.Client] = None
+_genai_client: Optional[genai.Client] = None
+_lock = threading.Lock()
 
 def get_bigquery_client() -> bigquery.Client:
     """Get shared BigQuery client singleton."""
-    return client_pool.get_bq_client()
+    global _bq_client
+    with _lock:
+        if _bq_client is None:
+            _bq_client = bigquery.Client(project=settings.GOOGLE_CLOUD_PROJECT)
+    return _bq_client
 
 
 def get_storage_client() -> storage.Client:
     """Get shared GCS client singleton."""
-    return client_pool.get_storage_client()
+    global _storage_client
+    with _lock:
+        if _storage_client is None:
+            _storage_client = storage.Client(project=settings.GOOGLE_CLOUD_PROJECT)
+    return _storage_client
 
 
 def get_genai_client() -> genai.Client:
     """Get shared Google Gen AI client singleton."""
-    return client_pool.get_genai_client()
+    global _genai_client
+    with _lock:
+        if _genai_client is None:
+            _genai_client = genai.Client()
+    return _genai_client
 
 
-def get_bigquery_repository() -> BigQueryRepository:
+def get_bigquery_repository():
     """Get BigQuery repository instance."""
+    from ..repositories.bigquery_repository import BigQueryRepository
     return BigQueryRepository(client=get_bigquery_client())
 
 
-def get_gcs_repository() -> GCSRepository:
+def get_gcs_repository():
     """Get GCS repository instance."""
+    from ..repositories.gcs_repository import GCSRepository
     return GCSRepository(client=get_storage_client())
 
 

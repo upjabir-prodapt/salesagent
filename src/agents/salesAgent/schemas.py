@@ -418,9 +418,9 @@ class CampaignSignalsModel(BaseModel):
     active_campaigns: list[str] = Field(
         default_factory=list, description="Current marketing campaigns"
     )
-    advertising_spend_trends: str | None = Field(None, description="Ad spend patterns")
+    advertising_spend_trends: str | None = Field(default=None, description="Ad spend patterns")
     brand_positioning: str | None = Field(
-        None, description="Brand strategy and positioning"
+        default=None, description="Brand strategy and positioning"
     )
     signals: list[Signal] = Field(
         default_factory=list, description="Detailed campaign signals"
@@ -429,13 +429,13 @@ class CampaignSignalsModel(BaseModel):
 
 class SignalsOutput(BaseModel):
     growth: GrowthSignalsModel = Field(
-        default_factory=GrowthSignalsModel, description="Growth-related signals"
+        default_factory=lambda: GrowthSignalsModel(), description="Growth-related signals"
     )
     risk: RiskSignalsModel = Field(
-        default_factory=RiskSignalsModel, description="Risk-related signals"
+        default_factory=lambda: RiskSignalsModel(), description="Risk-related signals"
     )
     campaign: CampaignSignalsModel = Field(
-        default_factory=CampaignSignalsModel, description="Campaign-related signals"
+        default_factory=lambda: CampaignSignalsModel(), description="Campaign-related signals"
     )
     growth_signals: list[Signal] = Field(default_factory=list, description="Legacy")
     risk_signals: list[Signal] = Field(default_factory=list, description="Legacy")
