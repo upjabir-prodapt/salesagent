@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.agents.research_service import ResearchService
+from src.services.research.research_service import ResearchService
 
 
 @pytest.fixture
@@ -33,18 +33,21 @@ async def test_process_research_background_full_flow(
 ):
     # Mocking real LLM calls and PDF generation
     with (
-        patch.object(service, "_run_sales_agent", new_callable=AsyncMock) as mock_run,
-        patch("src.agents.research_service.OutputGuardrail") as mock_og,
-        patch("src.agents.research_service.EvaluationService") as mock_eval,
+        patch.object(service._runner, "run", new_callable=AsyncMock) as mock_run,
+        patch("src.services.research.finalization_service.EvaluationService") as mock_eval,
     ):
-        mock_run.return_value = ("# Report", {"mc_input_tokens": 10})
-        mock_og.return_value.validate = AsyncMock(return_value=MagicMock(is_valid=True))
+        mock_run.return_value = (
+            "# Report",
+            {"mc_input_tokens": 10, "report_validation_status": "PASSED"},
+        )
         mock_eval.return_value.evaluate = AsyncMock(
             return_value={"final_composite_score": 0.8}
         )
 
         # Avoid PDF generation for unit test
-        with patch.object(service, "_generate_pdf_static") as mock_pdf:
+        with patch.object(
+            service._finalization, "generate_pdf", return_value=b"pdf"
+        ) as mock_pdf:
             mock_pdf.return_value = b"pdf"
 
             await service.process_research_background("job_1", "Acme")
@@ -78,17 +81,15 @@ async def test_get_request_result(service, mock_repo):
 async def test_process_research_background_guardrail_failure(
     service, mock_repo, mock_gcs, mock_settings
 ):
-    with (
-        patch.object(service, "_run_sales_agent", new_callable=AsyncMock) as mock_run,
-        patch("src.agents.research_service.OutputGuardrail") as mock_og,
-    ):
-        mock_run.return_value = ("# Bad Report", {})
-        # Simulate guardrail failure
-        violation = MagicMock()
-        violation.rule = "test"
-        violation.detail = "fail"
-        mock_og.return_value.validate = AsyncMock(
-            return_value=MagicMock(is_valid=False, violations=[violation])
+    with patch.object(service._runner, "run", new_callable=AsyncMock) as mock_run:
+        mock_run.return_value = (
+            "# Bad Report",
+            {
+                "report_validation_status": "FAILED",
+                "report_validation_violations": [
+                    {"rule": "output:missing_table", "detail": "fail"}
+                ],
+            },
         )
 
         # main loop catches failure and returns None, doesn't raise exception to top level

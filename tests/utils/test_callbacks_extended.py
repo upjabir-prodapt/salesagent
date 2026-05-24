@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.utils.callbacks import (
+from src.services.research.agent.utils.callbacks import (
     _extract_search_entries,
     after_agent_callback,
     after_model_callback,
@@ -41,7 +41,7 @@ def test_before_model_callback_jailbreak(mock_context):
     content.parts = [part]
     request.contents = [content]
 
-    with patch("src.utils.callbacks.InputGuardrail") as mock_guardrail:
+    with patch("src.services.research.agent.utils.callbacks.InputGuardrail") as mock_guardrail:
         mock_guardrail.return_value.scan_jailbreak.return_value = [
             MagicMock(rule="jailbreak")
         ]
@@ -64,13 +64,13 @@ def test_after_model_callback_tokens(mock_context):
 
 @pytest.mark.asyncio
 async def test_before_agent_callback(mock_context):
-    with patch("src.utils.callbacks.track_agent_start") as mock_track:
+    with patch("src.services.research.agent.utils.callbacks.track_agent_start") as mock_track:
         await before_agent_callback(mock_context)
         mock_track.assert_called_once_with(mock_context)
 
 
 def test_after_agent_callback(mock_context):
-    with patch("src.utils.callbacks.track_agent_end") as mock_track:
+    with patch("src.services.research.agent.utils.callbacks.track_agent_end") as mock_track:
         res = after_agent_callback(mock_context)
         mock_track.assert_called_once_with(mock_context)
         assert res is None

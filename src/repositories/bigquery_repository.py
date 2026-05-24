@@ -294,12 +294,11 @@ class BigQueryRepository:
             )
 
         if metadata_update is not None:
-            update_fields.append(
-                "metadata = JSON_MERGE_PATCH(COALESCE(metadata, JSON '{}'), @metadata_patch)"
-            )
+            merged = {**self._get_metadata_dict(job_id), **metadata_update}
+            update_fields.append("metadata = PARSE_JSON(@metadata)")
             query_params.append(
                 bigquery.ScalarQueryParameter(
-                    "metadata_patch", "JSON", json.dumps(metadata_update)
+                    "metadata", "STRING", json.dumps(merged)
                 )
             )
 
@@ -322,6 +321,39 @@ class BigQueryRepository:
             f"Updated [{', '.join(fields_updated) or 'updated_at'}] for job {job_id}"
         )
         return True
+
+    def _parse_metadata_row(self, raw: Any) -> dict[str, Any]:
+        if not raw:
+            return {}
+        if isinstance(raw, dict):
+            return dict(raw)
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
+    def _get_metadata_dict(self, job_id: str) -> dict[str, Any]:
+        """Load existing metadata JSON for merge (avoids JSON_MERGE_PATCH)."""
+        if self.client is None:
+            return {}
+        query = f"""
+        SELECT metadata
+        FROM `{self.table_ref}`
+        WHERE job_execution_id = @job_execution_id
+        LIMIT 1
+        """
+        query_parameters = [
+            bigquery.ScalarQueryParameter("job_execution_id", "STRING", job_id)
+        ]
+        results = list(
+            self._execute_query(query, query_parameters, "getting metadata")
+        )
+        if not results:
+            return {}
+        return self._parse_metadata_row(getattr(results[0], "metadata", None))
 
     def get_status(self, job_id: str) -> dict[str, Any] | None:
         """Get the latest status for a job"""
@@ -352,16 +384,7 @@ class BigQueryRepository:
 
         row = results[0]
 
-        # Parse metadata to surface current_agent
-        metadata_dict: dict = {}
-        if getattr(row, "metadata", None):
-            try:
-                raw = row.metadata
-                metadata_dict = (
-                    json.loads(raw) if isinstance(raw, str) else (raw or {})
-                )
-            except (json.JSONDecodeError, TypeError):
-                pass
+        metadata_dict = self._parse_metadata_row(getattr(row, "metadata", None))
 
         return {
             "request_id": job_id,

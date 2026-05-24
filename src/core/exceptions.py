@@ -150,6 +150,21 @@ class InputValidationException(BaseAppException):
         )
 
 
+class AgentOutputError(ServiceError):
+    """Raised when a pipeline agent finishes without writing its required session output."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        agent_name: str,
+        output_key: str,
+    ):
+        self.agent_name = agent_name
+        self.output_key = output_key
+        super().__init__(message)
+
+
 class OutputValidationException(BaseAppException):
     """
     Exception raised when output guardrails block a generated report after all retries.

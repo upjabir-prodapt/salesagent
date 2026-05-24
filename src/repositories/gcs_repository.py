@@ -83,7 +83,7 @@ class GCSRepository:
     ) -> str:
         """Upload a per-agent output artifact to GCS.
 
-        Writes to: salesagent_response/<session_id>/artifacts/<agent_name>_output.json
+        Writes to: salesagent_response/<job_id>/artifacts/<agent_name>_output.json
         """
         try:
             filename = f"{agent_name.lower()}_output.json"

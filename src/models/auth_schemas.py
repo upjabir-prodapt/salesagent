@@ -13,9 +13,9 @@ class AuthRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "email": "john.doe@example.com",
+                "email": "john.doe@colt.net",
                 "business_unit": "Marketing",
-                "organization": "Acme Global",
+                "organization": "Colt",
             }
         }
     }

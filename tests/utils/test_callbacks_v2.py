@@ -5,7 +5,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models import LlmRequest, LlmResponse
 from google.genai import types
 
-from src.utils.callbacks import (
+from src.services.research.agent.utils.callbacks import (
     after_agent_callback,
     after_model_callback,
     after_tool_callback,
@@ -55,7 +55,7 @@ async def test_before_agent_callback_stagger(mock_callback_context):
 
 
 def test_after_agent_callback_telemetry(mock_callback_context):
-    with patch("src.utils.callbacks.track_agent_end") as mock_track:
+    with patch("src.services.research.agent.utils.callbacks.track_agent_end") as mock_track:
         after_agent_callback(mock_callback_context)
         mock_track.assert_called_once_with(mock_callback_context)
 

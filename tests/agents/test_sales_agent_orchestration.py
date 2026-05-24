@@ -1,15 +1,15 @@
 from unittest.mock import MagicMock, patch
 
-from src.agents.salesAgent.agent import create_sales_agent_app
+from src.services.research.agent.sales.agent import create_sales_agent_app
 
 
 def test_create_sales_agent_app(mock_settings):
     with (
-        patch("src.agents.salesAgent.agent.App") as mock_app_cls,
-        patch("src.agents.salesAgent.agent.ParallelAgent"),
-        patch("src.agents.salesAgent.agent.SequentialAgent"),
+        patch("src.services.research.agent.sales.agent.App") as mock_app_cls,
+        patch("src.services.research.agent.sales.agent.ParallelAgent"),
+        patch("src.services.research.agent.sales.agent.SequentialAgent"),
         patch(
-            "src.agents.salesAgent.agent.create_research_agents",
+            "src.services.research.agent.sales.agent.create_research_agents",
             return_value=(
                 MagicMock(),
                 MagicMock(),
@@ -18,9 +18,9 @@ def test_create_sales_agent_app(mock_settings):
                 MagicMock(),
             ),
         ),
-        patch("src.agents.salesAgent.agent.create_signals_orchestrator"),
+        patch("src.services.research.agent.sales.agent.create_signals_orchestrator"),
         patch(
-            "src.agents.salesAgent.agent.create_synthesis_agents",
+            "src.services.research.agent.sales.agent.create_synthesis_agents",
             return_value=(MagicMock(), MagicMock()),
         ),
     ):

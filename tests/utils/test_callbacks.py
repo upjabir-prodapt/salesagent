@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.utils.callbacks import (
+from src.services.research.agent.utils.callbacks import (
     after_agent_callback,
     after_model_callback,
     before_agent_callback,
@@ -39,12 +39,12 @@ def test_after_model_callback(mock_context):
 
 @pytest.mark.asyncio
 async def test_before_agent_callback(mock_context):
-    with patch("src.utils.callbacks.track_agent_start") as mock_track:
+    with patch("src.services.research.agent.utils.callbacks.track_agent_start") as mock_track:
         await before_agent_callback(mock_context)
         mock_track.assert_called_once()
 
 
 def test_after_agent_callback(mock_context):
-    with patch("src.utils.callbacks.track_agent_end") as mock_track:
+    with patch("src.services.research.agent.utils.callbacks.track_agent_end") as mock_track:
         after_agent_callback(mock_context)
         mock_track.assert_called_once()

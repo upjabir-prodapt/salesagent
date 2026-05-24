@@ -90,7 +90,7 @@ flowchart TD
 |-------|------|
 | App bootstrap | `src/routes/app.py` |
 | Research API | `src/routes/research.py` |
-| Orchestration | `src/agents/research_service.py` |
+| Orchestration | `src/services/research/research_service.py` |
 | Agent graph | `src/agents/salesAgent/agent.py` |
 | Research agents | `src/agents/salesAgent/sub_agents/research_agents.py` |
 | Verifiers (to replace) | `src/agents/salesAgent/sub_agents/verifier_agents.py` |
@@ -233,7 +233,7 @@ agent = LlmAgent(
 
 - Only `update_status` when `(progress, current_step)` changes or ≥ 5s since last write.
 - Remove per-event writes in `_process_event_milestones` except configured milestones.
-- **Files:** `src/agents/research_service.py`
+- **Files:** `src/services/research/research_service.py`
 - **Acceptance:** BQ writes per job ↓ ≥ 80%.
 
 #### 1.2 Reduce callback log volume

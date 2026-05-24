@@ -1,16 +1,16 @@
 from unittest.mock import MagicMock, patch
 
-from src.agents.salesAgent.sub_agents.research_agents import create_research_agents
+from src.services.research.agent.sales.sub_agents.research_agents import create_research_agents
 
 
 def test_create_research_agents():
     # Mock create_llm_agent and SequentialAgent to avoid real agent creation and validation errors
     with (
         patch(
-            "src.agents.salesAgent.sub_agents.research_agents.create_llm_agent"
+            "src.services.research.agent.sales.sub_agents.research_agents.create_plan_react_agent"
         ) as mock_factory,
         patch(
-            "src.agents.salesAgent.sub_agents.research_agents.SequentialAgent"
+            "src.services.research.agent.sales.sub_agents.research_agents.SequentialAgent"
         ) as mock_sequential,
     ):
 
@@ -40,9 +40,8 @@ def test_create_research_agents():
         assert agents[0].name == "FirmographicsGeographicAgent"
         # firmographics + geographic
         assert len(agents[0].sub_agents) == 2
-        # executive_agent
-        assert agents[1].name == "ExecutivePipeline"
-        assert len(agents[1].sub_agents) == 1
+        # executive_agent (single leaf)
+        assert agents[1].name == "ExecutiveAgent"
 
         # strategy_compliance_agent
         assert agents[2].name == "StrategyComplianceAgent"
@@ -52,6 +51,5 @@ def test_create_research_agents():
         assert agents[3].name == "MarketEcosystemAgent"
         assert len(agents[3].sub_agents) == 3
 
-        # tech_stack_agent
-        assert agents[4].name == "TechStackPipeline"
-        assert len(agents[4].sub_agents) == 1
+        # tech_stack_agent (single leaf)
+        assert agents[4].name == "TechStackAgent"

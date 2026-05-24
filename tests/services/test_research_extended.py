@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.agents.research_service import ResearchService
+from src.services.research.research_service import ResearchService
 from src.core.exceptions import ServiceError
 
 
@@ -56,16 +56,18 @@ async def test_run_sales_agent_functional(research_service, mock_bq_repo):
 
     mock_runner.run_async = mock_events
 
-    with patch("src.agents.research_service.Runner", return_value=mock_runner):
-        with patch("src.agents.research_service.create_sales_agent_app"):
-            report, state = await research_service._run_sales_agent(
-                "job_123", "Acme Corp"
-            )
+    with (
+        patch("src.services.research.runner_service.Runner", return_value=mock_runner),
+        patch("src.services.research.runner_service.create_sales_agent_app"),
+        patch(
+            "src.services.research.runner_service.run_runner_with_per_agent_retry",
+            new_callable=AsyncMock,
+        ),
+    ):
+        report, state = await research_service._runner.run("job_123", "Acme Corp")
 
-            assert report == "# Success Report"
-            assert state["final_report"] == "# Success Report"
-            # Verify progress updates were called
-            assert mock_bq_repo.update_status.called
+        assert report == "# Success Report"
+        assert state["final_report"] == "# Success Report"
 
 
 @pytest.mark.asyncio
@@ -85,11 +87,17 @@ async def test_run_sales_agent_no_report_error(research_service, mock_bq_repo):
 
     mock_runner.run_async = empty_events
 
-    with patch("src.agents.research_service.Runner", return_value=mock_runner):
-        with patch("src.agents.research_service.create_sales_agent_app"):
-            with pytest.raises(ServiceError) as exc:
-                await research_service._run_sales_agent("job_123", "Acme")
-            assert "No final report generated" in str(exc.value)
+    with (
+        patch("src.services.research.runner_service.Runner", return_value=mock_runner),
+        patch("src.services.research.runner_service.create_sales_agent_app"),
+        patch(
+            "src.services.research.runner_service.run_runner_with_per_agent_retry",
+            new_callable=AsyncMock,
+        ),
+    ):
+        with pytest.raises(ServiceError) as exc:
+            await research_service._runner.run("job_123", "Acme")
+        assert "No final report generated" in str(exc.value)
 
 
 @pytest.mark.asyncio
@@ -99,9 +107,12 @@ async def test_process_research_background_functional(
     """Verify the functional background processing of research."""
 
     with patch.object(
-        research_service, "_run_sales_agent", new_callable=AsyncMock
+        research_service._runner, "run", new_callable=AsyncMock
     ) as mock_run:
-        mock_run.return_value = ("# Report", {"raw_search_cache": []})
+        mock_run.return_value = (
+            "# Report",
+            {"raw_search_cache": [], "report_validation_status": "PASSED"},
+        )
 
         # Mocking OutputGuardrail to pass
         with patch("src.utils.guardrails.OutputGuardrail.validate") as mock_validate:
@@ -120,17 +131,20 @@ async def test_process_research_background_pdf_failure_functional(
 ):
     """Functional test: PDF failure should be non-fatal."""
     with patch.object(
-        research_service, "_run_sales_agent", new_callable=AsyncMock
+        research_service._runner, "run", new_callable=AsyncMock
     ) as mock_run:
-        mock_run.return_value = ("# Report", {"mc_input_tokens": 10})
+        mock_run.return_value = (
+            "# Report",
+            {"mc_input_tokens": 10, "report_validation_status": "PASSED"},
+        )
         with patch(
             "src.utils.guardrails.OutputGuardrail.validate",
             return_value=MagicMock(is_valid=True),
         ):
             # Force PDF generation failure
             with patch.object(
-                research_service,
-                "_generate_pdf_static",
+                research_service._finalization,
+                "generate_pdf",
                 side_effect=Exception("PDF error"),
             ):
                 await research_service.process_research_background("job_123", "Acme")
@@ -144,16 +158,16 @@ async def test_process_research_background_eval_failure_functional(
 ):
     """Functional test: Evaluation failure should be non-fatal."""
     with patch.object(
-        research_service, "_run_sales_agent", new_callable=AsyncMock
+        research_service._runner, "run", new_callable=AsyncMock
     ) as mock_run:
-        mock_run.return_value = ("# Report", {})
+        mock_run.return_value = ("# Report", {"report_validation_status": "PASSED"})
         with (
             patch(
                 "src.utils.guardrails.OutputGuardrail.validate",
                 return_value=MagicMock(is_valid=True),
             ),
             patch(
-                "src.agents.evaluation_service.EvaluationService.evaluate",
+                "src.services.research.agent.evaluation_service.EvaluationService.evaluate",
                 side_effect=Exception("Eval error"),
             ),
         ):

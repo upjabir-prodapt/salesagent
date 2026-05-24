@@ -53,9 +53,16 @@ def get_gcs_repository():
 
 def get_research_service():
     """Get Research service instance."""
-    from ..agents.research_service import ResearchService
+    from ..services.research.research_service import ResearchService
 
     return ResearchService(
         bigquery_repository=get_bigquery_repository(),
         gcs_repository=get_gcs_repository(),
     )
+
+
+def get_catalog_service():
+    """Get Catalog vector index service instance."""
+    from ..services.catalog import CatalogService
+
+    return CatalogService()

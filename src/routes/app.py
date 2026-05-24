@@ -13,7 +13,7 @@ from ..core.config import settings
 from ..core.otel_setup import setup_telemetry, shutdown_telemetry
 from ..core.logging_config import logger, setup_logging
 from ..middlewares import error_handler_middleware, logging_middleware
-from . import auth, research
+from . import auth, catalog, research
 
 # Configure logging
 setup_logging()
@@ -93,6 +93,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router)
 app.include_router(research.router)
+app.include_router(catalog.router)
 
 
 @app.get("/", tags=["Root"])
@@ -109,6 +110,7 @@ async def root():
         },
         "endpoints": {
             "research": "/api/v1/research",
+            "catalog": "/api/v1/catalog",
             "health": "/health",
             "metrics": "/metrics",
         },

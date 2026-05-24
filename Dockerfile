@@ -30,7 +30,6 @@ COPY --from=builder /app/.venv /app/.venv
 COPY src/ ./src/
 COPY main.py .
 COPY .python-version .
-COPY ColtProductCatalog.pdf .
 
 # Expose Cloud Run port (default 8080, but app uses $PORT dynamically)
 EXPOSE 8080

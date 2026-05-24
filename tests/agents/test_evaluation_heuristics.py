@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agents.evaluation_service import EvaluationService
+from src.services.research.agent.evaluation_service import EvaluationService
 
 
 @pytest.fixture

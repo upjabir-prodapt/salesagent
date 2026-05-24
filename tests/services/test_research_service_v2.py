@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.agents.research_service import ResearchService
+from src.services.research.research_service import ResearchService
 from src.core.exceptions import ServiceError
 
 
@@ -45,25 +45,28 @@ async def test_process_research_background_orchestration(
     service, mock_bq_repo, mock_settings
 ):
     # Setup mocks for internal calls
-    service._run_sales_agent = AsyncMock(
-        return_value=("# Report", {"mc_input_tokens": 10})
+    service._runner.run = AsyncMock(
+        return_value=(
+            "# Report",
+            {"mc_input_tokens": 10, "report_validation_status": "PASSED"},
+        )
     )
-    service._generate_and_upload_pdf = AsyncMock(return_value="gs://pdf")
-    service._run_evaluation = AsyncMock(return_value={"score": 0.9})
+    with patch(
+        "src.services.research.finalization_service.EvaluationService"
+    ) as mock_eval_cls:
+        mock_eval_cls.return_value.evaluate = AsyncMock(
+            return_value={"final_composite_score": 0.9}
+        )
+        with patch.object(
+            service._finalization, "generate_pdf", return_value=b"pdf"
+        ):
+            await service.process_research_background("job_123", "Acme Corp")
 
-    with patch("src.agents.research_service.OutputGuardrail") as mock_og:
-        mock_og.return_value.validate = AsyncMock(return_value=MagicMock(is_valid=True))
-
-        await service.process_research_background("job_123", "Acme Corp")
-
-        # Verify status updates
-        assert mock_bq_repo.update_status.called
-        # Verify final completion - checking the core positional and some keyword args
-        # The actual call has many more keyword args (metadata)
-        found_completion = False
-        for call in mock_bq_repo.update_status.call_args_list:
-            args, kwargs = call
-            if args == ("job_123", "COMPLETED") and kwargs.get("progress") == 100:
-                found_completion = True
-                break
-        assert found_completion, "Completion call to update_status not found"
+    assert mock_bq_repo.update_status.called
+    found_completion = False
+    for call in mock_bq_repo.update_status.call_args_list:
+        args, kwargs = call
+        if args == ("job_123", "COMPLETED") and kwargs.get("progress") == 100:
+            found_completion = True
+            break
+    assert found_completion, "Completion call to update_status not found"

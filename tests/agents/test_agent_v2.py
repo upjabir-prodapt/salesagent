@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agents.salesAgent.agent import create_sales_agent_app
+from src.services.research.agent.sales.agent import create_sales_agent_app
 
 
 @pytest.fixture
@@ -34,20 +34,20 @@ def test_create_sales_agent_app_structure(
 ):
     with (
         patch(
-            "src.agents.salesAgent.agent.create_research_agents",
+            "src.services.research.agent.sales.agent.create_research_agents",
             return_value=mock_sub_agents,
         ),
         patch(
-            "src.agents.salesAgent.agent.create_signals_orchestrator",
+            "src.services.research.agent.sales.agent.create_signals_orchestrator",
             return_value=mock_signals_agent,
         ),
         patch(
-            "src.agents.salesAgent.agent.create_synthesis_agents",
+            "src.services.research.agent.sales.agent.create_synthesis_agents",
             return_value=mock_synthesis_agents,
         ),
-        patch("src.agents.salesAgent.agent.ParallelAgent") as MockParallel,
-        patch("src.agents.salesAgent.agent.SequentialAgent") as MockSequential,
-        patch("src.agents.salesAgent.agent.App") as MockApp,
+        patch("src.services.research.agent.sales.agent.ParallelAgent") as MockParallel,
+        patch("src.services.research.agent.sales.agent.SequentialAgent") as MockSequential,
+        patch("src.services.research.agent.sales.agent.App") as MockApp,
     ):
         # Initialize Mocks to track sub_agents
         research_orch_mock = MagicMock(name="ResearchOrchestrator")

@@ -6,7 +6,7 @@ from typing import Any
 
 import jwt
 from fastapi import HTTPException, status
-from fastapi.security import HTTPBearer
+from fastapi.security import APIKeyHeader
 from jwt import InvalidTokenError
 from pydantic import BaseModel
 
@@ -14,8 +14,29 @@ from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# HTTP Bearer token scheme
-security = HTTPBearer(auto_error=False)
+# App JWT via x-app-auth (Cloud Run IAM uses Authorization / X-Serverless-Authorization).
+# Use Security(app_auth_scheme) on routes/deps so Swagger shows the Authorize control.
+app_auth_scheme = APIKeyHeader(
+    name="x-app-auth",
+    auto_error=False,
+    description=(
+        "JWT from POST /api/v1/auth/token. "
+        "Paste access_token only, or use Bearer <access_token>."
+    ),
+)
+
+
+def extract_bearer_token(header_value: str | None) -> str | None:
+    """Parse x-app-auth: raw JWT or ``Bearer <jwt>`` (case-insensitive)."""
+    if not header_value:
+        return None
+    value = header_value.strip()
+    if not value:
+        return None
+    if value.lower().startswith("bearer "):
+        token = value[7:].strip()
+        return token or None
+    return value
 
 
 class AuthenticatedUser(BaseModel):
@@ -24,26 +45,6 @@ class AuthenticatedUser(BaseModel):
     email: str
     business_unit: str
     organization: str
-
-
-def _jwt_secret() -> str:
-    """Return configured JWT secret with safe local fallback."""
-    if (
-        not settings.DEBUG
-        and settings.SECRET_KEY == settings.DEFAULT_INSECURE_SECRET_KEY
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unsafe JWT secret is configured",
-        )
-    if settings.SECRET_KEY:
-        return settings.SECRET_KEY
-    if settings.DEBUG:
-        return "local-dev-insecure-jwt-secret"
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="JWT secret is not configured",
-    )
 
 
 def create_access_token(
@@ -61,7 +62,7 @@ def create_access_token(
         "iat": int(now.timestamp()),
         "exp": int(expires.timestamp()),
     }
-    return jwt.encode(payload, _jwt_secret(), algorithm=settings.ALGORITHM)
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def decode_and_verify_token(token: str) -> dict[str, Any]:
@@ -69,7 +70,7 @@ def decode_and_verify_token(token: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(
             token,
-            _jwt_secret(),
+            settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM],
         )
     except InvalidTokenError as exc:
@@ -85,25 +86,6 @@ def decode_and_verify_token(token: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Missing required token claims: {', '.join(missing)}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    expected_issuer = settings.IAP_EXPECTED_ISSUER
-    if expected_issuer and payload.get("iss") and payload["iss"] != expected_issuer:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token issuer",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if (
-        settings.IAP_AUDIENCE
-        and payload.get("aud")
-        and payload["aud"] != settings.IAP_AUDIENCE
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token audience",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

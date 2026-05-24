@@ -19,7 +19,6 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from .config import settings
 
-_GCP_TRACES_ENDPOINT = "https://telemetry.googleapis.com/v1/traces"
 logger = logging.getLogger(__name__)
 
 
@@ -48,14 +47,12 @@ def _patch_otel_safe_detach() -> None:
 
 
 def _log_otel_content_capture_config() -> None:
-    """Validate and log OTEL content-capture env vars at startup."""
-    import os
-
-    semconv = os.environ.get("OTEL_SEMCONV_STABILITY_OPT_IN", "")
-    capture_mode = os.environ.get(
-        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", ""
+    """Validate and log OTEL content-capture settings at startup."""
+    semconv = settings.OTEL_SEMCONV_STABILITY_OPT_IN
+    capture_mode = settings.OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+    adk_spans = (
+        "true" if settings.ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS else "false"
     )
-    adk_spans = os.environ.get("ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS", "")
 
     _VALID_CAPTURE_MODES = {"", "NO_CONTENT", "SPAN_ONLY", "EVENT_ONLY", "SPAN_AND_EVENT"}
     if capture_mode.upper() not in _VALID_CAPTURE_MODES:
@@ -75,10 +72,10 @@ def _log_otel_content_capture_config() -> None:
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=%r (effective=%s) "
         "ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=%r "
         "experimental_semconv=%s",
-        semconv or "(not set)",
-        capture_mode or "(not set)",
+        semconv,
+        capture_mode,
         effective_capture,
-        adk_spans or "(not set)",
+        adk_spans,
         experimental_mode,
     )
 
@@ -105,8 +102,8 @@ def setup_telemetry() -> None:
             "GOOGLE_CLOUD_PROJECT not resolved from ADC; trace export may fail"
         )
 
-    service_name = settings.SERVICE_NAME or settings.OTEL_SERVICE_NAME
-    service_version = settings.COMMIT_SHA or settings.APP_VERSION
+    service_name = settings.OTEL_SERVICE_NAME
+    service_version = settings.commit_sha or settings.APP_VERSION
 
     base_resource = Resource(
         {
@@ -132,14 +129,16 @@ def setup_telemetry() -> None:
         resource = base_resource.merge(OTELResourceDetector().detect())
 
     session = AuthorizedSession(credentials=credentials)
-    exporter = OTLPSpanExporter(session=session, endpoint=_GCP_TRACES_ENDPOINT)
+    exporter = OTLPSpanExporter(
+        session=session, endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT
+    )
 
     provider = TracerProvider(resource=resource)
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     logger.info(
         "OTel TracerProvider set → Cloud Trace at %s (project: %s)",
-        _GCP_TRACES_ENDPOINT,
+        settings.OTEL_EXPORTER_OTLP_ENDPOINT,
         project_id,
     )
 

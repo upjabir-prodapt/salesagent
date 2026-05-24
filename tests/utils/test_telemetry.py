@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.utils.telemetry import track_agent_end, track_agent_start
+from src.services.research.agent.utils.telemetry import track_agent_end, track_agent_start
 
 
 @pytest.fixture

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.agents.evaluation_service import EvaluationService
+from src.services.research.agent.evaluation_service import EvaluationService
 
 
 @pytest.fixture
@@ -82,7 +82,7 @@ def test_parse_and_score_section_a(evaluation_service):
         "scoring_rationale": {},
     }
     # Add all required dimensions for full score calculation
-    from src.agents.evaluation_service import DIMENSION_CONFIG
+    from src.services.research.agent.evaluation_service import DIMENSION_CONFIG
 
     for dim_key in DIMENSION_CONFIG.keys():
         llm_response[dim_key] = 4  # Perfect score
@@ -102,7 +102,7 @@ def test_empty_section_a(evaluation_service):
 @pytest.mark.asyncio
 async def test_run_section_b_minimal(evaluation_service):
     # TestSection B with minimal input
-    with patch("src.agents.evaluation_service.logger"):
+    with patch("src.services.research.agent.evaluation_service.logger"):
         # We need to mock metrics that require heavy libs
         with (
             patch.object(

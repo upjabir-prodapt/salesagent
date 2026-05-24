@@ -1,56 +1,47 @@
 """Authentication Dependencies for FastAPI Routes"""
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, Security, status
 
-from ..core.config import settings
 from ..core.security import (
     AuthenticatedUser,
+    app_auth_scheme,
     decode_and_verify_token,
-    security,
+    extract_bearer_token,
 )
 
 
 async def verify_token(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
+    api_key: Annotated[str | None, Security(app_auth_scheme)],
 ) -> dict[str, Any]:
-    """Verify bearer token and return JWT payload."""
-    if not settings.AUTH_ENABLED:
-        # Explicit auth bypass for local/dev environments.
-        return {
-            "sub": "local-dev-user@colt.net",
-            "email": "local-dev-user@colt.net",
-            "business_unit": "Engineering",
-            "organization": "Local",
-            "auth_mode": "bypass",
-        }
-
-    if not credentials:
+    """Verify bearer token from x-app-auth and return JWT payload."""
+    token = extract_bearer_token(api_key)
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail=(
+                "Not authenticated. Set x-app-auth to the access_token from "
+                "POST /api/v1/auth/token, or Bearer <access_token>."
+            ),
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return decode_and_verify_token(credentials.credentials)
+    return decode_and_verify_token(token)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
+    payload: Annotated[dict[str, Any], Depends(verify_token)],
 ) -> dict[str, Any]:
     """Backward-compatible dependency returning raw token payload with email mapping."""
-    payload = await verify_token(credentials)
     if "sub" in payload and "email" not in payload:
         payload["email"] = payload["sub"]
     return payload
 
 
 async def get_current_user_context(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
+    payload: Annotated[dict[str, Any], Depends(verify_token)],
 ) -> AuthenticatedUser:
     """FastAPI dependency to extract normalized user context from JWT."""
-    payload = await verify_token(credentials)
     return AuthenticatedUser(
         email=str(payload["sub"]),
         business_unit=str(payload["business_unit"]),

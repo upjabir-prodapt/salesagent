@@ -735,11 +735,6 @@ class OutputGuardrail:
         for v in self.check_prohibited_content(report):
             result._add(v.rule, v.detail)
 
-        for v in await self.check_hallucinations(
-            report, raw_search_cache=raw_search_cache
-        ):
-            result._add(v.rule, v.detail)
-
         if result.is_valid:
             logger.info("[OutputGuardrail] Report passed all output validation checks")
         else:

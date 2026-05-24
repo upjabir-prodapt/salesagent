@@ -1,284 +1,285 @@
-"""Configuration Management using Pydantic Settings"""
+"""Configuration: all values come from environment / .env (see .env.example)."""
 
-from pydantic import AliasChoices, Field
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+from typing import Self
+
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def resolve_repo_path(path: str | Path) -> Path:
+    """Resolve a path relative to the repository root when not absolute."""
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    return (_REPO_ROOT / p).resolve()
+
+
+# Must match Cloud Run deploy: --set-secrets="/secrets/.env=..." (azure-pipelines.yml)
+LOCAL_ENV_FILE = _REPO_ROOT / ".env"
+CLOUD_RUN_ENV_FILE = Path("/secrets/.env")
+
+
+def _env_flag(name: str) -> bool | None:
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return None
+    return str(raw).strip().lower() in ("1", "true", "yes")
+
+
+def is_local_runtime() -> bool:
+    explicit = _env_flag("IS_LOCAL")
+    if explicit is not None:
+        return explicit
+    return True
+
+
+def resolve_dotenv_path() -> Path | None:
+    if _env_flag("DOTENV_DISABLE"):
+        return None
+    raw = os.getenv("DOTENV_PATH", "").strip()
+    if raw:
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            path = (_REPO_ROOT / path).resolve()
+        return path
+    return LOCAL_ENV_FILE if is_local_runtime() else CLOUD_RUN_ENV_FILE
+
+
+def load_dotenv_file(path: Path | None = None) -> Path | None:
+    target = resolve_dotenv_path() if path is None else path
+    if target is None:
+        return None
+    if target.is_file():
+        load_dotenv(target)
+        return target
+    return None
+
+
+_DOTENV_FILE = load_dotenv_file()
 
 
 class Settings(BaseSettings):
-    """Application settings with environment variable support."""
+    """Settings loaded from env vars and the resolved dotenv file."""
 
-    # API Configuration
-    APP_NAME: str = Field(default="Sales Research API", description="Application name")
-    APP_VERSION: str = Field(default="1.0.0", description="Application version")
-    API_PREFIX: str = Field(default="/api/v1", description="API route prefix")
-    DEBUG: bool = Field(default=False, description="Debug mode")
+    # Application
+    APP_NAME: str
+    APP_VERSION: str
+    API_PREFIX: str
+    DEBUG: bool
+    IS_LOCAL: bool
+    HOST: str
+    PORT: int
+    WORKERS: int
+    LOG_LEVEL: str
+    AGENT_EVENT_LOG_VERBOSE: bool
+    AGENT_EVENT_LOG_FILE: str | None = None
 
-    # Server Configuration
-    HOST: str = Field(default="0.0.0.0", description="Server host")
-    PORT: int = Field(default=8000, description="Server port")
-    WORKERS: int = Field(default=1, description="Number of workers")
-
-    # Google Cloud Configuration
+    # Google Cloud
     GOOGLE_CLOUD_PROJECT: str = Field(
-        default="aicoesandox",
-        description="Google Cloud project ID",
         validation_alias=AliasChoices("GOOGLE_CLOUD_PROJECT", "GOOGLE_PROJECT_ID"),
     )
     GOOGLE_CLOUD_LOCATION: str = Field(
-        default="europe-west1",
-        description="Google Cloud region for resources",
         validation_alias=AliasChoices(
             "GOOGLE_CLOUD_LOCATION", "GOOGLE_PROJECT_LOCATION"
         ),
     )
+    GOOGLE_GENAI_USE_VERTEXAI: bool
+    GOOGLE_CLOUD_QUOTA_PROJECT: str
 
-    # IAP Configuration (Zero-Trust Security)
-    AUTH_ENABLED: bool = Field(
-        default=True, description="Master toggle for authentication"
-    )
-    IAP_AUDIENCE: str | None = Field(
-        default=None,
-        description="IAP Backend Audience (format: /projects/PROJECT_NUMBER/global/backendServices/SERVICE_ID)",
-    )
-    IAP_EXPECTED_ISSUER: str = Field(
-        default="https://cloud.google.com/iap",
-        description="Standard Google IAP Issuer URL",
-    )
+    # BigQuery
+    BIGQUERY_DATASET: str
+    BIGQUERY_TABLE: str
+    BIGQUERY_USERS_TABLE: str
+    BIGQUERY_COST_ATTRIBUTION_TABLE: str
+    BIGQUERY_AGENT_TELEMETRY_TABLE: str
+    BIGQUERY_CATALOG_JOBS_TABLE: str
 
-    # BigQuery Configuration
-    BIGQUERY_DATASET: str = Field(
-        default="aicoesandox_sales_agent_dataset", description="BigQuery dataset"
-    )
-    BIGQUERY_TABLE: str = Field(
-        default="research_requests", description="BigQuery table"
-    )
-    BIGQUERY_USERS_TABLE: str = Field(
-        default="users", description="BigQuery table for authorized users"
-    )
-    BIGQUERY_COST_ATTRIBUTION_TABLE: str = Field(
-        default="cost_attribution", description="BigQuery cost attribution table"
-    )
-    BIGQUERY_AGENT_TELEMETRY_TABLE: str = Field(
-        default="agent_telemetry", description="BigQuery per-agent telemetry table"
-    )
+    # Security
+    SECRET_KEY: str
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    PROMPT_TEMPLATE_VERSION: str
 
-    # Security Configuration
-    DEFAULT_INSECURE_SECRET_KEY: str = (
-        "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
-    )
-    SECRET_KEY: str = Field(
-        default=DEFAULT_INSECURE_SECRET_KEY, description="Secret key for JWT signing"
-    )
-    ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
-        default=30, description="Token expiration in minutes"
-    )
-    PROMPT_TEMPLATE_VERSION: str = Field(
-        default="v1.0", description="Version of the prompt template used by agents"
-    )
+    # GCS
+    GCS_BUCKET_NAME: str
+    GCS_SIGNED_URL_EXPIRATION_HOURS: int
+    GCS_PARENT_FOLDER: str
 
-    # GCS Configuration
-    GCS_BUCKET_NAME: str = Field(
-        default="colt-ai-usecase", description="GCS bucket name"
-    )
-    GCS_SIGNED_URL_EXPIRATION_HOURS: int = Field(
-        default=1, description="Signed URL expiration in hours"
-    )
-    GCS_PARENT_FOLDER: str = Field(
-        default="salesagent_response", description="Parent folder for GCS"
-    )
+    # CORS
+    CORS_ALLOW_ORIGINS: list[str]
+    CORS_ALLOW_CREDENTIALS: bool
+    CORS_ALLOW_METHODS: list[str]
+    CORS_ALLOW_HEADERS: list[str]
 
-    # CORS Configuration
-    CORS_ALLOW_ORIGINS: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8000"],
-        description="Allowed CORS origins",
-    )
-    CORS_ALLOW_CREDENTIALS: bool = Field(default=True, description="Allow credentials")
-    CORS_ALLOW_METHODS: list[str] = Field(default=["*"], description="Allowed methods")
-    CORS_ALLOW_HEADERS: list[str] = Field(default=["*"], description="Allowed headers")
+    # OpenTelemetry
+    OTEL_ENABLED: bool
+    OTEL_SERVICE_NAME: str
+    OTEL_EXPORTER_OTLP_ENDPOINT: str
+    OTEL_EXPORTER_OTLP_PROTOCOL: str
+    OTEL_RESOURCE_ATTRIBUTES: str
+    OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: bool
+    OTEL_SEMCONV_STABILITY_OPT_IN: str
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: str
+    ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS: bool
 
-    # Logging Configuration
-    LOG_LEVEL: str = Field(default="INFO", description="Logging level")
-    OTEL_ENABLED: bool = Field(
-        default=True,
-        description=(
-            "Enable OpenTelemetry exports. Set false to run with a no-op tracer "
-            "provider when telemetry causes runtime issues."
-        ),
-    )
-    OTEL_SERVICE_NAME: str = Field(
-        default="sales-agent-api", description="OpenTelemetry service.name value"
-    )
-    SERVICE_NAME: str | None = Field(
-        default=None,
-        description="Cloud Trace service.name (overrides OTEL_SERVICE_NAME when set)",
-    )
-    COMMIT_SHA: str | None = Field(
-        default=None,
-        description="Deployment revision for service.version on spans",
-    )
-    # Research Configuration
-    GEMINI_MODEL: str = Field(
-        default="gemini-2.5-pro", description="Advanced GenAI model"
-    )
-    USE_PLAN_REACT_PLANNER: bool = Field(
-        default=True,
-        description=(
-            "Enable PlanReActPlanner for research agents to drive "
-            "plan-reason-act tool usage."
-        ),
-    )
-    RESEARCH_STATUS_MIN_UPDATE_INTERVAL_SECONDS: float = Field(
-        default=5.0,
-        description=(
-            "Minimum interval between repeated BigQuery progress updates "
-            "for the same progress/current_step tuple."
-        ),
-    )
-    GEMINI_RETRY_ATTEMPTS: int = Field(
-        default=3, description="Number of retry attempts"
-    )
-    GEMINI_RETRY_INITIAL_DELAY: int = Field(
-        default=5, description="Delay between retries in seconds"
-    )
-    GEMINI_RETRY_MAX_DELAY: int = Field(
-        default=120, description="Max delay between retries in seconds"
-    )
-    GEMINI_RETRY_EXP_BASE: int = Field(
-        default=2, description="Backoff factor for retries"
-    )
-    GEMINI_RETRY_JITTER: int = Field(default=1, description="Jitter factor for retries")
-    GEMINI_RETRY_STATUS_CODES: list[int] = Field(
-        default=[408, 429, 500, 502, 503, 504],
-        description="HTTP status codes to retry on",
-    )
+    # Research / Gemini
+    GEMINI_MODEL: str
+    RESEARCH_STATUS_MIN_UPDATE_INTERVAL_SECONDS: float
+    GEMINI_RETRY_ATTEMPTS: int
+    GEMINI_RETRY_INITIAL_DELAY: int
+    GEMINI_RETRY_MAX_DELAY: int
+    GEMINI_RETRY_EXP_BASE: int
+    GEMINI_RETRY_JITTER: int
+    GEMINI_RETRY_STATUS_CODES: list[int]
+    GEMINI_COST_PER_1K_INPUT_TOKENS: float
+    GEMINI_COST_PER_1K_OUTPUT_TOKENS: float
+    EVALUATOR_MODEL: str
+    AGENT_RETRY_ATTEMPTS: int
+    AGENT_RETRY_WAIT_FIXED: int
+    JOB_ID_PREFIX: str
+    CATALOG_JOB_ID_PREFIX: str
+    RESEARCH_INIT_STEP_LABEL: str
+    RESEARCH_INIT_PROGRESS: int
+    RESEARCH_UPLOAD_STEP_LABEL: str
+    RESEARCH_UPLOAD_PROGRESS: int
+    RESEARCH_EVAL_STEP_LABEL: str
+    RESEARCH_EVAL_PROGRESS: int
+    
 
-    # Safety Settings - Content Guardrails
-    SAFETY_HARASSMENT_THRESHOLD: str = Field(
-        default="BLOCK_MEDIUM_AND_ABOVE",
-        description="Safety threshold for harassment content",
-    )
-    SAFETY_HATE_SPEECH_THRESHOLD: str = Field(
-        default="BLOCK_MEDIUM_AND_ABOVE",
-        description="Safety threshold for hate speech",
-    )
-    SAFETY_SEXUAL_THRESHOLD: str = Field(
-        default="BLOCK_LOW_AND_ABOVE",
-        description="Safety threshold for sexually explicit content",
-    )
-    SAFETY_DANGEROUS_THRESHOLD: str = Field(
-        default="BLOCK_ONLY_HIGH",
-        description="Safety threshold for dangerous content (relaxed for business research)",
-    )
-    SAFETY_LOGGING_ENABLED: bool = Field(
-        default=True, description="Enable safety event logging"
-    )
-    AGENT_RETRY_ATTEMPTS: int = Field(default=3, description="Number of retry attempts")
-    AGENT_RETRY_WAIT_FIXED: int = Field(
-        default=2, description="Delay between retries in seconds"
-    )
+    # Safety
+    SAFETY_HARASSMENT_THRESHOLD: str
+    SAFETY_HATE_SPEECH_THRESHOLD: str
+    SAFETY_SEXUAL_THRESHOLD: str
+    SAFETY_DANGEROUS_THRESHOLD: str
+    SAFETY_LOGGING_ENABLED: bool
 
-    # Job ID config
-    JOB_ID_PREFIX: str = Field(
-        default="job_", description="Prefix for generated job IDs"
-    )
+    # Output guardrails
+    OUTPUT_GUARDRAIL_HALLUCINATION_MODEL: str
+    OUTPUT_GUARDRAIL_MIN_SECTIONS: int
+    OUTPUT_GUARDRAIL_MAX_RETRIES: int
+    OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD: int
 
-    # Model cost — Gemini 2.5 Pro standard rates (non-cached, ≤200K context)
-    # Input:  $1.25 / 1M tokens  = $0.00125 / 1K tokens
-    # Output: $10.00 / 1M tokens = $0.01000 / 1K tokens
-    GEMINI_COST_PER_1K_INPUT_TOKENS: float = Field(
-        default=0.00125, description="Cost per 1K input tokens in USD (Gemini 2.5 Pro)"
-    )
-    GEMINI_COST_PER_1K_OUTPUT_TOKENS: float = Field(
-        default=0.01, description="Cost per 1K output tokens in USD (Gemini 2.5 Pro)"
-    )
-
-    # Research progress labels and percentages
-    RESEARCH_INIT_STEP_LABEL: str = Field(
-        default="Initializing research", description="Label for initial progress step"
-    )
-    RESEARCH_INIT_PROGRESS: int = Field(
-        default=5, description="Initial progress percentage on PROCESSING start"
-    )
-    RESEARCH_UPLOAD_STEP_LABEL: str = Field(
-        default="Uploading artifacts", description="Label for upload step"
-    )
-    RESEARCH_UPLOAD_PROGRESS: int = Field(
-        default=92, description="Progress pct after agent completes, before upload"
-    )
-    RESEARCH_EVAL_STEP_LABEL: str = Field(
-        default="Running quality evaluation", description="Label for evaluation step"
-    )
-    RESEARCH_EVAL_PROGRESS: int = Field(
-        default=97, description="Progress pct during evaluation"
-    )
-
-    # Evaluation Configuration
-    EVALUATOR_MODEL: str = Field(
-        default="gemini-2.5-flash", description="LLM model used as evaluation judge"
-    )
-
-    # Output Guardrail Configuration
-    OUTPUT_GUARDRAIL_HALLUCINATION_MODEL: str = Field(
-        default="gemini-2.5-flash",
-        description="Secondary LLM model for output hallucination cross-reference check (Section 11 vs Section 12)",
-    )
-    OUTPUT_GUARDRAIL_MIN_SECTIONS: int = Field(
-        default=8,
-        description="Minimum populated sections required (out of 13) to pass the completeness check",
-    )
-    OUTPUT_GUARDRAIL_MAX_RETRIES: int = Field(
-        default=2,
-        description="Max additional report generation attempts if output guardrails fail (0 = no retry)",
-    )
-    OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD: int = Field(
-        default=5,
-        description=(
-            "Minimum number of unsupported claims required before the hallucination check "
-            "blocks the report. Default 5 — allow for strategic hypotheses while stopping total fabrication."
-        ),
-    )
+    # Vector search
+    VECTOR_SEARCH_INDEX_ID: str
+    VECTOR_SEARCH_INDEX_ENDPOINT_ID: str
+    VECTOR_SEARCH_DEPLOYED_INDEX_ID: str
+    VECTOR_SEARCH_PSC_IP: str | None = None
+    VECTOR_SEARCH_EMBEDDING_MODEL: str
+    VECTOR_SEARCH_NUM_NEIGHBORS: int
+    VECTOR_SEARCH_BUCKET: str
+    VECTOR_SEARCH_CATALOG_ROOT: str
+    VECTOR_SEARCH_CATALOG_CHUNKS_BLOB: str | None = None
+    VECTOR_SEARCH_CHUNK_SIZE: int
+    VECTOR_SEARCH_CHUNK_OVERLAP: int
+    VECTOR_SEARCH_CHUNK_ID_PREFIX: str
+    VECTOR_SEARCH_EMBEDDING_DIMENSIONS: int
+    VECTOR_SEARCH_EMBEDDING_BATCH_SIZE: int
+    VECTOR_SEARCH_LOCAL_BUILD_DIR: Path
+    VECTOR_SEARCH_INDEX_DISPLAY_NAME: str
+    VECTOR_SEARCH_ENDPOINT_DISPLAY_NAME: str
+    VECTOR_SEARCH_DISTANCE_MEASURE_TYPE: str
+    VECTOR_SEARCH_APPROXIMATE_NEIGHBORS_COUNT: int
+    VECTOR_SEARCH_LEAF_NODE_EMBEDDING_COUNT: int
+    VECTOR_SEARCH_LEAF_NODES_TO_SEARCH_PERCENT: float
+    VECTOR_SEARCH_DEPLOY_MACHINE_TYPE: str
+    VECTOR_SEARCH_DEPLOY_MIN_REPLICAS: int
+    VECTOR_SEARCH_DEPLOY_MAX_REPLICAS: int
+    VECTOR_SEARCH_INDEX_UPDATE_POLL_INTERVAL_SEC: int
+    VECTOR_SEARCH_INDEX_UPDATE_TIMEOUT_SEC: int
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
+        env_file=_DOTENV_FILE,
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
     )
-    # Vector Search Configuration
-    VECTOR_SEARCH_INDEX_ENDPOINT_ID: str = Field(
-        default="8102226418290655232",
-        description="The numerical ID of your Vertex AI Index Endpoint",
+
+    @field_validator(
+        "AGENT_EVENT_LOG_FILE",
+        "VECTOR_SEARCH_CATALOG_CHUNKS_BLOB",
+        "VECTOR_SEARCH_PSC_IP",
+        mode="before",
     )
-    VECTOR_SEARCH_DEPLOYED_INDEX_ID: str = Field(
-        default="aicoesandox_vertexai_endpoint",
-        description="The unique string ID you assigned when deploying the index",
-    )
-    VECTOR_SEARCH_EMBEDDING_MODEL: str = Field(
-        default="text-embedding-004",
-        description="The model ID used to generate vectors (must match the index)",
-    )
-    VECTOR_SEARCH_BUCKET: str = Field(
-        default="aicoesandox-vector-search",
-        description="The GCS bucket containing your catalog source PDF",
-    )
-    VECTOR_SEARCH_CATALOG_CHUNKS_BLOB: str = Field(
-        default="catalog/chunks.json",
-        description=(
-            "GCS object path (inside VECTOR_SEARCH_BUCKET) containing JSON mapping "
-            "vector IDs to catalog text chunks."
-        ),
-    )
+    @classmethod
+    def _empty_optional_str(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def _sync_sdk_environment(self) -> Self:
+        """Push GenAI / OTEL SDK settings into os.environ (read by ADK and auto-instrumentation)."""
+        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = (
+            "true" if self.GOOGLE_GENAI_USE_VERTEXAI else "false"
+        )
+        os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = self.GOOGLE_CLOUD_QUOTA_PROJECT
+        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = self.OTEL_EXPORTER_OTLP_ENDPOINT
+        os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = self.OTEL_EXPORTER_OTLP_PROTOCOL
+        os.environ["OTEL_RESOURCE_ATTRIBUTES"] = self.OTEL_RESOURCE_ATTRIBUTES
+        os.environ["OTEL_SEMCONV_STABILITY_OPT_IN"] = self.OTEL_SEMCONV_STABILITY_OPT_IN
+        os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = (
+            self.OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+        )
+        os.environ["ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS"] = (
+            "true" if self.ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS else "false"
+        )
+        os.environ["OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED"] = (
+            "true" if self.OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED else "false"
+        )
+        return self
+
+    @field_validator("VECTOR_SEARCH_LOCAL_BUILD_DIR", mode="before")
+    @classmethod
+    def _resolve_vector_build_dir(cls, value: str | Path) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            path = (_REPO_ROOT / path).resolve()
+        return path
+
+    @property
+    def agent_event_log_path(self) -> Path | None:
+        """Resolved path for ADK event file logging, or None when disabled."""
+        if not self.AGENT_EVENT_LOG_FILE:
+            return None
+        return resolve_repo_path(self.AGENT_EVENT_LOG_FILE)
+
+    @property
+    def commit_sha(self) -> str | None:
+        """Deployment revision from process env (CI / Cloud Run), not from .env."""
+        raw = os.environ.get("COMMIT_SHA", "").strip()
+        return raw or None
+
+    @property
+    def vector_search_catalog_chunks_blob(self) -> str:
+        if self.VECTOR_SEARCH_CATALOG_CHUNKS_BLOB:
+            return self.VECTOR_SEARCH_CATALOG_CHUNKS_BLOB
+        return f"{self.VECTOR_SEARCH_CATALOG_ROOT}/current/chunks.json"
 
     @property
     def bigquery_table_ref(self) -> str:
-        """Get full BigQuery table reference"""
         return (
             f"{self.GOOGLE_CLOUD_PROJECT}.{self.BIGQUERY_DATASET}.{self.BIGQUERY_TABLE}"
         )
 
     @property
     def gcs_bucket_uri(self) -> str:
-        """Get GCS bucket URI"""
         return f"gs://{self.GCS_BUCKET_NAME}"
 
+    @property
+    def bigquery_catalog_jobs_table_ref(self) -> str:
+        return (
+            f"{self.GOOGLE_CLOUD_PROJECT}."
+            f"{self.BIGQUERY_DATASET}."
+            f"{self.BIGQUERY_CATALOG_JOBS_TABLE}"
+        )
 
-# Create settings instance
+
 settings = Settings()

@@ -23,7 +23,8 @@ def test_live_api():
 
         if response.status_code == 401 or response.status_code == 403:
             print(
-                "[ERROR] Authentication required. Please provide an IAP JWT if AUTH_ENABLED is True."
+                "[ERROR] Authentication required. Obtain a JWT from POST /api/v1/auth/token "
+                "and send it as x-app-auth: Bearer <token>."
             )
             return
 

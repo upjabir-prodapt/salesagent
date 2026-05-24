@@ -11,16 +11,20 @@ Colt-AI orchestrates 10+ specialized AI agents to perform deep-dive research int
 - **Deep Alignment Analysis**: Maps company challenges to specific business solutions.
 - **Automated Report Generation**: Compiles multi-agent outputs into a professional markdown report.
 - **Cloud Native**: Integrated with Google BigQuery for persistence and GCS for artifact storage.
+- **Product catalog vector search**: Build and query a versioned Colt catalog index via `/api/v1/catalog` (see [docs/catalog-vector-index.md](docs/catalog-vector-index.md)).
+- **Research job services**: Orchestration under `src/services/research/` (see [docs/research-architecture.md](docs/research-architecture.md)).
 
 ## 🏗 Architecture
 
 ```mermaid
 graph TD
     User([User]) --> FastAPI[FastAPI Server]
-    FastAPI --> ResearchService[Research Service]
+    FastAPI --> ResearchRoutes[research routes]
+    ResearchRoutes --> ResearchService[ResearchService]
+    ResearchService --> ResearchRunner[ResearchRunnerService]
     ResearchService --> BigQuery[(BigQuery)]
     ResearchService --> GCS[(Cloud Storage)]
-    ResearchService --> SalesAgent[Sales Research Agent]
+    ResearchRunner --> SalesAgent[Sales Research Agent]
     
     subgraph "Sales Research Agent"
         Orchestrator[Research Orchestrator]

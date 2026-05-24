@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from src.utils.safety import get_default_safety_settings, get_safety_config_for_agent
+from src.services.research.agent.utils.safety import get_default_safety_settings, get_safety_config_for_agent
 
 
 def test_get_default_safety_settings_various(mock_settings):
@@ -12,8 +12,8 @@ def test_get_default_safety_settings_various(mock_settings):
 
     # Use create=True to patch things that might not be in environment
     with (
-        patch("src.utils.safety.HarmCategory", create=True),
-        patch("src.utils.safety.SafetySetting", create=True),
+        patch("src.services.research.agent.utils.safety.HarmCategory", create=True),
+        patch("src.services.research.agent.utils.safety.SafetySetting", create=True),
     ):
         settings = get_default_safety_settings()
         assert len(settings) == 4
@@ -26,9 +26,9 @@ def test_get_safety_config_for_agent(mock_settings):
     mock_settings.SAFETY_DANGEROUS_THRESHOLD = "BLOCK_MEDIUM_AND_ABOVE"
 
     with (
-        patch("src.utils.safety.HarmCategory", create=True),
-        patch("src.utils.safety.SafetySetting", create=True),
-        patch("src.utils.safety.SafetyConfig", create=True),
+        patch("src.services.research.agent.utils.safety.HarmCategory", create=True),
+        patch("src.services.research.agent.utils.safety.SafetySetting", create=True),
+        patch("src.services.research.agent.utils.safety.SafetyConfig", create=True),
     ):
         config = get_safety_config_for_agent("TestAgent")
         assert config is not None

@@ -2,12 +2,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.utils.safety import get_default_safety_settings, get_safety_config_for_agent
+from src.services.research.agent.utils.safety import get_default_safety_settings, get_safety_config_for_agent
 
 
 @pytest.fixture
 def mock_types():
-    with patch("src.utils.safety.types") as mock:
+    with patch("src.services.research.agent.utils.safety.types") as mock:
         # HarmCategory
         mock.HarmCategory.HARM_CATEGORY_HARASSMENT = "HARASSMENT"
         mock.HarmCategory.HARM_CATEGORY_HATE_SPEECH = "HATE_SPEECH"

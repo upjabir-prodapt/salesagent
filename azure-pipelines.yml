@@ -69,6 +69,7 @@ stages:
           # If overall coverage is below 80 %, pytest exits non-zero and the
           # pipeline fails before BuildAndPush runs.
           - script: |
+              cp .env.example .env
               uv run pytest \
                 --cov=src \
                 --cov-report=xml:$(System.DefaultWorkingDirectory)/coverage.txt \
@@ -212,4 +213,5 @@ stages:
                   --port=8000 \
                   --memory=4Gi \
                   --cpu=2 \
+                  --set-env-vars="IS_LOCAL=0,COMMIT_SHA=$(Build.BuildId)" \
                   --set-secrets="/secrets/.env=sales-agent-service-env:latest"

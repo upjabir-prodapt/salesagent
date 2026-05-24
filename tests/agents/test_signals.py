@@ -1,15 +1,15 @@
 from unittest.mock import MagicMock, patch
 
-from src.agents.salesAgent.sub_agents.signals_agent import create_signals_orchestrator
+from src.services.research.agent.sales.sub_agents.signals_agent import create_signals_orchestrator
 
 
 def test_create_signals_orchestrator():
     with (
         patch(
-            "src.agents.salesAgent.sub_agents.signals_agent.create_llm_agent"
+            "src.services.research.agent.sales.sub_agents.signals_agent.create_plan_react_agent"
         ) as mock_factory,
         patch(
-            "src.agents.salesAgent.sub_agents.signals_agent.ParallelAgent"
+            "src.services.research.agent.sales.sub_agents.signals_agent.ParallelAgent"
         ) as mock_parallel,
     ):
 

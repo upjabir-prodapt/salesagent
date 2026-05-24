@@ -46,9 +46,6 @@ def mock_settings():
         mock.OTEL_ENABLED = False
         mock.JOB_ID_PREFIX = "job_"
         mock.API_PREFIX = "/api/v1"
-        mock.AUTH_ENABLED = False
-        mock.IAP_AUDIENCE = "test-aud"
-        mock.IAP_EXPECTED_ISSUER = "https://cloud.google.com/iap"
         mock.agent_progress_map = {
             "ResearchOrchestrator": (50, "Researching"),
             "ResearchValidator": (70, "Validating"),
@@ -87,7 +84,7 @@ def patch_repository_settings(mock_settings):
     with (
         patch("src.repositories.bigquery_repository.settings", mock_settings),
         patch("src.repositories.gcs_repository.settings", mock_settings),
-        patch("src.agents.research_service.settings", mock_settings),
+        patch("src.services.research.research_service.settings", mock_settings),
         patch("src.routes.app.settings", mock_settings),
         patch("src.core.logging_config.settings", mock_settings),
         patch("src.core.security.settings", mock_settings),
@@ -99,15 +96,17 @@ def patch_repository_settings(mock_settings):
 def client():
     """FastAPI test client with mocked research service."""
     from src.dependencies.auth import get_current_user
-    from src.dependencies.service_dependencies import get_research_service
+    from src.dependencies.handler_dependencies import get_research_handler
+    from src.handlers.research_handler import ResearchHandler
 
-    # Use MagicMock for the service container
     mock_service = MagicMock()
-    # Async methods
     mock_service.process_research_background = AsyncMock()
-    # Sync methods (default is MagicMock, but let's be explicit if needed)
+    mock_service.new_job_id.return_value = "test-job-123"
+    mock_service.create_research_request.return_value = True
 
-    app.dependency_overrides[get_research_service] = lambda: mock_service
+    app.dependency_overrides[get_research_handler] = lambda: ResearchHandler(
+        mock_service
+    )
     app.dependency_overrides[get_current_user] = lambda: {
         "email": "test@example.com",
         "business_unit": "Sales",
