@@ -20,10 +20,17 @@ from opentelemetry import trace
 
 from src.core.config import settings
 from src.core.exceptions import InputValidationException
-from .agent_pipeline import AGENT_OUTPUT_KEYS, validate_agent_output
+from .agent_pipeline import (
+    AGENT_OUTPUT_KEYS,
+    get_output_key,
+    is_tracked_agent,
+    validate_agent_output,
+)
 from src.core.logging_config import logger
 
 from .....utils.guardrails import InputGuardrail
+from ..sales.utils.evidence import append_evidence, evidence_key
+from ..sales.utils.verification import Bm25Verifier, EvidenceStore
 from .telemetry import track_agent_end, track_agent_start
 from .....utils.url_utils import is_authoritative
 
@@ -269,16 +276,13 @@ def after_model_callback(
                                         }
                                     )
 
-                # Cache as search results using the established prefix for aggregator discovery
                 if grounding_entries:
-                    import uuid
-
-                    unique_id = str(uuid.uuid4())[:8]
-                    cache_key = f"raw_search_cache_{agent_name}_grounding_{unique_id}"
-                    callback_context.state[cache_key] = grounding_entries
+                    append_evidence(
+                        callback_context.state, agent_name, grounding_entries
+                    )
                     logger.debug(
                         f"[Callback] Captured {len(grounding_entries)} grounding snippets "
-                        f"from {agent_name} model response."
+                        f"from {agent_name} model response -> {evidence_key(agent_name)}"
                     )
 
                 # Confidence logging
@@ -428,11 +432,40 @@ def after_agent_callback(callback_context: CallbackContext) -> types.Content | N
             )
             callback_context.state["final_report"] = ""
 
-    if agent_name in AGENT_OUTPUT_KEYS:
+    if is_tracked_agent(agent_name):
         validate_agent_output(callback_context.state, agent_name)
+        _record_bm25_telemetry(callback_context, agent_name)
 
     # Use agent's original output
     return None
+
+
+def _record_bm25_telemetry(callback_context: CallbackContext, agent_name: str) -> None:
+    """Optional post-agent BM25 telemetry (no retry)."""
+    if agent_name in ("ReportCompiler", "AlignmentAnalyst"):
+        return
+    output_key = get_output_key(agent_name)
+    if not output_key:
+        return
+    draft = callback_context.state.get(output_key)
+    if not draft or not str(draft).strip():
+        return
+    session_id = "unknown"
+    try:
+        session_id = str(getattr(callback_context, "session", None) and callback_context.session.id)
+    except Exception:
+        pass
+    try:
+        result = Bm25Verifier().verify(
+            str(draft),
+            callback_context.state,
+            agent_name=agent_name,
+            session_id=session_id,
+        )
+        callback_context.state[f"{agent_name}_bm25_status"] = result.status
+        callback_context.state[f"{agent_name}_bm25_unsupported"] = result.unsupported[:8]
+    except Exception as e:
+        logger.debug(f"[Callback] BM25 telemetry failed for {agent_name}: {e}")
 
 
 def before_tool_callback(
@@ -470,7 +503,7 @@ def after_tool_callback(
     )
 
     # Count tool calls as sources crawled if they are web tools
-    _WEB_TOOLS = {"google_search", "read_url"}
+    _WEB_TOOLS = {"google_search", "google_search_agent", "read_url"}
     try:
         state = tool_context.callback_context.state
         if tool_name in _WEB_TOOLS:
@@ -489,12 +522,11 @@ def after_tool_callback(
     except Exception as e:
         logger.debug(f"[Callback] Could not increment tool call count: {e}")
 
-    # Cache raw google_search results as ground-truth evidence for hallucination checks.
-    # Uses a unique key per tool call to avoid clobbering in parallel agents.
+    # Ingest web search tool results into per-agent evidence registry.
     try:
-        if tool_name == "google_search":
+        if tool_name in ("google_search", "google_search_agent"):
             agent_name = getattr(tool_context.callback_context, "agent_name", "unknown")
-            query = args.get("query", "")
+            query = args.get("query", "") or args.get("request", "")
             entries = _extract_search_entries(tool_response, query, agent_name)
             if entries:
                 state = tool_context.callback_context.state
@@ -502,7 +534,6 @@ def after_tool_callback(
                     url = entry.get("url", "")
                     snippet = entry.get("snippet", "").lower()
 
-                    # Prompt injection check
                     if any(sig in snippet for sig in _SNIPPET_INJECTION_SIGNALS):
                         logger.warning(
                             f"[Callback] Prompt injection in snippet: "
@@ -510,14 +541,12 @@ def after_tool_callback(
                         )
                         entry["flagged_injection"] = True
 
-                    # Authority flag
                     entry["authoritative"] = is_authoritative(url) if url else False
                     if url and not entry["authoritative"]:
                         logger.warning(
                             f"[Callback] Non-authoritative source: {url} agent={agent_name}"
                         )
 
-                    # Collect source domains from search results
                     if url:
                         from urllib.parse import urlparse
 
@@ -528,13 +557,12 @@ def after_tool_callback(
                                 domains.append(domain)
                             state["mc_source_domains"] = domains
 
-                import uuid
-
-                unique_id = str(uuid.uuid4())[:8]
-                cache_key = f"raw_search_cache_{agent_name}_{unique_id}"
-                state[cache_key] = entries
+                append_evidence(state, agent_name, entries)
+                EvidenceStore(state, agent_name=agent_name).ingest_grounding(
+                    None, agent_name=agent_name
+                )
                 logger.debug(
-                    f"[Callback] {cache_key}: cached {len(entries)} entries "
+                    f"[Callback] {evidence_key(agent_name)}: +{len(entries)} entries "
                     f"agent={agent_name} query={query!r}"
                 )
     except Exception as e:

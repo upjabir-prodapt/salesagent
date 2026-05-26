@@ -7,9 +7,14 @@ Defines the main agent orchestration structure for lead generation research.
 from google.adk.agents import ParallelAgent, SequentialAgent
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.apps import App, ResumabilityConfig
+from google.adk.apps.app import EventsCompactionConfig
+from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
+from google.adk.models import Gemini
 from google.adk.plugins import ReflectAndRetryToolPlugin
 
+from .....core.config import settings
 from .....core.logging_config import logger
+from .....core.model import retry_config
 from .sub_agents.research_agents import create_research_agents
 from .sub_agents.signals_agent import create_signals_orchestrator
 from .sub_agents.synthesis_agents import (
@@ -65,11 +70,28 @@ def create_sales_agent_app():
 
     logger.info("SalesResearchAgent fully initialized and ready")
 
+    compaction_config = None
+    if settings.AGENT_EVENTS_COMPACT_ENABLED:
+        summarizer = LlmEventSummarizer(
+            llm=Gemini(
+                model=settings.AGENT_COMPACT_SUMMARIZER_MODEL,
+                http_retry_options=retry_config,
+            )
+        )
+        compaction_config = EventsCompactionConfig(
+            compaction_interval=settings.AGENT_EVENTS_COMPACT_INTERVAL,
+            overlap_size=settings.AGENT_EVENTS_COMPACT_OVERLAP,
+            token_threshold=settings.AGENT_EVENTS_COMPACT_TOKEN_THRESHOLD,
+            event_retention_size=settings.AGENT_EVENTS_COMPACT_RETENTION,
+            summarizer=summarizer,
+        )
+
     app = App(
         name="sales_research_app",
         root_agent=sales_research_agent,
         resumability_config=ResumabilityConfig(is_resumable=True),
         context_cache_config=ContextCacheConfig(ttl_seconds=3600),
+        events_compaction_config=compaction_config,
         plugins=[ReflectAndRetryToolPlugin()],
     )
     return app

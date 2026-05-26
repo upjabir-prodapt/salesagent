@@ -1,11 +1,11 @@
 """
 Evaluation Service - Automated and LLM-based Report Quality Evaluation
 
-Two-section evaluation framework:
+Two-section evaluation framework (scoring_version v2):
   Section A (80%): LLM-as-judge scoring 14 human dimensions (D1-D14) with weights,
                    plus binary penalties for hallucinations (M12) and policy violations (M13).
-  Section B (20%): Automated heuristic metrics: ROUGE-1/2/L, BERTScore, Groundedness,
-                   Completeness, Source Diversity.
+  Section B (20%): Agent coverage, completeness, citation groundedness, evidence breadth,
+                   semantic groundedness (ONNX embeddings).
 
 Results are stored as evaluation.json in GCS alongside raw_data.json and final_report.md.
 """
@@ -22,6 +22,13 @@ from ....core.config import settings
 from ....core.logging_config import logger
 from ....dependencies.service_dependencies import get_genai_client
 from ...catalog.search import colt_product_search
+from .sales.utils.embedding_similarity import compute_semantic_groundedness
+from .sales.utils.evidence import (
+    aggregate_job_evidence,
+    evidence_to_block,
+    format_agent_outputs_for_judge,
+)
+from .utils.agent_pipeline import AGENT_OUTPUT_KEYS
 
 # ---------------------------------------------------------------------------
 # Dimension weights for Section A (D1–D14)
@@ -104,14 +111,17 @@ DIMENSION_CONFIG: dict[str, dict[str, Any]] = {
 # = 32 + 30 + 20 = 82
 MAX_SECTION_A_WEIGHTED_SCORE = 82.0
 
-# Section B weights
+# Section B weights (v2 — no ROUGE)
 SECTION_B_WEIGHTS = {
-    "M1_rouge1": 0.30,
-    "M2_rouge2": 0.15,
-    "M3_rougel": 0.20,
-    "M5_groundedness": 0.15,
-    "M6_completeness": 0.10,
-    "M7_source_diversity": 0.10,
+    "M1_agent_output_coverage": 0.20,
+    "M2_report_completeness": 0.20,
+    "M3_citation_groundedness": 0.25,
+    "M4_evidence_breadth": 0.15,
+    "M5_semantic_groundedness": 0.20,
+}
+
+RESEARCH_AGENT_OUTPUT_KEYS = {
+    k: v for k, v in AGENT_OUTPUT_KEYS.items() if v != "final_report"
 }
 
 # Expected minimum unique domains for M7
@@ -146,48 +156,26 @@ class EvaluationService:
         """
         logger.info(f"[Evaluation] Starting evaluation for request {request_id}")
 
-        # Extract raw search cache — aggregate from all agents
-        raw_search_cache = []
-        for k, v in session_state.items():
-            if k.startswith("raw_search_cache_") and isinstance(v, list):
-                raw_search_cache.extend(v)
-
-        # Fallback to legacy key if exists and empty
-        if not raw_search_cache:
-            raw_search_cache = session_state.get("raw_search_cache") or []
+        job_evidence = session_state.get("job_evidence")
+        if not isinstance(job_evidence, list) or not job_evidence:
+            job_evidence = aggregate_job_evidence(session_state)
 
         logger.info(
-            f"[Evaluation] Total aggregated raw_search_cache entries: {len(raw_search_cache)}"
+            f"[Evaluation] job_evidence entries: {len(job_evidence)}"
         )
-
-        # Build reference text for automated metrics.
-        # Prefer the raw search cache (actual scraped web content) over the LLM-generated
-        # agent outputs so that ROUGE/BERTScore measure fidelity to real evidence rather
-        # than self-consistency between LLM outputs.
-        if raw_search_cache:
-            reference_text = self._cache_to_text(raw_search_cache)
-            logger.info(
-                f"[Evaluation] Using raw_search_cache as reference text "
-                f"({len(reference_text)} chars)"
-            )
-        else:
-            reference_text = self._session_state_to_text(session_state)
-            logger.warning(
-                "[Evaluation] raw_search_cache empty — falling back to session_state as reference"
-            )
 
         # ------------------------------------------------------------------
         # Section A: LLM-as-judge
         # ------------------------------------------------------------------
         section_a_result = await self._run_section_a(
-            final_report, session_state, raw_search_cache
+            final_report, session_state, job_evidence
         )
 
         # ------------------------------------------------------------------
         # Section B: Automated metrics
         # ------------------------------------------------------------------
         section_b_result = await self._run_section_b(
-            final_report, reference_text, raw_search_cache
+            final_report, session_state, job_evidence
         )
 
         # ------------------------------------------------------------------
@@ -206,6 +194,8 @@ class EvaluationService:
                 "evaluator_model": settings.EVALUATOR_MODEL,
                 "evaluated_at": datetime.now(UTC).isoformat(),
                 "request_id": request_id,
+                "scoring_version": "v2",
+                "job_evidence_count": len(job_evidence),
             },
         }
 
@@ -223,7 +213,7 @@ class EvaluationService:
         self,
         final_report: str,
         session_state: dict[str, Any],
-        raw_search_cache: list[dict] | None = None,
+        job_evidence: list[dict] | None = None,
     ) -> dict[str, Any]:
         """Call the LLM judge and compute Section A score."""
         try:
@@ -233,7 +223,7 @@ class EvaluationService:
                 final_report,
                 session_state,
                 catalog_context,
-                raw_search_cache=raw_search_cache or [],
+                job_evidence=job_evidence or [],
             )
             return self._parse_and_score_section_a(raw_llm_response)
         except Exception as e:
@@ -286,7 +276,7 @@ class EvaluationService:
         final_report: str,
         session_state: dict[str, Any],
         catalog_context: str,
-        raw_search_cache: list[dict] | None = None,
+        job_evidence: list[dict] | None = None,
     ) -> dict[str, Any]:
         """
         Send the evaluation prompt to the configured LLM judge via Google Gen AI
@@ -300,7 +290,7 @@ class EvaluationService:
             final_report,
             session_state,
             catalog_context,
-            raw_search_cache=raw_search_cache or [],
+            job_evidence=job_evidence or [],
         )
 
         response = client.models.generate_content(
@@ -325,46 +315,20 @@ class EvaluationService:
         final_report: str,
         session_state: dict[str, Any],
         catalog_context: str,
-        raw_search_cache: list[dict] | None = None,
+        job_evidence: list[dict] | None = None,
     ) -> str:
         """Construct the detailed scoring prompt for the LLM judge."""
 
-        # Extract key session state sections for context
-        firmographics = json.dumps(
-            session_state.get("firmographicsagent_output", {}), indent=2
-        )
-        geographic = json.dumps(
-            session_state.get("geographicagent_output", {}), indent=2
-        )
-        alignment_output = json.dumps(
-            session_state.get("alignment_output", {}), indent=2
-        )
-        tech_stack = json.dumps(
-            session_state.get("techstackagent_output", {}), indent=2
-        )
-        strategy = json.dumps(session_state.get("strategyagent_output", {}), indent=2)
-        executive = json.dumps(
-            session_state.get("executiveagent_output", {}), indent=2
-        )
-        compliance = json.dumps(
-            session_state.get("complianceagent_output", {}), indent=2
-        )
-        procurement = json.dumps(
-            session_state.get("procurementagent_output", {}), indent=2
-        )
-        market = json.dumps(session_state.get("marketagent_output", {}), indent=2)
-        ecosystem = json.dumps(session_state.get("ecosystemagent_output", {}), indent=2)
-        signals_growth = json.dumps(
-            session_state.get("growthsignals_output", {}), indent=2
-        )
-        signals_risk = json.dumps(session_state.get("risksignals_output", {}), indent=2)
-        signals_campaign = json.dumps(
-            session_state.get("campaignsignals_output", {}), indent=2
+        agent_outputs_block = format_agent_outputs_for_judge(
+            session_state, RESEARCH_AGENT_OUTPUT_KEYS
         )
 
-        # Extract verification results from the new Verifier Agents
         verifications = {
-            k: v for k, v in session_state.items() if k.endswith("_verification_result")
+            k: v
+            for k, v in session_state.items()
+            if k.endswith("_verification_result")
+            or k.endswith("_bm25_status")
+            or k.startswith("verification_")
         }
         verifications_text = json.dumps(verifications, indent=2)
 
@@ -391,16 +355,12 @@ class EvaluationService:
             - Score 4: Exceptional — specific, current, commercially actionable
             """)
 
-        # Build verified evidence block from raw search cache (capped at 8 000 chars
-        # to stay within the judge model's context budget alongside the report and catalog)
         evidence_section = ""
-        if raw_search_cache:
-            evidence_block = self._cache_to_evidence_block(
-                raw_search_cache, max_chars=8000
-            )
+        if job_evidence:
+            evidence_block = evidence_to_block(job_evidence, max_chars=8000)
             if evidence_block:
                 evidence_section = textwrap.dedent(f"""
-        ## VERIFIED EVIDENCE (raw web-scraped snippets gathered during this research job):
+        ## VERIFIED EVIDENCE (job_evidence — web snippets gathered during this research job):
         Use this as the authoritative source of truth when assessing M12 hallucinations.
         A numerical fact (revenue, headcount, growth rate, fine amount) is a hallucination
         if it does not appear in this evidence and cannot be inferred from it.
@@ -424,41 +384,8 @@ class EvaluationService:
         ## REPORT TO EVALUATE:
         {final_report}
 
-        ## SUPPORTING RESEARCH DATA (EXCERPTS):
-        ### Firmographics & Snapshot:
-        {firmographics[:3000]}
-
-        ### Geographic Operations:
-        {geographic[:3000]}
-
-        ### Strategy & Challenges:
-        {strategy[:5000]}
-
-        ### Executive Intelligence:
-        {executive[:4000]}
-
-        ### Technology Landscape:
-        {tech_stack[:4000]}
-
-        ### Compliance & Regulatory:
-        {compliance[:3000]}
-
-        ### Procurement Patterns:
-        {procurement[:3000]}
-
-        ### Market Position:
-        {market[:4000]}
-
-        ### Ecosystem & Partnerships:
-        {ecosystem[:3000]}
-
-        ### Colt Alignment Output:
-        {alignment_output[:5000]}
-
-        ### Signals (Growth / Risk / Campaign):
-        Growth: {signals_growth[:800]}
-        Risk: {signals_risk[:800]}
-        Campaign: {signals_campaign[:800]}
+        ## AGENT OUTPUTS (structured — compare report sections to these):
+        {agent_outputs_block}
 
         ## SCORING RUBRIC (score each 0–4):
         {dimension_rubric}
@@ -467,17 +394,11 @@ class EvaluationService:
         - **M12_hallucination_count**: Count of factual claims in the report that cannot be
           verified against the VERIFIED EVIDENCE or REAL-TIME VERIFICATION RESULTS above.
           **CRITICAL GUIDELINES FOR M12:**
-          - **PRIORITIZE REAL-TIME DATA**: Financial data for companies changes quarterly. If the report 
-            provides a figure (e.g. $50B revenue) that contradicts your internal training data (e.g. $40B), 
-            TRUST THE REPORT. Do NOT flag it as a hallucination unless it is specifically refuted by the 
-            REAL-TIME VERIFICATION RESULTS or VERIFIED EVIDENCE.
-          - **Trust the Verifier Agents**: If a claim in the report is marked as "SUPPORTED" in the 
-            REAL-TIME VERIFICATION RESULTS, do NOT flag it as a hallucination, even if it is not in the 
-            VERIFIED EVIDENCE snippets.
-          - **Leniency for Missing Snippets**: The VERIFIED EVIDENCE is a sample of web snippets. If a 
-            numerical claim (revenue, headcount, etc.) is missing from the snippets but not contradicted 
-            by them, do NOT automatically flag it as a hallucination. Only flag if it appears completely 
-            fabricated or wildly implausible.
+          - Ground M12 only on VERIFIED EVIDENCE (job_evidence) and REAL-TIME VERIFICATION RESULTS.
+            Do not use internal training data to contradict report figures.
+          - If a claim is supported by verification results or appears in job_evidence snippets,
+            do NOT flag as hallucination.
+          - Only flag claims that are clearly fabricated or contradicted by the evidence above.
           - **Colt product descriptions**: Never flag Colt's own product/service descriptions
             as hallucinations.
         - **M13_policy_violation_count**: Count of statements that violate content policy
@@ -616,108 +537,106 @@ class EvaluationService:
     async def _run_section_b(
         self,
         final_report: str,
-        reference_text: str,
-        raw_search_cache: list[dict] | None = None,
+        session_state: dict[str, Any],
+        job_evidence: list[dict] | None = None,
     ) -> dict[str, Any]:
-        """Compute all automated metrics for Section B."""
-        try:
-            rouge_scores = await asyncio.to_thread(
-                self._compute_rouge, final_report, reference_text
-            )
-        except Exception as e:
-            logger.warning(f"[Evaluation] ROUGE computation failed: {e}")
-            rouge_scores = {"rouge1": 0.0, "rouge2": 0.0, "rougeLsum": 0.0}
+        """Compute all automated metrics for Section B (v2)."""
+        evidence = job_evidence or []
 
         try:
-            groundedness = self._compute_groundedness(
-                final_report, raw_search_cache=raw_search_cache or []
-            )
+            m1 = self._compute_agent_output_coverage(session_state)
         except Exception as e:
-            logger.warning(f"[Evaluation] Groundedness computation failed: {e}")
-            groundedness = 0.0
+            logger.warning(f"[Evaluation] Agent coverage failed: {e}")
+            m1 = 0.0
 
         try:
-            completeness = self._compute_completeness(final_report)
+            m2 = self._compute_completeness(final_report)
         except Exception as e:
             logger.warning(f"[Evaluation] Completeness computation failed: {e}")
-            completeness = 0.0
+            m2 = 0.0
 
         try:
-            source_diversity = self._compute_source_diversity(
-                final_report, raw_search_cache=raw_search_cache or []
+            m3 = self._compute_groundedness(final_report, job_evidence=evidence)
+        except Exception as e:
+            logger.warning(f"[Evaluation] Citation groundedness failed: {e}")
+            m3 = 0.0
+
+        try:
+            m4 = self._compute_evidence_breadth(job_evidence=evidence)
+        except Exception as e:
+            logger.warning(f"[Evaluation] Evidence breadth failed: {e}")
+            m4 = 0.0
+
+        try:
+            m5 = await asyncio.to_thread(
+                compute_semantic_groundedness, final_report, evidence
             )
         except Exception as e:
-            logger.warning(f"[Evaluation] Source Diversity computation failed: {e}")
-            source_diversity = 0.0
+            logger.warning(f"[Evaluation] Semantic groundedness failed: {e}")
+            m5 = 0.0
 
-        m1 = round(rouge_scores.get("rouge1", 0.0), 4)
-        m2 = round(rouge_scores.get("rouge2", 0.0), 4)
-        m3 = round(rouge_scores.get("rougeLsum", 0.0), 4)
-        m5 = round(groundedness, 4)
-        m6 = round(completeness, 4)
-        m7 = round(source_diversity, 4)
+        m1 = round(m1, 4)
+        m2 = round(m2, 4)
+        m3 = round(m3, 4)
+        m4 = round(m4, 4)
+        m5 = round(m5, 4)
 
-        # Weighted average × 100 to put on 0–100 scale
         section_b_score = (
-            m1 * SECTION_B_WEIGHTS["M1_rouge1"]
-            + m2 * SECTION_B_WEIGHTS["M2_rouge2"]
-            + m3 * SECTION_B_WEIGHTS["M3_rougel"]
-            + m5 * SECTION_B_WEIGHTS["M5_groundedness"]
-            + m6 * SECTION_B_WEIGHTS["M6_completeness"]
-            + m7 * SECTION_B_WEIGHTS["M7_source_diversity"]
+            m1 * SECTION_B_WEIGHTS["M1_agent_output_coverage"]
+            + m2 * SECTION_B_WEIGHTS["M2_report_completeness"]
+            + m3 * SECTION_B_WEIGHTS["M3_citation_groundedness"]
+            + m4 * SECTION_B_WEIGHTS["M4_evidence_breadth"]
+            + m5 * SECTION_B_WEIGHTS["M5_semantic_groundedness"]
         ) * 100
 
         return {
-            "M1_rouge1": m1,
-            "M1_rouge1_weight": SECTION_B_WEIGHTS["M1_rouge1"],
-            "M2_rouge2": m2,
-            "M2_rouge2_weight": SECTION_B_WEIGHTS["M2_rouge2"],
-            "M3_rougel": m3,
-            "M3_rougel_weight": SECTION_B_WEIGHTS["M3_rougel"],
-            "M5_groundedness": m5,
-            "M5_groundedness_weight": SECTION_B_WEIGHTS["M5_groundedness"],
-            "M5_groundedness_method": "URL count in Section 13 Source Summary / total URLs expected",
-            "M6_completeness": m6,
-            "M6_completeness_weight": SECTION_B_WEIGHTS["M6_completeness"],
-            "M6_sections_expected": EXPECTED_SECTION_COUNT,
-            "M7_source_diversity": m7,
-            "M7_source_diversity_weight": SECTION_B_WEIGHTS["M7_source_diversity"],
-            "M7_min_expected_domains": MIN_EXPECTED_DOMAINS,
+            "M1_agent_output_coverage": m1,
+            "M1_weight": SECTION_B_WEIGHTS["M1_agent_output_coverage"],
+            "M2_report_completeness": m2,
+            "M2_weight": SECTION_B_WEIGHTS["M2_report_completeness"],
+            "M2_sections_expected": EXPECTED_SECTION_COUNT,
+            "M3_citation_groundedness": m3,
+            "M3_weight": SECTION_B_WEIGHTS["M3_citation_groundedness"],
+            "M3_method": "Section 13 cited domains matching job_evidence",
+            "M4_evidence_breadth": m4,
+            "M4_weight": SECTION_B_WEIGHTS["M4_evidence_breadth"],
+            "M4_min_expected_domains": MIN_EXPECTED_DOMAINS,
+            "M5_semantic_groundedness": m5,
+            "M5_weight": SECTION_B_WEIGHTS["M5_semantic_groundedness"],
+            "M5_threshold": settings.EVAL_EMBEDDING_SIMILARITY_THRESHOLD,
             "section_b_score": round(section_b_score, 2),
             "section_b_weight": 0.20,
+            "scoring_version": "v2",
         }
 
-    def _compute_rouge(self, hypothesis: str, reference: str) -> dict[str, float]:
-        """Compute ROUGE-1, ROUGE-2, ROUGE-L scores."""
-        from rouge_score import rouge_scorer
-
-        scorer = rouge_scorer.RougeScorer(
-            ["rouge1", "rouge2", "rougeLsum"], use_stemmer=True
+    def _compute_agent_output_coverage(self, session_state: dict[str, Any]) -> float:
+        """Fraction of research/signals agent outputs that are non-empty."""
+        total = len(RESEARCH_AGENT_OUTPUT_KEYS)
+        if total == 0:
+            return 0.0
+        populated = sum(
+            1
+            for key in RESEARCH_AGENT_OUTPUT_KEYS.values()
+            if session_state.get(key) and str(session_state.get(key)).strip()
         )
-        scores = scorer.score(reference, hypothesis)
-        return {
-            "rouge1": scores["rouge1"].fmeasure,
-            "rouge2": scores["rouge2"].fmeasure,
-            "rougeLsum": scores["rougeLsum"].fmeasure,
-        }
+        return populated / total
+
+    def _compute_evidence_breadth(self, job_evidence: list[dict]) -> float:
+        """Unique domains in job_evidence / MIN_EXPECTED_DOMAINS."""
+        urls = [e.get("url", "") for e in job_evidence if e.get("url", "").strip()]
+        unique_domains = self._count_unique_domains(urls)
+        return min(1.0, unique_domains / MIN_EXPECTED_DOMAINS)
 
     def _compute_groundedness(
         self,
         final_report: str,
-        raw_search_cache: list[dict] | None = None,
+        job_evidence: list[dict] | None = None,
     ) -> float:
         """
         Groundedness measures how well the cited sources in Section 13 correspond to
         sources that were actually scraped during the research job.
 
-        When raw_search_cache is available (preferred):
-            score = (cited Section 13 URLs that appear in the cache) / MIN_EXPECTED_DOMAINS
-            This verifies that cited sources were genuinely scraped, not hallucinated.
-
-        Fallback (no cache):
-            score = unique domains in Section 13 / MIN_EXPECTED_DOMAINS
-            Original behaviour — counts diversity of cited sources.
-
+        Citation groundedness: cited Section 13 domains appearing in job_evidence.
         Capped at 1.0.
         """
         section_13 = self._extract_section_13(final_report)
@@ -728,32 +647,25 @@ class EvaluationService:
             return 0.0
 
         cited_urls = self._extract_urls(section_13)
+        evidence = job_evidence or []
 
-        if raw_search_cache:
-            # Build the set of URLs (and domains) that were actually scraped
-            cached_urls = {
-                e["url"].strip().lower()
-                for e in raw_search_cache
-                if e.get("url", "").strip()
-            }
+        if evidence:
             cached_domains = set()
-            for url in cached_urls:
+            for e in evidence:
+                url = (e.get("url") or "").strip().lower()
+                if not url:
+                    continue
                 try:
-                    from urllib.parse import urlparse as _up
-
-                    netloc = _up(url).netloc.lower().removeprefix("www.")
+                    netloc = urlparse(url).netloc.lower().removeprefix("www.")
                     if netloc:
                         cached_domains.add(netloc)
                 except Exception:
                     pass
 
-            # Count cited domains that match any scraped domain
             verified = 0
             for url in cited_urls:
                 try:
-                    from urllib.parse import urlparse as _up
-
-                    netloc = _up(url).netloc.lower().removeprefix("www.")
+                    netloc = urlparse(url).netloc.lower().removeprefix("www.")
                     if netloc and netloc in cached_domains:
                         verified += 1
                 except Exception:
@@ -761,15 +673,15 @@ class EvaluationService:
 
             score = min(1.0, verified / MIN_EXPECTED_DOMAINS)
             logger.debug(
-                f"[Evaluation] Groundedness (cache): {verified} cited URLs verified "
-                f"against {len(cached_domains)} scraped domains → {score:.3f}"
+                f"[Evaluation] Citation groundedness: {verified} cited domains "
+                f"in job_evidence ({len(cached_domains)} domains) → {score:.3f}"
             )
         else:
             unique_domains = self._count_unique_domains(cited_urls)
             score = min(1.0, unique_domains / MIN_EXPECTED_DOMAINS)
             logger.debug(
-                f"[Evaluation] Groundedness (fallback): {unique_domains} unique domains "
-                f"in Section 13 → {score:.3f}"
+                f"[Evaluation] Citation groundedness (no evidence): "
+                f"{unique_domains} domains in Section 13 → {score:.3f}"
             )
 
         return score
@@ -815,41 +727,6 @@ class EvaluationService:
         )
         return completeness
 
-    def _compute_source_diversity(
-        self,
-        final_report: str,
-        raw_search_cache: list[dict] | None = None,
-    ) -> float:
-        """
-        Source Diversity measures the breadth of research sources used.
-
-        When raw_search_cache is available (preferred):
-            score = unique domains across ALL scraped entries / MIN_EXPECTED_DOMAINS
-            This reflects true research breadth regardless of what was cited in the report.
-
-        Fallback (no cache):
-            score = unique domains cited anywhere in the report / MIN_EXPECTED_DOMAINS
-            Original behaviour.
-
-        Capped at 1.0.
-        """
-        if raw_search_cache:
-            all_cache_urls = [
-                e["url"] for e in raw_search_cache if e.get("url", "").strip()
-            ]
-            unique_domains = self._count_unique_domains(all_cache_urls)
-            source = "cache"
-        else:
-            all_urls = self._extract_urls(final_report)
-            unique_domains = self._count_unique_domains(all_urls)
-            source = "report"
-
-        score = min(1.0, unique_domains / MIN_EXPECTED_DOMAINS)
-        logger.debug(
-            f"[Evaluation] Source Diversity ({source}): {unique_domains} unique domains → {score:.3f}"
-        )
-        return score
-
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -886,59 +763,3 @@ class EvaluationService:
                 pass
         return len(domains)
 
-    def _session_state_to_text(self, session_state: dict[str, Any]) -> str:
-        """
-        Convert session state dict to a single flat text blob for use as
-        the ROUGE/BERTScore reference.  We concatenate all agent output values.
-        """
-        parts = []
-        for _key, value in session_state.items():
-            if isinstance(value, dict):
-                parts.append(json.dumps(value, ensure_ascii=False))
-            elif isinstance(value, str) and value:
-                parts.append(value)
-        return "\n\n".join(parts)
-
-    def _cache_to_text(self, raw_search_cache: list[dict]) -> str:
-        """
-        Convert the raw search cache into a flat text blob for ROUGE/BERTScore
-        reference.  Concatenates titles and snippets from all cache entries.
-        """
-        parts: list[str] = []
-        for entry in raw_search_cache:
-            title = entry.get("title", "").strip()
-            snippet = entry.get("snippet", "").strip()
-            if title:
-                parts.append(title)
-            if snippet:
-                parts.append(snippet)
-        return "\n\n".join(parts)
-
-    @staticmethod
-    def _cache_to_evidence_block(
-        raw_search_cache: list[dict],
-        max_chars: int = 8000,
-    ) -> str:
-        """
-        Build a condensed evidence block from the raw search cache for inclusion
-        in the LLM judge prompt.  Each entry is formatted as:
-
-            [Agent: <agent>] <title>
-            URL: <url>
-            <snippet>
-
-        Entries are included in insertion order until max_chars is reached.
-        """
-        lines: list[str] = []
-        total = 0
-        for entry in raw_search_cache:
-            agent = entry.get("agent", "")
-            title = entry.get("title", "").strip()
-            url = entry.get("url", "").strip()
-            snippet = entry.get("snippet", "").strip()
-            block = f"[Agent: {agent}] {title}\nURL: {url}\n{snippet}\n"
-            if total + len(block) > max_chars:
-                break
-            lines.append(block)
-            total += len(block)
-        return "\n".join(lines)

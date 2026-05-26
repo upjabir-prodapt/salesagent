@@ -18,6 +18,13 @@ from typing import Any
 from google.genai import types
 from rank_bm25 import BM25Okapi
 
+from .evidence import (
+    append_evidence,
+    evidence_key,
+    get_agent_evidence,
+    normalize_entry,
+)
+
 # --- Constants ----------------------------------------------------------------
 
 BM25_MIN_SCORE = 0.8
@@ -112,13 +119,20 @@ def _texts_from_grounding(gm: types.GroundingMetadata) -> list[str]:
     return texts
 
 
-def _entries_from_search_response(tool_response: Any) -> list[dict[str, str]]:
+def _entries_from_search_response(
+    tool_response: Any, *, agent_name: str = ""
+) -> list[dict[str, str]]:
     """Parse structured or plain-text search responses into evidence dicts."""
     entries: list[dict[str, str]] = []
 
     def add(url: str, title: str, snippet: str) -> None:
         if url or title or snippet:
-            entries.append({"uri": url, "title": title, "snippet": snippet})
+            entries.append(
+                normalize_entry(
+                    {"url": url, "title": title, "snippet": snippet},
+                    agent_name=agent_name,
+                )
+            )
 
     if isinstance(tool_response, dict):
         for key in ("results", "organic_results", "items"):
@@ -141,7 +155,7 @@ def _normalize_claim(text: str) -> str:
     return re.sub(r"^[\*\-]\s*", "", text.strip()).strip()
 
 
-def _claims_from_answer(answer: str) -> list[str]:
+def claims_from_answer(answer: str) -> list[str]:
     """Split answer into individual checkable claim sentences."""
     claims: list[str] = []
     for line in answer.splitlines():
@@ -163,24 +177,24 @@ def _is_boilerplate(sentence: str) -> bool:
 
 
 class EvidenceStore:
-    """Accumulates search + grounding text in session state for BM25 verification."""
+    """Accumulates search + grounding text in per-agent session state for BM25."""
 
-    def __init__(self, state: Any) -> None:
+    def __init__(self, state: Any, *, agent_name: str | None = None) -> None:
         self._state = state
+        self._agent_name = agent_name or ""
 
     def ingest_grounding(
         self,
         gm: types.GroundingMetadata | None = None,
         *,
         llm_response: Any | None = None,
+        agent_name: str | None = None,
     ) -> None:
-        """Merge grounding metadata into the session evidence corpus.
+        """Merge grounding metadata into the agent-scoped evidence corpus."""
+        agent = agent_name or self._agent_name
+        if not agent:
+            return
 
-        Resolution order:
-          1. Explicit `gm` argument.
-          2. `llm_response.grounding_metadata`.
-          3. `temp:_adk_grounding_metadata` in session state (set by GoogleSearchAgentTool).
-        """
         resolved = gm
         if resolved is None and llm_response:
             resolved = getattr(llm_response, "grounding_metadata", None)
@@ -190,9 +204,10 @@ class EvidenceStore:
         if resolved is None:
             return
 
-        evidence = list(self._state.get("search_evidence", []))
-        sources = list(self._state.get("grounding_sources", []))
-        blobs = list(self._state.get("grounding_text_blobs", []))
+        entries: list[dict] = []
+        blobs_key = f"grounding_text_blobs_{agent}"
+        sources_key = f"grounding_sources_{agent}"
+        sources = list(self._state.get(sources_key) or [])
 
         for chunk in resolved.grounding_chunks or []:
             if not (chunk.web and chunk.web.uri):
@@ -203,54 +218,89 @@ class EvidenceStore:
             rc = chunk.retrieved_context
             if rc and getattr(rc, "text", None):
                 snippet = rc.text.strip()
-            evidence.append({"uri": uri, "title": title, "snippet": snippet})
+            entries.append(
+                normalize_entry(
+                    {"url": uri, "title": title, "snippet": snippet, "agent": agent},
+                    agent_name=agent,
+                )
+            )
             sources.append(uri)
 
+        if entries:
+            append_evidence(self._state, agent, entries)
+
+        blobs = list(self._state.get(blobs_key) or [])
         blobs.extend(_texts_from_grounding(resolved))
-        self._state["search_evidence"] = evidence
-        self._state["grounding_sources"] = sorted(set(sources))
-        self._state["grounding_text_blobs"] = blobs
+        self._state[blobs_key] = blobs
+        self._state[sources_key] = sorted(set(sources))
 
-    def append_search_response(self, tool_response: Any, *, source_label: str = GOOGLE_SEARCH_AGENT) -> None:
-        """Append a google_search_agent tool response text and any embedded URLs."""
-        evidence = list(self._state.get("search_evidence", []))
+    def append_search_response(
+        self,
+        tool_response: Any,
+        *,
+        source_label: str = GOOGLE_SEARCH_AGENT,
+        agent_name: str | None = None,
+    ) -> None:
+        """Append a search tool response to agent-scoped evidence."""
+        agent = agent_name or self._agent_name
+        if not agent:
+            return
+
+        entries: list[dict] = []
         if isinstance(tool_response, str) and tool_response.strip():
-            evidence.append(
-                {
-                    "uri": "",
-                    "title": source_label,
-                    "snippet": tool_response[:8000],
-                }
-            )
-        evidence.extend(_entries_from_search_response(tool_response))
-        self._state["search_evidence"] = evidence
-        # Also pick up any grounding the sub-agent left in temp state
-        self.ingest_grounding(None)
-
-    def documents(self) -> list[str]:
-        """Return the full chunked evidence corpus for BM25 indexing."""
-        texts: list[str] = []
-        for item in self._state.get("search_evidence", []):
-            if isinstance(item, dict):
-                texts.extend(
-                    [item.get("snippet", ""), item.get("title", ""), item.get("uri", "")]
+            entries.append(
+                normalize_entry(
+                    {
+                        "url": "",
+                        "title": source_label,
+                        "snippet": tool_response[:8000],
+                        "agent": agent,
+                    },
+                    agent_name=agent,
                 )
-            elif isinstance(item, str) and item.strip():
-                texts.append(item.strip())
-        for blob in self._state.get("grounding_text_blobs", []):
-            if isinstance(blob, str) and blob.strip():
-                texts.append(blob.strip())
+            )
+        entries.extend(
+            _entries_from_search_response(tool_response, agent_name=agent)
+        )
+        if entries:
+            append_evidence(self._state, agent, entries)
+        self.ingest_grounding(None, agent_name=agent)
+
+    def documents(self, agent_name: str | None = None) -> list[str]:
+        """Return chunked evidence corpus for BM25 (scoped to one agent)."""
+        agent = agent_name or self._agent_name
+        texts: list[str] = []
+        if agent:
+            for item in get_agent_evidence(self._state, agent):
+                texts.extend(
+                    [
+                        item.get("snippet", ""),
+                        item.get("title", ""),
+                        item.get("url", ""),
+                    ]
+                )
+            blobs_key = f"grounding_text_blobs_{agent}"
+            for blob in self._state.get(blobs_key) or []:
+                if isinstance(blob, str) and blob.strip():
+                    texts.append(blob.strip())
+        else:
+            for item in self._state.get("search_evidence", []):
+                if isinstance(item, dict):
+                    texts.extend(
+                        [
+                            item.get("snippet", ""),
+                            item.get("title", ""),
+                            item.get("uri", "") or item.get("url", ""),
+                        ]
+                    )
+            for blob in self._state.get("grounding_text_blobs", []):
+                if isinstance(blob, str) and blob.strip():
+                    texts.append(blob.strip())
         return _chunk_texts([t for t in texts if t])
 
 
 class Bm25Cache:
-    """Per-agent/session BM25 index cache.
-
-    Key: ``"{session_id}:{agent_name}:{evidence_hash}"``
-    The cache stores ``(BM25Okapi, global_tokens)`` tuples.  When the evidence
-    corpus for an agent changes (different hash), the stale entry is evicted so
-    the next call rebuilds with the latest evidence.
-    """
+    """Per-agent/session BM25 index cache."""
 
     def __init__(self) -> None:
         self._store: dict[str, tuple[BM25Okapi, set[str]]] = {}
@@ -267,24 +317,17 @@ class Bm25Cache:
         agent_name: str = "unknown",
         session_id: str = "unknown",
     ) -> tuple[BM25Okapi, set[str]]:
-        """Return a cached ``(BM25Okapi, global_tokens)`` pair, building when needed.
-
-        Stale entries (same agent/session, different corpus) are evicted before
-        inserting a new entry so the cache stays small.
-        """
         h = self._hash(docs)
         key = f"{session_id}:{agent_name}:{h}"
 
         if key in self._store:
             return self._store[key]
 
-        # Evict stale entries for this agent in this session
         prefix = f"{session_id}:{agent_name}:"
-        stale = [k for k in list(self._store) if k.startswith(prefix)]
-        for k in stale:
-            del self._store[k]
+        for k in list(self._store):
+            if k.startswith(prefix):
+                del self._store[k]
 
-        # Build and cache the new index
         tokenized_docs = [_tokenize(doc) for doc in docs]
         bm25 = BM25Okapi(tokenized_docs)
         global_tokens = set(_tokenize(" ".join(docs)))
@@ -292,7 +335,6 @@ class Bm25Cache:
         return bm25, global_tokens
 
 
-# Module-level singleton — shared across all verify_draft_answer calls
 _bm25_cache = Bm25Cache()
 
 
@@ -308,9 +350,12 @@ class Bm25Verifier:
         session_id: str = "unknown",
     ) -> VerificationResult:
         answer = PLANNER_TAG_RE.sub("", answer).strip()
-        docs = EvidenceStore(state).documents()
+        docs = EvidenceStore(state, agent_name=agent_name).documents(agent_name)
         if not docs:
-            return VerificationResult("FAILED", ["No search evidence found"])
+            return VerificationResult(
+                "FAILED",
+                [f"No search evidence found for agent {agent_name}"],
+            )
 
         tokenized_docs = [_tokenize(doc) for doc in docs]
         if not any(tokenized_docs):
@@ -323,7 +368,7 @@ class Bm25Verifier:
         unsupported: list[str] = []
         checkable = 0
 
-        for claim in _claims_from_answer(answer):
+        for claim in claims_from_answer(answer):
             if len(claim) < 20 or len(_tokenize(claim)) < 3:
                 continue
             if _is_boilerplate(claim):
@@ -332,7 +377,6 @@ class Bm25Verifier:
             if not self._claim_supported(bm25, _tokenize(claim), global_tokens):
                 unsupported.append(claim)
 
-        # Allow up to 15% unsupported peripheral sentences if ≥5 checkable claims
         if unsupported and checkable >= 5 and len(unsupported) / checkable <= 0.15:
             return VerificationResult("PASSED", unsupported)
         return VerificationResult(
@@ -348,7 +392,6 @@ class Bm25Verifier:
         max_score = float(max(bm25.get_scores(query_tokens)))
         if max_score >= BM25_MIN_SCORE:
             return True
-        # Tiny/flat corpora produce negative BM25 scores — token-overlap fallback
         if max_score <= 0:
             return len(set(query_tokens) & global_tokens) >= BM25_TOKEN_FALLBACK_MIN
         return False

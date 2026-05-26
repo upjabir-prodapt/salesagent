@@ -140,6 +140,16 @@ class Settings(BaseSettings):
     GEMINI_COST_PER_1K_INPUT_TOKENS: float
     GEMINI_COST_PER_1K_OUTPUT_TOKENS: float
     EVALUATOR_MODEL: str
+    AGENT_EVENTS_COMPACT_ENABLED: bool = True
+    AGENT_EVENTS_COMPACT_TOKEN_THRESHOLD: int = 100_000
+    AGENT_EVENTS_COMPACT_RETENTION: int = 6
+    AGENT_EVENTS_COMPACT_INTERVAL: int = 3
+    AGENT_EVENTS_COMPACT_OVERLAP: int = 1
+    AGENT_COMPACT_SUMMARIZER_MODEL: str = "gemini-2.5-flash"
+    EVAL_EMBEDDING_ENABLED: bool = True
+    EVAL_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    EVAL_EMBEDDING_ONNX_PATH: str = "models/all-MiniLM-L6-v2/onnx/model.onnx"
+    EVAL_EMBEDDING_SIMILARITY_THRESHOLD: float = 0.55
     AGENT_RETRY_ATTEMPTS: int
     AGENT_RETRY_WAIT_FIXED: int
     JOB_ID_PREFIX: str
@@ -243,6 +253,10 @@ class Settings(BaseSettings):
         if not path.is_absolute():
             path = (_REPO_ROOT / path).resolve()
         return path
+
+    @property
+    def eval_embedding_onnx_path(self) -> Path:
+        return resolve_repo_path(self.EVAL_EMBEDDING_ONNX_PATH)
 
     @property
     def agent_event_log_path(self) -> Path | None:

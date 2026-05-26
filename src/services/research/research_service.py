@@ -10,7 +10,7 @@ from typing import Any
 from opentelemetry import trace
 
 from .agent.evaluation_service import EvaluationService
-from .agent.sales.utils.tools import aggregate_raw_search_cache
+from .agent.sales.utils.evidence import aggregate_job_evidence
 from ...core.config import settings
 from ...core.exceptions import ServiceError
 from ...core.logging_config import contextualize, logger
@@ -201,7 +201,8 @@ class ResearchService:
         """Execute SalesAgent; validation runs inside ReportCompiler via AgentTool."""
         final_report, session_state = await self._runner.run(job_id, company_name)
 
-        session_state["raw_search_cache"] = aggregate_raw_search_cache(session_state)
+        session_state["job_evidence"] = aggregate_job_evidence(session_state)
+        session_state["raw_search_cache"] = session_state["job_evidence"]
 
         validation_status = session_state.get("report_validation_status")
         if validation_status != "PASSED":

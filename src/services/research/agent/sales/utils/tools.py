@@ -25,6 +25,7 @@ from ......core.logging_config import logger
 from ......core.model import retry_config
 from .....catalog.search import colt_product_search
 from ......utils.guardrails import OutputGuardrail
+from .evidence import aggregate_job_evidence, set_verification_state
 from .verification import Bm25Verifier, EvidenceStore
 
 # --- Constants -----------------------------------------------------------------
@@ -71,8 +72,10 @@ def make_search_agent_tool(
 
 def verify_draft_answer(draft: str, tool_context: ToolContext) -> dict[str, Any]:
     """Verify draft against accumulated search evidence before /*FINAL_ANSWER*/."""
-    EvidenceStore(tool_context.state).ingest_grounding(None)
     agent_name: str = getattr(tool_context, "agent_name", "unknown")
+    EvidenceStore(tool_context.state, agent_name=agent_name).ingest_grounding(
+        None, agent_name=agent_name
+    )
     session_id: str = "unknown"
     try:
         session = getattr(tool_context, "session", None)
@@ -84,8 +87,12 @@ def verify_draft_answer(draft: str, tool_context: ToolContext) -> dict[str, Any]
         draft, tool_context.state, agent_name=agent_name, session_id=session_id
     )
 
-    tool_context.state["verification_status"] = result.status
-    tool_context.state["unsupported_claims"] = result.unsupported
+    set_verification_state(
+        tool_context.state,
+        agent_name,
+        status=result.status,
+        unsupported=result.unsupported,
+    )
 
     if result.status == "PASSED":
         message = (
@@ -116,12 +123,8 @@ colt_product_search_tool = FunctionTool(colt_product_search)
 
 
 def aggregate_raw_search_cache(state: dict[str, Any]) -> list[dict]:
-    """Merge per-agent raw_search_cache_* lists from session state."""
-    raw_search_cache: list[dict] = []
-    for key, value in state.items():
-        if key.startswith("raw_search_cache_") and isinstance(value, list):
-            raw_search_cache.extend(value)
-    return raw_search_cache
+    """Deprecated: use aggregate_job_evidence."""
+    return aggregate_job_evidence(state)
 
 
 async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[str, Any]:
@@ -130,10 +133,15 @@ async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[s
     tool_context.state["report_validation_attempts"] = attempts
 
     max_attempts = settings.OUTPUT_GUARDRAIL_MAX_RETRIES + 1
-    raw_search_cache = aggregate_raw_search_cache(tool_context.state.to_dict())
+    state_dict = (
+        tool_context.state.to_dict()
+        if hasattr(tool_context.state, "to_dict")
+        else dict(tool_context.state)
+    )
+    job_evidence = aggregate_job_evidence(state_dict)
 
     result = await OutputGuardrail().validate(
-        draft, raw_search_cache=raw_search_cache or None
+        draft, raw_search_cache=job_evidence or None
     )
 
     violations = [{"rule": v.rule, "detail": v.detail} for v in result.violations]

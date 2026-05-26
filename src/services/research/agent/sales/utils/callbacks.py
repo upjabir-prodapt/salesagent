@@ -21,6 +21,12 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
 from ......core.logging_config import logger
+from .evidence import (
+    evidence_key,
+    get_unsupported_claims,
+    get_verification_status,
+    set_verification_state,
+)
 from .tools import COLT_PRODUCT_SEARCH_TOOL, SEARCH_AGENT_NAME
 from .verification import EvidenceStore, PLANNER_TAG_RE
 
@@ -66,7 +72,8 @@ def plan_before_model(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> LlmResponse | None:
     """Injection guard + FAILED-verification replan hint injected into next request."""
-    # Scan latest user turn for prompt injection
+    agent_name = callback_context.agent_name
+
     for content in reversed(llm_request.contents or []):
         if getattr(content, "role", None) != "user":
             continue
@@ -88,12 +95,11 @@ def plan_before_model(
             )
         break
 
-    # Remind the model to replan if the last verify call failed
-    if callback_context.state.get("verification_status") == "FAILED":
-        bad = callback_context.state.get("unsupported_claims", [])
+    if get_verification_status(callback_context.state, agent_name) == "FAILED":
+        bad = get_unsupported_claims(callback_context.state, agent_name)
         logger.warning(
             "verify_draft_answer FAILED for %s unsupported=%s",
-            callback_context.agent_name,
+            agent_name,
             bad[:3],
         )
         llm_request.append_instructions(
@@ -112,17 +118,22 @@ def plan_after_model(
     callback_context: CallbackContext, llm_response: LlmResponse
 ) -> LlmResponse | None:
     """Ingest grounding from the response; guard against unverified FINAL_ANSWER."""
-    EvidenceStore(callback_context.state).ingest_grounding(
-        None, llm_response=llm_response
+    agent_name = callback_context.agent_name
+    EvidenceStore(callback_context.state, agent_name=agent_name).ingest_grounding(
+        None, llm_response=llm_response, agent_name=agent_name
     )
 
     text = _visible_text(llm_response)
     if len(text) >= MIN_FINAL_ANSWER_CHARS:
-        if callback_context.state.get("verification_status") != "PASSED":
-            callback_context.state["verification_status"] = "FAILED"
-            callback_context.state["unsupported_claims"] = [
-                "FINAL_ANSWER was emitted before verify_draft_answer returned PASSED.",
-            ]
+        if get_verification_status(callback_context.state, agent_name) != "PASSED":
+            set_verification_state(
+                callback_context.state,
+                agent_name,
+                status="FAILED",
+                unsupported=[
+                    "FINAL_ANSWER was emitted before verify_draft_answer returned PASSED.",
+                ],
+            )
     return None
 
 
@@ -146,13 +157,17 @@ def plan_after_tool(
     tool_response: Any,
 ) -> dict[str, Any] | None:
     """Ingest search/catalog tool responses into the EvidenceStore."""
+    agent_name = getattr(tool_context, "agent_name", None) or "unknown"
+
     if tool.name in (SEARCH_AGENT_NAME, COLT_PRODUCT_SEARCH_TOOL):
-        EvidenceStore(tool_context.state).append_search_response(
-            tool_response, source_label=tool.name
+        EvidenceStore(tool_context.state, agent_name=agent_name).append_search_response(
+            tool_response,
+            source_label=tool.name,
+            agent_name=agent_name,
         )
-        n = len(tool_context.state.get("search_evidence", []))
-        agent = getattr(tool_context, "agent_name", "?")
-        logger.info(f"{tool.name} done agent={agent} evidence_items={n}")
+        n = len(tool_context.state.get(evidence_key(agent_name), []))
+        logger.info(f"{tool.name} done agent={agent_name} evidence_items={n}")
     elif tool.name == "verify_draft_answer":
-        logger.info(f"verify_draft_answer status={tool_context.state.get('verification_status')}")
+        status = get_verification_status(tool_context.state, agent_name)
+        logger.info(f"verify_draft_answer agent={agent_name} status={status}")
     return None

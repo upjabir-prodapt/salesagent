@@ -110,11 +110,8 @@ def test_after_tool_callback_search(mock_context):
     after_tool_callback(tool, args, tool_ctx, tool_response)
 
     assert mock_context.state["mc_tool_call_count"] == 1
-    # Key is now prefixed with agent name
-    has_cache = any(
-        k.startswith("raw_search_cache_") for k in mock_context.state.keys()
-    )
-    assert has_cache is True
+    assert "search_evidence_TestAgent" in mock_context.state
+    assert len(mock_context.state["search_evidence_TestAgent"]) >= 1
 
 
 def test_after_tool_callback_read_url(mock_context):

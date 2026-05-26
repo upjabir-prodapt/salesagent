@@ -57,21 +57,16 @@ async def test_evaluate_section_a_failure(evaluation_service):
         assert result["section_a"]["section_a_score"] == 0.0
 
 
-def test_cache_to_text(evaluation_service):
+def test_evidence_to_text():
+    from src.services.research.agent.sales.utils.evidence import evidence_to_text
+
     cache = [
         {"title": "Title 1", "snippet": "Evidence 1"},
         {"title": "Title 2", "snippet": "Evidence 2"},
     ]
-    text = evaluation_service._cache_to_text(cache)
+    text = evidence_to_text(cache)
     assert "Evidence 1" in text
     assert "Evidence 2" in text
-
-
-def test_session_state_to_text(evaluation_service):
-    state = {"agent_outputs": {"Agent1": "Output 1", "Agent2": "Output 2"}}
-    text = evaluation_service._session_state_to_text(state)
-    assert "Output 1" in text
-    assert "Output 2" in text
 
 
 def test_parse_and_score_section_a(evaluation_service):
@@ -101,20 +96,23 @@ def test_empty_section_a(evaluation_service):
 
 @pytest.mark.asyncio
 async def test_run_section_b_minimal(evaluation_service):
-    # TestSection B with minimal input
     with patch("src.services.research.agent.evaluation_service.logger"):
-        # We need to mock metrics that require heavy libs
         with (
             patch.object(
-                evaluation_service, "_compute_rouge", return_value={"rouge1": 0.5}
+                evaluation_service, "_compute_agent_output_coverage", return_value=0.5
             ),
             patch.object(evaluation_service, "_compute_groundedness", return_value=0.7),
             patch.object(evaluation_service, "_compute_completeness", return_value=0.8),
-            patch.object(
-                evaluation_service, "_compute_source_diversity", return_value=0.9
+            patch.object(evaluation_service, "_compute_evidence_breadth", return_value=0.9),
+            patch(
+                "src.services.research.agent.evaluation_service.compute_semantic_groundedness",
+                return_value=0.6,
             ),
         ):
             result = await evaluation_service._run_section_b(
-                final_report="# Report", reference_text="Ref text", raw_search_cache=[]
+                final_report="# Report",
+                session_state={},
+                job_evidence=[],
             )
             assert "section_b_score" in result
+            assert result.get("scoring_version") == "v2"

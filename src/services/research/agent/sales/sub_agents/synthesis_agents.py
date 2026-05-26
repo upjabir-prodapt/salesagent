@@ -4,6 +4,7 @@ Synthesis Agents Module
 Contains agents for analyzing alignment and compiling the final report.
 """
 
+from ......core.config import settings
 from ..utils import create_plan_react_agent
 from ..utils.tools import (
     colt_product_search_tool,

@@ -18,7 +18,9 @@ dependencies = [
     "tenacity>=8.2.3",
     "pypdf>=6.7.3",
     "beautifulsoup4>=4.14.3",
-    "rouge-score>=0.1.2",
+    "sentence-transformers>=3.0.0",
+    "onnxruntime>=1.19.0",
+    "transformers>=4.40.0",
     "markdown-pdf>=1.13.1",
     "opentelemetry-instrumentation-google-genai>=0.7b1",
     "opentelemetry-instrumentation-fastapi>=0.62b1",
@@ -49,6 +51,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=7.0.0",
     "debugpy>=1.8.20",
+    "optimum[onnxruntime]>=2.1.0",
 ]
 
 [tool.ruff]

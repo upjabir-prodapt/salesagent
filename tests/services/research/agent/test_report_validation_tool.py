@@ -12,9 +12,11 @@ from src.utils.guardrails import GuardrailViolation, OutputValidationResult
 
 
 def test_aggregate_raw_search_cache_merges_lists():
+    from src.services.research.agent.sales.utils.evidence import evidence_key
+
     state = {
-        "raw_search_cache_firmographicsagent": [{"url": "a"}],
-        "raw_search_cache_strategyagent": [{"url": "b"}],
+        evidence_key("FirmographicsAgent"): [{"url": "https://a.com", "snippet": "a"}],
+        evidence_key("StrategyAgent"): [{"url": "https://b.com", "snippet": "b"}],
         "firmographicsagent_output": "{}",
     }
     merged = aggregate_raw_search_cache(state)

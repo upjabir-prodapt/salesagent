@@ -96,11 +96,40 @@ ADK/GenAI auto-instrumentation and callback `add_event` calls remain separate. P
 
 Key settings in `src/core/config.py`: `JOB_ID_PREFIX`, `RESEARCH_*_PROGRESS` labels, `AGENT_RETRY_ATTEMPTS`, `GEMINI_MODEL`, BigQuery table names.
 
+## Evidence flow (v2)
+
+```mermaid
+flowchart LR
+    GSA[google_search_agent]
+    ATC[after_tool / plan_after_tool]
+    ER[EvidenceRegistry search_evidence_AgentName]
+    VDA[verify_draft_answer BM25]
+    JOB[job_evidence aggregate]
+    EV[EvaluationService / OutputGuardrail]
+    GSA --> ATC --> ER --> VDA
+    ER --> JOB --> EV
+```
+
+- Per-agent keys: `search_evidence_{AgentName}` via `src/services/research/agent/sales/utils/evidence.py`
+- Post-run: `session_state["job_evidence"] = aggregate_job_evidence(session_state)`
+- BM25 uses scoped evidence only; verify FAILED triggers in-loop replan (no runner retry)
+- ADK `App.events_compaction_config` compacts session event history (token threshold + sliding window)
+
+## Evaluation v2
+
+| Section | Weight | Content |
+|---------|--------|---------|
+| A | 80% | LLM judge D1–D14 + M12/M13 penalties; `format_agent_outputs_for_judge` |
+| B | 20% | M1 agent coverage, M2 completeness, M3 citation groundedness, M4 evidence breadth, M5 semantic (ONNX, optional) |
+
+`evaluation_metadata.scoring_version` is `v2`. ROUGE removed. Set `EVAL_EMBEDDING_ENABLED=false` in CI when ONNX model is not bundled (~80–150MB for MiniLM).
+
 ## Related code
 
 | Area | Path |
 |------|------|
 | DI wiring | `src/dependencies/service_dependencies.py` |
 | Agent pipeline retries | `src/services/agent/utils/agent_pipeline.py` |
+| Evidence registry | `src/services/research/agent/sales/utils/evidence.py` |
 | Guardrails | `src/utils/guardrails.py` |
 | Tests | `tests/services/test_research*.py`, `tests/services/research/` |
