@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import io
+
 from .agent.evaluation_service import EvaluationService
+from .finalization_ops import (
+    run_cost_attribution_op,
+    run_evaluation_op,
+    run_pdf_op,
+    run_telemetry_flush_op,
+)
 from ...core.config import settings
 from ...core.logging_config import logger
 from ...repositories.bigquery_repository import BigQueryRepository
 from ...repositories.gcs_repository import GCSRepository
-from .agent.utils.telemetry import TELEMETRY_RECORDS_KEY
 from ...utils.tracing import job_attrs, traced
-from .metrics import reconcile_cost
-from .retry import with_retry, with_retry_sync
 
 
 class ResearchFinalizationService:
@@ -50,73 +53,52 @@ class ResearchFinalizationService:
     ) -> tuple[dict, bool]:
         """Run PDF, evaluation, cost attribution, and telemetry side operations."""
         side_op_failures: dict[str, str] = {}
-        pdf_available = False
-
-        async def _pdf_op():
-            nonlocal pdf_available
-            pdf_bytes = await asyncio.to_thread(self.generate_pdf, final_report)
-            await asyncio.to_thread(self._gcs_repo.upload_pdf, job_id, pdf_bytes)
-            pdf_available = True
 
         try:
-            await with_retry(_pdf_op)
+            pdf_available = await run_pdf_op(
+                job_id=job_id,
+                final_report=final_report,
+                generate_pdf=self.generate_pdf,
+                upload_pdf=self._gcs_repo.upload_pdf,
+            )
         except Exception as e:
             logger.warning(f"PDF op failed: {e}")
             side_op_failures["pdf"] = str(e)
-
-        async def _eval_op():
-            self._bigquery_repo.update_status(
-                job_id,
-                "PROCESSING",
-                progress=settings.RESEARCH_EVAL_PROGRESS,
-                current_step=settings.RESEARCH_EVAL_STEP_LABEL,
-            )
-            result = await self._evaluation_service.evaluate(
-                job_id, final_report, session_state
-            )
-            self._gcs_repo.upload_evaluation(job_id, result)
+            pdf_available = False
 
         try:
-            await with_retry(_eval_op)
+            await run_evaluation_op(
+                job_id=job_id,
+                final_report=final_report,
+                session_state=session_state,
+                update_status=self._bigquery_repo.update_status,
+                evaluate=self._evaluation_service.evaluate,
+                upload_evaluation=self._gcs_repo.upload_evaluation,
+            )
         except Exception as e:
             logger.warning(f"Eval op failed: {e}")
             side_op_failures["evaluation"] = str(e)
 
         try:
-            reconcile_cost(session_state, metrics)
-            await with_retry_sync(
-                lambda: self._bigquery_repo.insert_cost_attribution(
-                    job_id=job_id,
-                    model_version=settings.GEMINI_MODEL,
-                    temperature=metrics["temperature"],
-                    prompt_template_version=settings.PROMPT_TEMPLATE_VERSION,
-                    input_tokens=metrics["input_tokens"] or None,
-                    output_tokens=metrics["output_tokens"] or None,
-                    total_tokens=metrics["total_tokens"] or None,
-                    latency_seconds=metrics["latency"],
-                    source_domains=metrics["source_domains"] or None,
-                    cost_usd=metrics["cost_usd"],
-                )
+            await run_cost_attribution_op(
+                job_id=job_id,
+                session_state=session_state,
+                metrics=metrics,
+                insert_cost_attribution=self._bigquery_repo.insert_cost_attribution,
             )
         except Exception as e:
             logger.warning(f"Cost op failed: {e}")
             side_op_failures["cost_attribution"] = str(e)
 
-        telemetry_records = session_state.get(TELEMETRY_RECORDS_KEY) or []
-        if telemetry_records:
-            try:
-                await with_retry_sync(
-                    lambda: self._bigquery_repo.insert_agent_telemetry_batch(
-                        telemetry_records
-                    )
-                )
-            except Exception as e:
-                logger.warning(f"Telemetry op failed: {e}")
-                side_op_failures["telemetry"] = str(e)
-                with contextlib.suppress(Exception):
-                    self._gcs_repo.upload_json(
-                        f"{job_id}_telemetry_deadletter",
-                        {"records": telemetry_records, "error": str(e)},
-                    )
+        try:
+            await run_telemetry_flush_op(
+                job_id=job_id,
+                session_state=session_state,
+                insert_agent_telemetry_batch=self._bigquery_repo.insert_agent_telemetry_batch,
+                upload_deadletter_json=self._gcs_repo.upload_json,
+            )
+        except Exception as e:
+            logger.warning(f"Telemetry op failed: {e}")
+            side_op_failures["telemetry"] = str(e)
 
         return side_op_failures, pdf_available

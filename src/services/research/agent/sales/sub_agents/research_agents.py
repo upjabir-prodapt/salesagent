@@ -1,15 +1,7 @@
-"""
-Research Agents Module
-
-Nine PlanReAct LlmAgents in three multi-step Sequential lanes plus two parallel leaves.
-Workflow per leaf: PLANNING → google_search_agent → REASONING → verify_draft_answer → FINAL_ANSWER
-"""
-
-from dataclasses import dataclass
+"""Research leaves grouped into sequential lanes for ResearchOrchestrator."""
 
 from google.adk.agents import SequentialAgent
 
-from ..utils import create_plan_react_agent
 from ..prompts import (
     COMPLIANCE_PROMPT,
     ECOSYSTEM_PROMPT,
@@ -21,57 +13,51 @@ from ..prompts import (
     STRATEGY_PROMPT,
     TECH_STACK_PROMPT,
 )
-
-
-@dataclass
-class AgentConfig:
-    name: str
-    prompt: str
-    description: str
+from .specs import PlanAgentSpec, build_plan_react_agents
 
 
 _AGENT_CONFIGS = [
-    AgentConfig(
+    PlanAgentSpec(
         "FirmographicsAgent",
         FIRMOGRAPHICS_PROMPT,
         "Researches company snapshot including revenue, employees, market cap, ownership structure.",
     ),
-    AgentConfig(
+    PlanAgentSpec(
         "GeographicAgent",
         GEOGRAPHIC_PROMPT,
         "Maps global operations, office locations, data centers, and regional revenue distribution.",
     ),
-    AgentConfig(
+    PlanAgentSpec(
         "ExecutiveAgent",
         EXECUTIVE_PROMPT,
         "Identifies leadership team, board members, key influencers with detailed profiles.",
     ),
-    AgentConfig(
+    PlanAgentSpec(
         "StrategyAgent",
         STRATEGY_PROMPT,
         "Analyzes strategic priorities, M&A strategy, competitive advantages, and key challenges.",
     ),
-    AgentConfig(
+    PlanAgentSpec(
         "ComplianceAgent",
         COMPLIANCE_PROMPT,
         "Identifies regulations, certifications, audit history, and compliance issues.",
     ),
-    AgentConfig(
+    PlanAgentSpec(
         "MarketAgent",
         MARKET_PROMPT,
         "Analyzes market position, revenue breakdown, competitors, and commercial leverage points.",
     ),
-    AgentConfig(
+    PlanAgentSpec(
         "EcosystemAgent",
         ECOSYSTEM_PROMPT,
         "Maps partnerships, strategic alliances, Colt dependencies, and co-innovation potential.",
     ),
-    AgentConfig(
+    PlanAgentSpec(
         "TechStackAgent",
         TECH_STACK_PROMPT,
         "Profiles technology landscape, cloud strategy, infrastructure models, and digital investments.",
     ),
-    AgentConfig(
+    PlanAgentSpec(
         "ProcurementAgent",
         PROCUREMENT_PROMPT,
         "Analyzes procurement patterns, contract cycles, RFP activity, and vendor reviews.",
@@ -81,12 +67,7 @@ _AGENT_CONFIGS = [
 
 def create_research_agents():
     """Create research agents and sequential lanes for ResearchOrchestrator."""
-    agents = {
-        config.name: create_plan_react_agent(
-            config.name, config.prompt, config.description
-        )
-        for config in _AGENT_CONFIGS
-    }
+    agents = build_plan_react_agents(_AGENT_CONFIGS)
 
     firmographics_geographic_agent = SequentialAgent(
         name="FirmographicsGeographicAgent",

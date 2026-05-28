@@ -159,9 +159,11 @@ class AgentOutputError(ServiceError):
         *,
         agent_name: str,
         output_key: str,
+        error_class: str | None = None,
     ):
         self.agent_name = agent_name
         self.output_key = output_key
+        self.error_class = error_class or "MISSING_OUTPUT"
         super().__init__(message)
 
 

@@ -75,7 +75,7 @@ def create_sales_agent_app():
         summarizer = LlmEventSummarizer(
             llm=Gemini(
                 model=settings.AGENT_COMPACT_SUMMARIZER_MODEL,
-                http_retry_options=retry_config,
+                retry_options=retry_config,
             )
         )
         compaction_config = EventsCompactionConfig(
@@ -92,6 +92,6 @@ def create_sales_agent_app():
         resumability_config=ResumabilityConfig(is_resumable=True),
         context_cache_config=ContextCacheConfig(ttl_seconds=3600),
         events_compaction_config=compaction_config,
-        plugins=[ReflectAndRetryToolPlugin()],
+        plugins=[ReflectAndRetryToolPlugin(max_retries=3)],
     )
     return app

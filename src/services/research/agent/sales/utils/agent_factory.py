@@ -24,8 +24,15 @@ from ...utils.callbacks import (
     before_model_callback,
     before_tool_callback,
 )
+from ...utils.retrying_llm_agent import RetryingLlmAgent
 from ...utils.safety import get_safety_config_for_agent
-from .callbacks import plan_after_model, plan_after_tool, plan_before_model, plan_before_tool
+from .callbacks import (
+    plan_after_agent,
+    plan_after_model,
+    plan_after_tool,
+    plan_before_model,
+    plan_before_tool,
+)
 from .tools import make_search_agent_tool, verify_draft_answer_tool
 
 
@@ -43,7 +50,7 @@ def create_llm_agent(
 
     safety_config = get_safety_config_for_agent(name)
 
-    agent = LlmAgent(
+    agent = RetryingLlmAgent(
         name=name,
         model=llm,
         instruction=instruction,
@@ -75,7 +82,7 @@ def create_plan_react_agent(
     include_bm25_verify: bool = True,
     extra_tools: list | None = None,
     instruction_builder: Callable[[str], str] | None = None,
-    model: Model | None = settings.GEMINI_MODEL,
+    model: str | None = None,
 ) -> LlmAgent:
     """PlanReAct LlmAgent with optional web search, BM25 verify, and extra tools.
 
@@ -84,6 +91,8 @@ def create_plan_react_agent(
     """
     if output_key is None:
         output_key = f"{name.lower()}_output"
+    if model is None:
+        model = settings.GEMINI_MODEL
 
     tools: list = []
     if include_web_search:
@@ -97,9 +106,9 @@ def create_plan_react_agent(
         instruction_builder(instruction) if instruction_builder else instruction
     )
 
-    agent = LlmAgent(
+    agent = RetryingLlmAgent(
         name=name,
-        model=Gemini(model=model, http_retry_options=retry_config),
+        model=Gemini(model=model, retry_options=retry_config),
         instruction=final_instruction,
         tools=tools,
         output_key=output_key,
@@ -110,7 +119,7 @@ def create_plan_react_agent(
         before_tool_callback=[plan_before_tool, before_tool_callback],
         after_tool_callback=[plan_after_tool, after_tool_callback],
         before_agent_callback=before_agent_callback,
-        after_agent_callback=after_agent_callback,
+        after_agent_callback=[plan_after_agent, after_agent_callback],
     )
     tool_names = [getattr(t, "name", type(t).__name__) for t in tools]
     logger.debug(

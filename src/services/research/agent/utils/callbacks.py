@@ -1,3 +1,20 @@
+"""Public callback facade preserving the legacy callback API."""
+
+from __future__ import annotations
+
+from .callback_agent import after_agent_callback, before_agent_callback
+from .callback_model import after_model_callback, before_model_callback
+from .callback_tool import after_tool_callback, before_tool_callback
+
+__all__ = [
+    "before_model_callback",
+    "after_model_callback",
+    "before_agent_callback",
+    "after_agent_callback",
+    "before_tool_callback",
+    "after_tool_callback",
+]
+
 """
 ADK Callbacks Module
 
@@ -20,19 +37,20 @@ from opentelemetry import trace
 
 from src.core.config import settings
 from src.core.exceptions import InputValidationException
+from src.core.logging_config import logger
+
+from .....utils.guardrails import InputGuardrail
+from .....utils.url_utils import is_authoritative
+from ..sales.utils.evidence import append_evidence, evidence_key
+from ..sales.utils.output_persistence import persist_output_from_session_events
+from ..sales.utils.verification import Bm25Verifier, EvidenceStore
 from .agent_pipeline import (
-    AGENT_OUTPUT_KEYS,
     get_output_key,
     is_tracked_agent,
     validate_agent_output,
 )
-from src.core.logging_config import logger
-
-from .....utils.guardrails import InputGuardrail
-from ..sales.utils.evidence import append_evidence, evidence_key
-from ..sales.utils.verification import Bm25Verifier, EvidenceStore
+from .retry_state import pop_retry_hint
 from .telemetry import track_agent_end, track_agent_start
-from .....utils.url_utils import is_authoritative
 
 _QUERY_INJECTION_PATTERNS = [
     "ignore previous",
@@ -122,6 +140,7 @@ def before_model_callback(
     except Exception as e:
         logger.debug(f"[Callback] Jailbreak scan in callback failed: {e}")
 
+    _inject_retry_hint(callback_context, llm_request)
     return None
 
 
@@ -322,10 +341,10 @@ async def before_agent_callback(callback_context: CallbackContext) -> None:
         # Don't stagger the main orchestrator, only the research/signals agents
         _PARALLEL_RESEARCHERS = {
             "FirmographicsGeographicAgent",
-            "ExecutivePipeline",
+            "ExecutiveAgent",
             "StrategyComplianceAgent",
             "MarketEcosystemAgent",
-            "TechStackPipeline",
+            "TechStackAgent",
             "SignalsOrchestrator",
             "GrowthSignals",
             "RiskSignals",
@@ -414,11 +433,34 @@ def after_agent_callback(callback_context: CallbackContext) -> types.Content | N
     except Exception as e:
         logger.debug(f"[Telemetry] track_agent_end failed for {agent_name}: {e}")
 
-    # Update agent status map in session state
+    output_key = get_output_key(agent_name)
+    if is_tracked_agent(agent_name) and output_key:
+        persist_output_from_session_events(
+            callback_context.state,
+            callback_context.session.events,
+            agent_name=agent_name,
+            output_key=output_key,
+            invocation_id=callback_context.invocation_id,
+        )
+
+    # Update agent status map — only "completed" when required output_key is present.
     try:
-        callback_context.state["last_completed_agent"] = agent_name
         agent_status_map = dict(callback_context.state.get("agent_status_map") or {})
-        agent_status_map[agent_name] = "completed"
+        if is_tracked_agent(agent_name) and output_key:
+            value = callback_context.state.get(output_key)
+            if value is None or not str(value).strip():
+                agent_status_map[agent_name] = "failed_missing_output"
+                logger.warning(
+                    "[Callback] Agent %s ended without output_key %r",
+                    agent_name,
+                    output_key,
+                )
+            else:
+                callback_context.state["last_completed_agent"] = agent_name
+                agent_status_map[agent_name] = "completed"
+        else:
+            callback_context.state["last_completed_agent"] = agent_name
+            agent_status_map[agent_name] = "completed"
         callback_context.state["agent_status_map"] = agent_status_map
     except Exception as e:
         logger.debug(f"[Callback] Could not update agent_status_map: {e}")
@@ -868,3 +910,20 @@ def _create_validation_error_response(error_message: str) -> LlmResponse:
             ],
         )
     )
+
+
+def _inject_retry_hint(
+    callback_context: CallbackContext, llm_request: LlmRequest
+) -> None:
+    """Append one-shot retry guidance for the current agent when available."""
+    hint = pop_retry_hint(callback_context.state, callback_context.agent_name)
+    if not hint:
+        return
+    try:
+        llm_request.append_instructions([hint])
+    except Exception as exc:  # pragma: no cover
+        logger.debug(
+            "Could not append retry hint for %s: %s",
+            callback_context.agent_name,
+            exc,
+        )

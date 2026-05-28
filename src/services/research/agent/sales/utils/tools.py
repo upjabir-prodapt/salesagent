@@ -21,10 +21,9 @@ from google.adk.tools.google_search_agent_tool import GoogleSearchAgentTool
 from google.adk.tools.tool_context import ToolContext
 
 from ......core.config import settings
-from ......core.logging_config import logger
 from ......core.model import retry_config
-from .....catalog.search import colt_product_search
 from ......utils.guardrails import OutputGuardrail
+from .....catalog.search import colt_product_search
 from .evidence import aggregate_job_evidence, set_verification_state
 from .verification import Bm25Verifier, EvidenceStore
 
@@ -59,7 +58,7 @@ def make_search_agent_tool(
     """Create a fresh GoogleSearchAgentTool wrapping a single-turn google_search LlmAgent."""
     search_agent = LlmAgent(
         name=SEARCH_AGENT_NAME,
-        model=Gemini(model=settings.GEMINI_MODEL, http_retry_options=retry_config),
+        model=Gemini(model=settings.GEMINI_MODEL, retry_options=retry_config),
         description=description,
         instruction=instruction,
         tools=[google_search],
@@ -185,7 +184,7 @@ def create_report_verification_agent() -> LlmAgent:
     """Create a fresh ReportVerificationAgent (one per ReportCompiler instance)."""
     return LlmAgent(
         name=REPORT_VERIFICATION_AGENT_NAME,
-        model=Gemini(model=settings.GEMINI_MODEL, http_retry_options=retry_config),
+        model=Gemini(model=settings.GEMINI_MODEL, retry_options=retry_config),
         description=(
             "Validates the final markdown report against format, completeness, "
             "prohibited content, and evidence-backed hallucination checks."

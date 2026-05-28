@@ -1,6 +1,9 @@
 from unittest.mock import patch
 
-from src.services.research.agent.utils.safety import get_default_safety_settings, get_safety_config_for_agent
+from src.services.research.agent.utils.safety import (
+    get_default_safety_settings,
+    get_safety_config_for_agent,
+)
 
 
 def test_get_default_safety_settings_various(mock_settings):

@@ -21,6 +21,7 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
 from ......core.logging_config import logger
+from ...utils.callback_common import contains_prompt_injection
 from .evidence import (
     evidence_key,
     get_unsupported_claims,
@@ -28,26 +29,20 @@ from .evidence import (
     set_verification_state,
 )
 from .tools import COLT_PRODUCT_SEARCH_TOOL, SEARCH_AGENT_NAME
+from ...utils.agent_pipeline import get_output_key
+from .output_persistence import persist_output_key
 from .verification import EvidenceStore, PLANNER_TAG_RE
 
 # Minimum visible-answer length that triggers verification enforcement
 MIN_FINAL_ANSWER_CHARS = 100
 
-QUERY_INJECTION_PATTERNS = (
-    "ignore previous",
-    "ignore all instructions",
-    "you are now",
-    "disregard your",
-    "new instructions:",
-    "system prompt",
-    "developer message",
-    "jailbreak",
-)
+_PLAN_EXTRA_INJECTION_PATTERNS = ("developer message",)
 
 
 def _has_injection(text: str) -> bool:
-    low = text.lower()
-    return any(p in low for p in QUERY_INJECTION_PATTERNS)
+    return contains_prompt_injection(
+        text, extra_patterns=_PLAN_EXTRA_INJECTION_PATTERNS
+    )
 
 
 def _visible_text(llm_response: LlmResponse) -> str:
@@ -125,6 +120,14 @@ def plan_after_model(
 
     text = _visible_text(llm_response)
     if len(text) >= MIN_FINAL_ANSWER_CHARS:
+        output_key = get_output_key(agent_name)
+        if output_key and FINAL_ANSWER_TAG.lower() in text.lower():
+            persist_output_key(
+                callback_context.state,
+                agent_name=agent_name,
+                output_key=output_key,
+                text=text,
+            )
         if get_verification_status(callback_context.state, agent_name) != "PASSED":
             set_verification_state(
                 callback_context.state,
@@ -134,6 +137,31 @@ def plan_after_model(
                     "FINAL_ANSWER was emitted before verify_draft_answer returned PASSED.",
                 ],
             )
+    return None
+
+
+def plan_after_agent(callback_context: CallbackContext) -> None:
+    """Ensure output_key is set from FINAL_ANSWER before generic after_agent validation."""
+    agent_name = callback_context.agent_name
+    output_key = get_output_key(agent_name)
+    if not output_key:
+        return None
+
+    from .output_persistence import (
+        has_nonempty_output,
+        persist_output_from_session_events,
+    )
+
+    if has_nonempty_output(callback_context.state, output_key):
+        return None
+
+    persist_output_from_session_events(
+        callback_context.state,
+        callback_context.session.events,
+        agent_name=agent_name,
+        output_key=output_key,
+        invocation_id=callback_context.invocation_id,
+    )
     return None
 
 

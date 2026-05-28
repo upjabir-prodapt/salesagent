@@ -15,7 +15,7 @@ retry_config = genai_types.HttpRetryOptions(
 
 llm = Gemini(
     model=settings.GEMINI_MODEL,
-    http_retry_options=retry_config,
+    retry_options=retry_config,
     generate_content_config=genai_types.GenerateContentConfig(
         tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())]
     ),

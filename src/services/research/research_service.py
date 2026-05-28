@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections import Counter
 from typing import Any
 
 from opentelemetry import trace
@@ -22,6 +21,11 @@ from .artifact_service import ResearchArtifactService
 from .finalization_service import ResearchFinalizationService
 from .metrics import calculate_metrics, reconcile_cost
 from .runner_service import ResearchRunnerService
+from .status_helpers import (
+    build_completion_metadata,
+    build_failure_summary,
+    build_model_card,
+)
 
 
 class ResearchService:
@@ -159,17 +163,13 @@ class ResearchService:
         reconciliation: dict | None = None,
     ) -> None:
         """Mark job as COMPLETED in the database."""
-        meta: dict[str, Any] = {
-            "model_version": settings.GEMINI_MODEL,
-            "latency_seconds": latency,
-            "tokens_used": metrics["total_tokens"] or None,
-            "cost_usd": metrics["cost_usd"],
-            "pdf_available": pdf_available,
-            "side_op_failures": side_op_failures or None,
-            "current_agent": None,
-        }
-        if reconciliation:
-            meta["cost_reconciliation"] = reconciliation
+        meta = build_completion_metadata(
+            latency=latency,
+            metrics=metrics,
+            pdf_available=pdf_available,
+            side_op_failures=side_op_failures,
+            reconciliation=reconciliation,
+        )
         self.bigquery_repo.update_status(
             job_id,
             "COMPLETED",
@@ -212,7 +212,7 @@ class ResearchService:
                 for v in violations
                 if isinstance(v, dict)
             ]
-            failure_summary = self._build_failure_summary(guard_violations)
+            failure_summary = build_failure_summary(guard_violations)
             dominant = failure_summary.get("dominant_rule", "report_validation_failed")
             logger.error(
                 f"[ReportValidation] Job {job_id} blocked: status={validation_status!r}, "
@@ -279,25 +279,8 @@ class ResearchService:
                 return None
 
             meta = result.get("metadata") or {}
-            result["model_card"] = {
-                "model_version": meta.get("model_version"),
-                "tokens_used": meta.get("tokens_used"),
-                "latency_seconds": meta.get("latency_seconds"),
-                "cost_usd": meta.get("cost_usd"),
-            }
+            result["model_card"] = build_model_card(meta)
             return result
         except Exception as e:
             logger.error(f"Failed to get job result: {e}")
             raise ServiceError(f"Failed to get job result: {str(e)}") from e
-
-    @staticmethod
-    def _build_failure_summary(violations: list) -> dict:
-        """Construct a structured summary of guardrail violations."""
-        rule_counts = Counter(v.rule for v in violations)
-        dominant_rule = rule_counts.most_common(1)[0][0] if rule_counts else "unknown"
-        return {
-            "dominant_rule": dominant_rule,
-            "all_violations": [
-                {"rule": v.rule, "detail": v.detail} for v in violations
-            ],
-        }

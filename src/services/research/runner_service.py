@@ -11,13 +11,14 @@ from google.adk.runners import Runner
 from google.genai import types
 from .agent.session_service_factory import build_session_service
 from .agent.sales.agent import create_sales_agent_app
-from .agent.session_ids import runner_session_id
+from .session_ids import runner_session_id
 from ...core.config import settings
 from ...core.exceptions import AgentOutputError, ServiceError
 from ...core.logging_config import logger
 from ...repositories.bigquery_repository import BigQueryRepository
 from .agent.utils.agent import log_event
 from .agent.utils.agent_pipeline import run_runner_with_per_agent_retry
+from .session_state_mutator import mutate_stored_session_state
 from ...utils.tracing import job_attrs, traced
 from .progress import ResearchProgressTracker
 
@@ -101,43 +102,16 @@ class ResearchRunnerService:
             "last_write_ts": 0.0,
             "seen_authors": set(),
         }
-
-        async def _get_session_state() -> dict:
-            fresh = await runner.session_service.get_session(
-                app_name=app.name,
-                user_id="api_user",
-                session_id=session.id,
-            )
-            return fresh.state if fresh and fresh.state is not None else {}
-
-        async def _on_retry(agent_name: str, attempt: int) -> None:
-            completed_agents.discard(agent_name)
-            self._bigquery_repo.update_status(
-                job_id,
-                "PROCESSING",
-                current_step=(
-                    f"Retrying {agent_name} ({attempt}/{settings.AGENT_RETRY_ATTEMPTS})"
-                ),
-                metadata_update={
-                    "current_agent": agent_name,
-                    "agent_retry_attempt": attempt,
-                },
-            )
-
-        async def _process_event(event: Any) -> None:
-            log_event(
-                event,
-                verbose=settings.AGENT_EVENT_LOG_VERBOSE,
-                log_file=settings.agent_event_log_path,
-            )
-            self._progress.process_event_milestones(
-                event,
-                job_id,
-                total_agents,
-                completed_agents,
-                agent_descriptions,
-                status_write_state=status_write_state,
-            )
+        get_session_state = self._make_state_fetcher(runner, app.name, session.id)
+        persist_state = self._make_state_persister(runner, app.name, session.id)
+        on_retry = self._make_retry_handler(job_id, completed_agents)
+        process_event = self._make_event_processor(
+            job_id=job_id,
+            total_agents=total_agents,
+            completed_agents=completed_agents,
+            agent_descriptions=agent_descriptions,
+            status_write_state=status_write_state,
+        )
 
         try:
             await run_runner_with_per_agent_retry(
@@ -146,19 +120,12 @@ class ResearchRunnerService:
                 user_id="api_user",
                 session_id=session.id,
                 run_config=run_config,
-                new_message=types.UserContent(
-                    parts=[
-                        types.Part(
-                            text=(
-                                f"Run the Sales Research Agent for the company "
-                                f"{company_name}"
-                            )
-                        )
-                    ]
-                ),
-                process_event=_process_event,
-                get_session_state=_get_session_state,
-                on_retry=_on_retry,
+                new_message=self._initial_run_message(company_name),
+                process_event=process_event,
+                get_session_state=get_session_state,
+                on_retry=on_retry,
+                persist_state=persist_state,
+                company_name=company_name,
             )
         except AgentOutputError as e:
             logger.error(
@@ -202,3 +169,89 @@ class ResearchRunnerService:
             for sub in agent.sub_agents:
                 agents.extend(ResearchRunnerService._get_all_agents(sub))
         return agents
+
+    @staticmethod
+    def _initial_run_message(company_name: str) -> types.Content:
+        return types.UserContent(
+            parts=[
+                types.Part(
+                    text=f"Run the Sales Research Agent for the company {company_name}"
+                )
+            ]
+        )
+
+    @staticmethod
+    def _make_state_fetcher(
+        runner: Runner,
+        app_name: str,
+        session_id: str,
+    ):
+        async def _get_session_state() -> dict:
+            fresh = await runner.session_service.get_session(
+                app_name=app_name,
+                user_id="api_user",
+                session_id=session_id,
+            )
+            return fresh.state if fresh and fresh.state is not None else {}
+
+        return _get_session_state
+
+    @staticmethod
+    def _make_state_persister(
+        runner: Runner,
+        app_name: str,
+        session_id: str,
+    ):
+        def _persist_state(mutator) -> None:
+            mutate_stored_session_state(
+                runner.session_service,
+                app_name=app_name,
+                user_id="api_user",
+                session_id=session_id,
+                mutator=mutator,
+            )
+
+        return _persist_state
+
+    def _make_retry_handler(self, job_id: str, completed_agents: set[str]):
+        async def _on_retry(agent_name: str, attempt: int) -> None:
+            completed_agents.discard(agent_name)
+            self._bigquery_repo.update_status(
+                job_id,
+                "PROCESSING",
+                current_step=(
+                    f"Retrying {agent_name} ({attempt}/{settings.AGENT_RETRY_ATTEMPTS})"
+                ),
+                metadata_update={
+                    "current_agent": agent_name,
+                    "agent_retry_attempt": attempt,
+                },
+            )
+
+        return _on_retry
+
+    def _make_event_processor(
+        self,
+        *,
+        job_id: str,
+        total_agents: int,
+        completed_agents: set[str],
+        agent_descriptions: dict[str, str | None],
+        status_write_state: dict[str, Any],
+    ):
+        async def _process_event(event: Any) -> None:
+            log_event(
+                event,
+                verbose=settings.AGENT_EVENT_LOG_VERBOSE,
+                log_file=settings.agent_event_log_path,
+            )
+            self._progress.process_event_milestones(
+                event,
+                job_id,
+                total_agents,
+                completed_agents,
+                agent_descriptions,
+                status_write_state=status_write_state,
+            )
+
+        return _process_event

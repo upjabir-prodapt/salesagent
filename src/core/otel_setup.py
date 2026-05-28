@@ -157,8 +157,25 @@ def setup_telemetry() -> None:
     _patch_otel_safe_detach()
 
 
+def flush_telemetry(timeout_millis: int = 30_000) -> bool:
+    """Force-export buffered spans without shutting down the TracerProvider."""
+    if not settings.OTEL_ENABLED:
+        return False
+    provider = trace.get_tracer_provider()
+    if not hasattr(provider, "force_flush"):
+        return False
+    try:
+        provider.force_flush(timeout_millis=timeout_millis)
+        logger.debug("OTel TracerProvider force_flush completed")
+        return True
+    except Exception as exc:
+        logger.warning("OTel TracerProvider force_flush failed: %s", exc)
+        return False
+
+
 def shutdown_telemetry() -> None:
     """Flush in-flight spans before the process exits."""
+    flush_telemetry()
     provider = trace.get_tracer_provider()
     if hasattr(provider, "shutdown"):
         provider.shutdown()

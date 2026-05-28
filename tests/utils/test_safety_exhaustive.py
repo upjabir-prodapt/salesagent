@@ -2,7 +2,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.services.research.agent.utils.safety import get_default_safety_settings, get_safety_config_for_agent
+from src.services.research.agent.utils.safety import (
+    get_default_safety_settings,
+    get_safety_config_for_agent,
+)
 
 
 @pytest.fixture
