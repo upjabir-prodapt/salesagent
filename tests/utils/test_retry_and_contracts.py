@@ -10,11 +10,13 @@ from src.services.research.agent.utils.agent_pipeline import (
     build_retry_continuation_message,
 )
 from src.services.research.agent.utils.retry_errors import (
+    RETRY_SCOPE_NONE,
     RETRY_SCOPE_RUNNER_COLD,
     RETRY_SCOPE_RUNNER_WARM,
     retry_scope_for_error_class,
 )
 from src.services.research.agent.utils.retry_state import (
+    apply_retry,
     clear_retry_flag,
     increment_retry_count,
     pop_retry_hint,
@@ -92,9 +94,11 @@ def test_retry_scope_mapping_contract():
     assert retry_scope_for_error_class("CONNECT_ERROR") == RETRY_SCOPE_RUNNER_COLD
     assert retry_scope_for_error_class("RESOURCE_EXHAUSTED") == RETRY_SCOPE_RUNNER_WARM
     assert retry_scope_for_error_class("AGENT_ERROR") == RETRY_SCOPE_RUNNER_WARM
+    assert retry_scope_for_error_class("REPORT_VALIDATION_FAILED") == RETRY_SCOPE_NONE
 
 
-def test_report_compiler_validation_failure_uses_warm_retry_contract():
+@pytest.mark.asyncio
+async def test_report_compiler_validation_failure_is_not_retried():
     state = {"report_validation_status": "FAILED"}
     with pytest.raises(AgentOutputError) as exc_info:
         validate_agent_output(state, "ReportCompiler")
@@ -102,4 +106,9 @@ def test_report_compiler_validation_failure_uses_warm_retry_contract():
     exc = exc_info.value
     assert exc.error_class == "REPORT_VALIDATION_FAILED"
     assert requires_cold_retry(exc) is False
+    assert retry_scope_for_error_class(exc.error_class) == RETRY_SCOPE_NONE
+
+    allowed = await apply_retry(state, exc, on_retry=None)
+    assert allowed is False
+    assert state.get("agent_retry_counts", {}).get("ReportCompiler") is None
 

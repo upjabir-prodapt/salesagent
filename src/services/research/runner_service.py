@@ -62,7 +62,24 @@ class ResearchRunnerService:
             runner, app, job_id, company_name, attempt
         )
 
-        await self.run_agents(runner, session, job_id, company_name, app)
+        try:
+            await self.run_agents(runner, session, job_id, company_name, app)
+        except AgentOutputError as e:
+            if getattr(e, "error_class", None) != "REPORT_VALIDATION_FAILED":
+                raise
+            logger.error(
+                "Report validation failed for job %s (agent=%s): %s",
+                job_id,
+                e.agent_name,
+                e,
+            )
+            span.set_attribute("research.report_validation_status", "FAILED")
+            session = await runner.session_service.get_session(
+                app_name=app.name,
+                user_id="api_user",
+                session_id=session.id,
+            )
+            return "", dict(session.state if session and session.state else {})
 
         session = await runner.session_service.get_session(
             app_name=app.name,
@@ -129,6 +146,8 @@ class ResearchRunnerService:
                 company_name=company_name,
             )
         except AgentOutputError as e:
+            if getattr(e, "error_class", None) == "REPORT_VALIDATION_FAILED":
+                raise
             logger.error(
                 "Pipeline failed for agent %s after %s attempts: %s",
                 e.agent_name,

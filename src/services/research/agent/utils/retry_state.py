@@ -9,6 +9,7 @@ from .....core.config import settings
 from .....core.exceptions import AgentOutputError
 from .....core.logging_config import logger
 from .agent_contracts import get_output_key, is_tracked_agent
+from .retry_errors import RETRY_SCOPE_NONE, retry_scope_for_error_class
 from .state_mutation import state_remove
 
 AGENT_RETRY_COUNTS_KEY = "agent_retry_counts"
@@ -92,6 +93,14 @@ async def apply_retry(
     *,
     persist_state: StateMutator | None = None,
 ) -> bool:
+    error_class = getattr(exc, "error_class", None)
+    if retry_scope_for_error_class(error_class) == RETRY_SCOPE_NONE:
+        logger.error(
+            "Retry denied for agent=%s error_class=%s (non-retryable)",
+            exc.agent_name,
+            error_class,
+        )
+        return False
     if not is_tracked_agent(exc.agent_name):
         return False
     if max_retries_exceeded(state, exc.agent_name):

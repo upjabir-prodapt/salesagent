@@ -39,3 +39,10 @@ class FinalizationPort(Protocol):
         session_state: dict,
         metrics: dict,
     ) -> tuple[dict, bool]: ...
+
+    async def export_failure_telemetry(
+        self,
+        job_id: str,
+        session_state: dict,
+        metrics: dict,
+    ) -> dict[str, str]: ...

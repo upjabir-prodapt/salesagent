@@ -79,3 +79,13 @@ class FinalizationAdapter:
         return await self._finalization_service.finalize(
             job_id, final_report, session_state, metrics
         )
+
+    async def export_failure_telemetry(
+        self,
+        job_id: str,
+        session_state: dict,
+        metrics: dict,
+    ) -> dict[str, str]:
+        return await self._finalization_service.export_failure_telemetry(
+            job_id, session_state, metrics
+        )

@@ -100,3 +100,36 @@ class ResearchFinalizationService:
             side_op_failures["telemetry"] = str(e)
 
         return side_op_failures, pdf_available
+
+    async def export_failure_telemetry(
+        self,
+        job_id: str,
+        session_state: dict,
+        metrics: dict,
+    ) -> dict[str, str]:
+        """Flush telemetry and cost attribution when a job fails before completion."""
+        side_op_failures: dict[str, str] = {}
+
+        try:
+            await run_cost_attribution_op(
+                job_id=job_id,
+                session_state=session_state,
+                metrics=metrics,
+                insert_cost_attribution=self._bigquery_repo.insert_cost_attribution,
+            )
+        except Exception as e:
+            logger.warning(f"Cost op failed on job failure: {e}")
+            side_op_failures["cost_attribution"] = str(e)
+
+        try:
+            await run_telemetry_flush_op(
+                job_id=job_id,
+                session_state=session_state,
+                insert_agent_telemetry_batch=self._bigquery_repo.insert_agent_telemetry_batch,
+                upload_deadletter_json=self._gcs_repo.upload_json,
+            )
+        except Exception as e:
+            logger.warning(f"Telemetry op failed on job failure: {e}")
+            side_op_failures["telemetry"] = str(e)
+
+        return side_op_failures

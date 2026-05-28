@@ -21,6 +21,7 @@ from google.adk.tools.google_search_agent_tool import GoogleSearchAgentTool
 from google.adk.tools.tool_context import ToolContext
 
 from ......core.config import settings
+from ......core.exceptions import AgentOutputError
 from ......core.model import retry_config
 from ......utils.guardrails import OutputGuardrail
 from .....catalog.search import colt_product_search
@@ -156,21 +157,33 @@ async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[s
             f"Report passed all output guardrails. "
             f"Emit {FINAL_ANSWER_TAG} with this report only."
         )
-    elif attempts >= max_attempts:
-        details = "; ".join(f"{v['rule']}: {v['detail']}" for v in violations[:5])
-        message = (
-            f"Report failed validation (attempt {attempts}/{max_attempts}). "
-            f"Do not emit {FINAL_ANSWER_TAG}. Use {REPLANNING_TAG}, fix all "
-            f"violations, and call {REPORT_VERIFICATION_AGENT_NAME} again. "
-            f"Violations: {details}"
+        return {
+            "status": status,
+            "violations": violations[:10],
+            "attempt": attempts,
+            "max_attempts": max_attempts,
+            "message": message,
+        }
+
+    details = "; ".join(f"{v['rule']}: {v['detail']}" for v in violations[:5])
+    if attempts >= max_attempts:
+        tool_context.state["report_validation_terminal"] = True
+        raise AgentOutputError(
+            (
+                f"Report failed validation (attempt {attempts}/{max_attempts}). "
+                f"Maximum validation attempts exhausted. Do not emit {FINAL_ANSWER_TAG}. "
+                f"Fail the run and mark the job as FAILED. Violations: {details}"
+            ),
+            agent_name="ReportCompiler",
+            output_key="final_report",
+            error_class="REPORT_VALIDATION_FAILED",
         )
-    else:
-        details = "; ".join(f"{v['rule']}: {v['detail']}" for v in violations[:5])
-        message = (
-            f"Report failed validation (attempt {attempts}/{max_attempts}). "
-            f"Use {REPLANNING_TAG}, fix the draft per violations, then call "
-            f"{REPORT_VERIFICATION_AGENT_NAME} again. Violations: {details}"
-        )
+
+    message = (
+        f"Report failed validation (attempt {attempts}/{max_attempts}). "
+        f"Use {REPLANNING_TAG}, fix the draft per violations, then call "
+        f"{REPORT_VERIFICATION_AGENT_NAME} again. Violations: {details}"
+    )
 
     return {
         "status": status,

@@ -38,8 +38,22 @@ class _ArtifactStub:
 
 
 class _FinalizationStub:
+    def __init__(self, *, fail_failure_export: bool = False) -> None:
+        self.failure_exports: list[dict] = []
+        self.fail_failure_export = fail_failure_export
+
     async def finalize(self, job_id: str, final_report: str, session_state: dict, metrics: dict):
         return {}, True
+
+    async def export_failure_telemetry(
+        self, job_id: str, session_state: dict, metrics: dict
+    ) -> dict[str, str]:
+        if self.fail_failure_export:
+            raise RuntimeError("telemetry export failed")
+        self.failure_exports.append(
+            {"job_id": job_id, "session_state": session_state, "metrics": metrics}
+        )
+        return {}
 
 
 @pytest.mark.asyncio
@@ -65,6 +79,37 @@ async def test_orchestrator_marks_completed_on_success() -> None:
 async def test_orchestrator_marks_failed_when_validation_fails() -> None:
     status = _StatusRepoStub()
     artifacts = _ArtifactStub()
+    finalization = _FinalizationStub()
+    runner = _RunnerStub(
+        state={
+            "report_validation_status": "FAILED",
+            "report_validation_violations": [{"rule": "missing_source", "detail": "No source"}],
+            "agent_telemetry_records": [{"record_id": "r1", "agent_name": "ReportCompiler"}],
+        }
+    )
+    orchestrator = ResearchJobOrchestrator(
+        status_repository=status,
+        runner=runner,
+        artifacts=artifacts,
+        finalization=finalization,
+    )
+
+    await orchestrator.run("job-2", "Globex")
+
+    assert status.calls[-1]["status"] == "FAILED"
+    assert str(status.calls[-1]["error"]).startswith("Output blocked:")
+    assert status.calls[-1]["metadata_update"]["report_validation_status"] == "FAILED"
+    assert status.calls[-1]["metadata_update"]["latency_seconds"] is not None
+    assert artifacts.upload_called is False
+    assert len(finalization.failure_exports) == 1
+    assert finalization.failure_exports[0]["job_id"] == "job-2"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_still_marks_failed_when_failure_telemetry_export_fails() -> None:
+    status = _StatusRepoStub()
+    artifacts = _ArtifactStub()
+    finalization = _FinalizationStub(fail_failure_export=True)
     runner = _RunnerStub(
         state={
             "report_validation_status": "FAILED",
@@ -75,13 +120,16 @@ async def test_orchestrator_marks_failed_when_validation_fails() -> None:
         status_repository=status,
         runner=runner,
         artifacts=artifacts,
-        finalization=_FinalizationStub(),
+        finalization=finalization,
     )
 
-    await orchestrator.run("job-2", "Globex")
+    await orchestrator.run("job-telemetry-fail", "Globex")
 
     assert status.calls[-1]["status"] == "FAILED"
-    assert str(status.calls[-1]["error"]).startswith("Output blocked:")
+    assert (
+        status.calls[-1]["metadata_update"]["side_op_failures"]["failure_telemetry_export"]
+        == "telemetry export failed"
+    )
     assert artifacts.upload_called is False
 
 

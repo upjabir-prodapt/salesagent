@@ -23,7 +23,7 @@ def requires_cold_retry(exc: Exception) -> bool:
         error_class = getattr(exc, "error_class", None) or classify_error(str(exc))
         if error_class == "REPORT_VALIDATION_FAILED":
             logger.info(
-                "Warm-retry decision: agent=%s error_class=%s reason=compiler_validation_failure",
+                "Fail-fast decision: agent=%s error_class=%s reason=compiler_validation_failure",
                 exc.agent_name,
                 error_class,
             )

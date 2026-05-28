@@ -50,7 +50,9 @@ class ResearchJobOrchestrator:
 
         start_time = time.monotonic()
         try:
-            final_report, session_state = await self._run_research_loop(job_id, company_name)
+            final_report, session_state = await self._run_research_loop(
+                job_id, company_name, start_time=start_time, span=span
+            )
             if not final_report:
                 return
 
@@ -91,7 +93,12 @@ class ResearchJobOrchestrator:
             raise
 
     async def _run_research_loop(
-        self, job_id: str, company_name: str
+        self,
+        job_id: str,
+        company_name: str,
+        *,
+        start_time: float,
+        span: Span | None = None,
     ) -> tuple[str | None, dict]:
         """Execute sales agents, aggregate evidence, and enforce report validation gate."""
         final_report, session_state = await self._runner.run(job_id, company_name)
@@ -101,30 +108,82 @@ class ResearchJobOrchestrator:
 
         validation_status = session_state.get("report_validation_status")
         if validation_status != "PASSED":
-            violations = session_state.get("report_validation_violations") or []
-            guard_violations = [
-                GuardrailViolation(rule=v.get("rule", "unknown"), detail=v.get("detail", ""))
-                for v in violations
-                if isinstance(v, dict)
-            ]
-            failure_summary = build_failure_summary(guard_violations)
-            dominant = failure_summary.get("dominant_rule", "report_validation_failed")
-            logger.error(
-                f"[ReportValidation] Job {job_id} blocked: status={validation_status!r}, "
-                f"dominant_rule={dominant}"
-            )
-            self._status_repository.update_status(
+            await self._handle_validation_failure(
                 job_id,
-                "FAILED",
-                error=f"Output blocked: {dominant}",
-                metadata_update={
-                    "failure_summary": failure_summary,
-                    "report_validation_status": validation_status,
-                },
+                session_state,
+                validation_status=validation_status,
+                start_time=start_time,
+                span=span,
             )
             return None, session_state
 
         return final_report, session_state
+
+    async def _handle_validation_failure(
+        self,
+        job_id: str,
+        session_state: dict,
+        *,
+        validation_status: str | None,
+        start_time: float,
+        span: Span | None,
+    ) -> None:
+        """Mark job failed, export telemetry/cost, and record OTEL attributes."""
+        violations = session_state.get("report_validation_violations") or []
+        guard_violations = [
+            GuardrailViolation(rule=v.get("rule", "unknown"), detail=v.get("detail", ""))
+            for v in violations
+            if isinstance(v, dict)
+        ]
+        failure_summary = build_failure_summary(guard_violations)
+        dominant = failure_summary.get("dominant_rule", "report_validation_failed")
+        latency = round(time.monotonic() - start_time, 2)
+        metrics = calculate_metrics(session_state, latency)
+        reconciliation = reconcile_cost(session_state, metrics)
+
+        side_op_failures: dict[str, str] = {}
+        try:
+            side_op_failures = await self._finalization.export_failure_telemetry(
+                job_id, session_state, metrics
+            )
+        except Exception as export_error:
+            logger.warning(
+                "Validation-failure telemetry export failed for job %s: %s",
+                job_id,
+                export_error,
+            )
+            side_op_failures["failure_telemetry_export"] = str(export_error)
+            if span is not None:
+                span.record_exception(export_error)
+
+        logger.error(
+            f"[ReportValidation] Job {job_id} blocked: status={validation_status!r}, "
+            f"dominant_rule={dominant}"
+        )
+
+        if span is not None:
+            span.set_attribute("research.status", "failed")
+            span.set_attribute("research.report_validation_status", str(validation_status))
+            span.set_attribute("research.latency_seconds", latency)
+            if metrics["total_tokens"]:
+                span.set_attribute("research.total_tokens", int(metrics["total_tokens"]))
+            if metrics["cost_usd"] is not None:
+                span.set_attribute("research.cost_usd", float(metrics["cost_usd"]))
+
+        self._status_repository.update_status(
+            job_id,
+            "FAILED",
+            error=f"Output blocked: {dominant}",
+            metadata_update={
+                "failure_summary": failure_summary,
+                "report_validation_status": validation_status,
+                "latency_seconds": latency,
+                "tokens_used": metrics["total_tokens"] or None,
+                "cost_usd": metrics["cost_usd"],
+                "cost_reconciliation": reconciliation,
+                "side_op_failures": side_op_failures or None,
+            },
+        )
 
     def _mark_completed(
         self,
