@@ -24,6 +24,7 @@ from .retry_state import (
     prepare_agent_retry,
     set_retry_hint,
 )
+from .state_mutation import is_mutable_state
 
 
 class RetryingLlmAgent(LlmAgent):
@@ -130,9 +131,9 @@ class RetryingLlmAgent(LlmAgent):
         )
 
     @staticmethod
-    def _session_state(ctx: InvocationContext) -> dict[str, Any] | None:
+    def _session_state(ctx: InvocationContext) -> Any | None:
         session = getattr(ctx, "session", None)
         state = getattr(session, "state", None)
-        if isinstance(state, dict):
+        if is_mutable_state(state):
             return state
         return None

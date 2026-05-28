@@ -95,13 +95,15 @@ def verify_draft_answer(draft: str, tool_context: ToolContext) -> dict[str, Any]
 
     if result.status == "PASSED":
         message = (
-            f"Draft passed evidence check. Emit {FINAL_ANSWER_TAG} with this draft only."
+            f"Aggregated answer passed evidence check. Emit {FINAL_ANSWER_TAG} "
+            "with the same verified aggregated answer only — no edits."
         )
     else:
         message = (
-            f"Draft failed grounding check. Use {REPLANNING_TAG}, call "
-            f"{SEARCH_AGENT_NAME} again to find missing evidence, revise the draft, "
-            "then call verify_draft_answer again before emitting FINAL_ANSWER."
+            f"Aggregated answer failed grounding check. Use {REPLANNING_TAG}, call "
+            f"{SEARCH_AGENT_NAME} again to find missing evidence, revise the "
+            f"aggregated answer under /*AGGREGATED_ANSWER*/, call verify_draft_answer "
+            f"again, then emit {FINAL_ANSWER_TAG} only after PASSED."
         )
     return {
         "status": result.status,
@@ -155,10 +157,12 @@ async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[s
             f"Emit {FINAL_ANSWER_TAG} with this report only."
         )
     elif attempts >= max_attempts:
+        details = "; ".join(f"{v['rule']}: {v['detail']}" for v in violations[:5])
         message = (
             f"Report failed validation (attempt {attempts}/{max_attempts}). "
-            "Maximum validation attempts reached — fix what you can and emit "
-            f"{FINAL_ANSWER_TAG} only if you cannot resolve remaining issues."
+            f"Do not emit {FINAL_ANSWER_TAG}. Use {REPLANNING_TAG}, fix all "
+            f"violations, and call {REPORT_VERIFICATION_AGENT_NAME} again. "
+            f"Violations: {details}"
         )
     else:
         details = "; ".join(f"{v['rule']}: {v['detail']}" for v in violations[:5])

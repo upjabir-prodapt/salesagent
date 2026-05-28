@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_embedder: "OnnxSentenceEmbedder | None" = None
+_embedder: OnnxSentenceEmbedder | None = None
 
 
 class OnnxSentenceEmbedder:
@@ -143,7 +143,7 @@ def compute_semantic_groundedness(
 
     threshold = settings.EVAL_EMBEDDING_SIMILARITY_THRESHOLD
     grounded = 0
-    for i, claim_vec in enumerate(claim_vecs):
+    for claim_vec in claim_vecs:
         sim = max_cosine_similarity(claim_vec, corpus_vecs)
         if sim >= threshold:
             grounded += 1

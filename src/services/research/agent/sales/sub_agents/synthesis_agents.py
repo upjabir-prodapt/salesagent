@@ -5,14 +5,14 @@ Contains agents for analyzing alignment and compiling the final report.
 """
 
 from ......core.config import settings
+from ..prompts import (
+    ALIGNMENT_PROMPT,
+    REPORT_COMPILER_PROMPT,
+)
 from ..utils import create_plan_react_agent
 from ..utils.tools import (
     colt_product_search_tool,
     make_report_verification_agent_tool,
-)
-from ..prompts import (
-    ALIGNMENT_PROMPT,
-    REPORT_COMPILER_PROMPT,
 )
 
 

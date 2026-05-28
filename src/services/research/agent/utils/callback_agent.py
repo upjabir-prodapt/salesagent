@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+
 from google.adk.agents.callback_context import CallbackContext
 from google.genai import types
 
@@ -147,12 +149,10 @@ def _record_bm25_telemetry(callback_context: CallbackContext, agent_name: str) -
     if not draft or not str(draft).strip():
         return
     session_id = "unknown"
-    try:
+    with suppress(Exception):
         session_id = str(
             getattr(callback_context, "session", None) and callback_context.session.id
         )
-    except Exception:
-        pass
     try:
         result = Bm25Verifier().verify(
             str(draft),

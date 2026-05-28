@@ -2,28 +2,31 @@
 
 from __future__ import annotations
 
-import time
 import uuid
 from typing import Any
 
 from opentelemetry import trace
 
-from .agent.evaluation_service import EvaluationService
-from .agent.sales.utils.evidence import aggregate_job_evidence
 from ...core.config import settings
 from ...core.exceptions import ServiceError
 from ...core.logging_config import contextualize, logger
 from ...repositories.bigquery_repository import BigQueryRepository
 from ...repositories.gcs_repository import GCSRepository
-from ...utils.guardrails import GuardrailViolation
 from ...utils.tracing import job_attrs, traced_with_context
+from .agent.evaluation_service import EvaluationService
+from .application.commands import ResearchJobCommand
+from .application.orchestrator import ResearchJobOrchestrator
+from .application.service import ResearchApplicationService
 from .artifact_service import ResearchArtifactService
 from .finalization_service import ResearchFinalizationService
-from .metrics import calculate_metrics, reconcile_cost
+from .infrastructure.adapters import (
+    AdkRunnerAdapter,
+    BigQueryStatusAdapter,
+    FinalizationAdapter,
+    GcsArtifactAdapter,
+)
 from .runner_service import ResearchRunnerService
 from .status_helpers import (
-    build_completion_metadata,
-    build_failure_summary,
     build_model_card,
 )
 
@@ -51,6 +54,14 @@ class ResearchService:
             bigquery_repository,
             gcs_repository,
             evaluation_service=evaluation_service,
+        )
+        self._application = ResearchApplicationService(
+            ResearchJobOrchestrator(
+                status_repository=BigQueryStatusAdapter(bigquery_repository),
+                runner=AdkRunnerAdapter(self._runner),
+                artifacts=GcsArtifactAdapter(self._artifacts),
+                finalization=FinalizationAdapter(self._finalization),
+            )
         )
 
     def new_job_id(self) -> str:
@@ -95,141 +106,16 @@ class ResearchService:
             try:
                 logger.info(f"Starting research for job {job_id}: {company_name}")
 
-                self.bigquery_repo.update_status(
-                    job_id,
-                    "PROCESSING",
-                    progress=settings.RESEARCH_INIT_PROGRESS,
-                    current_step=settings.RESEARCH_INIT_STEP_LABEL,
+                await self._application.run_background_job(
+                    ResearchJobCommand(
+                        job_id=job_id,
+                        company_name=company_name,
+                        metadata=metadata or {},
+                    ),
+                    span=span,
                 )
-
-                start_time = time.monotonic()
-
-                final_report, session_state = await self._run_research_loop(
-                    job_id, company_name
-                )
-                if not final_report:
-                    return
-
-                latency = round(time.monotonic() - start_time, 2)
-                span.set_attribute("research.latency_seconds", latency)
-
-                metrics = calculate_metrics(session_state, latency)
-                if metrics["total_tokens"]:
-                    span.set_attribute(
-                        "research.total_tokens", int(metrics["total_tokens"])
-                    )
-                if metrics["cost_usd"] is not None:
-                    span.set_attribute(
-                        "research.cost_usd", float(metrics["cost_usd"])
-                    )
-
-                reconciliation = reconcile_cost(session_state, metrics)
-
-                md_uri = self._artifacts.upload_artifacts(
-                    job_id, final_report, session_state
-                )
-
-                try:
-                    await self._artifacts.upload_agent_artifacts(job_id, session_state)
-                except Exception as e:
-                    logger.warning(f"Per-agent artifact upload failed: {e}")
-
-                side_op_failures, pdf_available = await self._finalization.finalize(
-                    job_id, final_report, session_state, metrics
-                )
-
-                self._mark_completed(
-                    job_id,
-                    md_uri,
-                    latency,
-                    metrics,
-                    pdf_available,
-                    side_op_failures,
-                    reconciliation=reconciliation,
-                )
-                span.set_attribute("research.status", "completed")
-            except Exception as e:
-                self._handle_failure(e, job_id, span)
+            except Exception:
                 raise
-
-    def _mark_completed(
-        self,
-        job_id: str,
-        md_uri: str,
-        latency: float,
-        metrics: dict,
-        pdf_available: bool,
-        side_op_failures: dict,
-        reconciliation: dict | None = None,
-    ) -> None:
-        """Mark job as COMPLETED in the database."""
-        meta = build_completion_metadata(
-            latency=latency,
-            metrics=metrics,
-            pdf_available=pdf_available,
-            side_op_failures=side_op_failures,
-            reconciliation=reconciliation,
-        )
-        self.bigquery_repo.update_status(
-            job_id,
-            "COMPLETED",
-            gcs_uri=md_uri,
-            progress=100,
-            current_step="Completed",
-            metadata_update=meta,
-        )
-        logger.info(f"Research completed successfully for job {job_id}")
-
-    def _handle_failure(self, e: Exception, job_id: str, span: Any) -> None:
-        """Handle failure during research processing."""
-        error_msg = str(e)
-        if "GeneratorExit" in error_msg or "TaskGroup" in error_msg:
-            error_msg = "Parallel execution collapsed (likely Quota/QPM limit reached)"
-        span.record_exception(e)
-        span.set_attribute("research.status", "failed")
-        logger.error(f"Error processing research for job {job_id}: {e}")
-        self.bigquery_repo.update_status(
-            job_id,
-            "FAILED",
-            error=error_msg,
-            metadata_update={"raw_error": str(e)[:1000]},
-        )
-
-    async def _run_research_loop(
-        self, job_id: str, company_name: str
-    ) -> tuple[str | None, dict]:
-        """Execute SalesAgent; validation runs inside ReportCompiler via AgentTool."""
-        final_report, session_state = await self._runner.run(job_id, company_name)
-
-        session_state["job_evidence"] = aggregate_job_evidence(session_state)
-        session_state["raw_search_cache"] = session_state["job_evidence"]
-
-        validation_status = session_state.get("report_validation_status")
-        if validation_status != "PASSED":
-            violations = session_state.get("report_validation_violations") or []
-            guard_violations = [
-                GuardrailViolation(rule=v.get("rule", "unknown"), detail=v.get("detail", ""))
-                for v in violations
-                if isinstance(v, dict)
-            ]
-            failure_summary = build_failure_summary(guard_violations)
-            dominant = failure_summary.get("dominant_rule", "report_validation_failed")
-            logger.error(
-                f"[ReportValidation] Job {job_id} blocked: status={validation_status!r}, "
-                f"dominant_rule={dominant}"
-            )
-            self.bigquery_repo.update_status(
-                job_id,
-                "FAILED",
-                error=f"Output blocked: {dominant}",
-                metadata_update={
-                    "failure_summary": failure_summary,
-                    "report_validation_status": validation_status,
-                },
-            )
-            return None, session_state
-
-        return final_report, session_state
 
     def get_request_status(self, job_id: str) -> dict[str, Any] | None:
         """Get the current status of a research job."""

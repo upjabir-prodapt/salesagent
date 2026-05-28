@@ -23,13 +23,12 @@ def test_get_default_safety_settings(mock_settings):
     with patch(
         "src.services.research.agent.utils.safety.get_default_safety_settings",
         wraps=get_default_safety_settings,
-    ) as mock_get:
+    ), patch("src.core.config.settings", mock_settings):
         # Need to patch the settings used INSIDE the function if it's imported there
-        with patch("src.core.config.settings", mock_settings):
-            settings = get_default_safety_settings()
-            assert len(settings) == 4
-            for s in settings:
-                assert isinstance(s, types.SafetySetting)
+        settings = get_default_safety_settings()
+        assert len(settings) == 4
+        for s in settings:
+            assert isinstance(s, types.SafetySetting)
 
 
 def test_get_business_research_safety_settings():

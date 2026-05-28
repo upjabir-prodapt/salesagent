@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import io
 
+from ...core.logging_config import logger
+from ...repositories.bigquery_repository import BigQueryRepository
+from ...repositories.gcs_repository import GCSRepository
+from ...utils.tracing import job_attrs, traced
 from .agent.evaluation_service import EvaluationService
 from .finalization_ops import (
     run_cost_attribution_op,
@@ -12,11 +15,6 @@ from .finalization_ops import (
     run_pdf_op,
     run_telemetry_flush_op,
 )
-from ...core.config import settings
-from ...core.logging_config import logger
-from ...repositories.bigquery_repository import BigQueryRepository
-from ...repositories.gcs_repository import GCSRepository
-from ...utils.tracing import job_attrs, traced
 
 
 class ResearchFinalizationService:

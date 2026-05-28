@@ -511,7 +511,7 @@ class StrategicOpportunitySummary(BaseModel):
 
 class ColtAlignmentOutput(BaseModel):
     alignment_mappings: list[ColtAlignmentMapping] = Field(
-        ..., description="5-7 tailored mappings of challenges to Colt solutions"
+        ..., description="All evidence-backed mappings of target challenges to Colt solutions"
     )
     strategic_opportunity: StrategicOpportunitySummary = Field(
         ..., description="Section 11 Strategic Opportunity Summary"

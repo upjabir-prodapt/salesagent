@@ -9,6 +9,7 @@ from .....core.config import settings
 from .....core.exceptions import AgentOutputError
 from .....core.logging_config import logger
 from .agent_contracts import get_output_key, is_tracked_agent
+from .state_mutation import state_remove
 
 AGENT_RETRY_COUNTS_KEY = "agent_retry_counts"
 PIPELINE_RETRY_AGENT_KEY = "pipeline_retry_agent"
@@ -40,11 +41,11 @@ def max_retries_exceeded(state: dict[str, Any], agent_name: str) -> bool:
 def prepare_agent_retry(state: dict[str, Any], agent_name: str) -> str | None:
     output_key = get_output_key(agent_name)
     if output_key:
-        state.pop(output_key, None)
+        state_remove(state, output_key)
     if agent_name == "ReportCompiler":
-        state.pop("final_report", None)
-        state.pop("report_validation_status", None)
-        state.pop("report_validation_violations", None)
+        state_remove(state, "final_report")
+        state_remove(state, "report_validation_status")
+        state_remove(state, "report_validation_violations")
 
     agent_status_map = dict(state.get("agent_status_map") or {})
     agent_status_map[agent_name] = "retrying"
@@ -62,7 +63,7 @@ def prepare_agent_retry(state: dict[str, Any], agent_name: str) -> str | None:
 
 
 def clear_retry_flag(state: dict[str, Any]) -> None:
-    state.pop(PIPELINE_RETRY_AGENT_KEY, None)
+    state_remove(state, PIPELINE_RETRY_AGENT_KEY)
 
 
 def set_retry_hint(state: dict[str, Any], agent_name: str, hint: str) -> None:
@@ -78,7 +79,7 @@ def pop_retry_hint(state: dict[str, Any], agent_name: str) -> str | None:
     if hints:
         state[AGENT_RETRY_HINTS_KEY] = hints
     else:
-        state.pop(AGENT_RETRY_HINTS_KEY, None)
+        state_remove(state, AGENT_RETRY_HINTS_KEY)
     if value:
         logger.debug("Popped retry hint for %s", agent_name)
     return value

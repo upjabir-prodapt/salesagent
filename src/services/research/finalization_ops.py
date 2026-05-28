@@ -7,11 +7,11 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
+from ...core.config import settings
+from ...core.logging_config import logger
 from .agent.utils.telemetry import TELEMETRY_RECORDS_KEY
 from .metrics import reconcile_cost
 from .retry import with_retry, with_retry_sync
-from ...core.config import settings
-from ...core.logging_config import logger
 
 
 async def run_pdf_op(

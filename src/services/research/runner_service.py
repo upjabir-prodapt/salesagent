@@ -9,18 +9,19 @@ from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactServ
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.genai import types
-from .agent.session_service_factory import build_session_service
-from .agent.sales.agent import create_sales_agent_app
-from .session_ids import runner_session_id
+
 from ...core.config import settings
 from ...core.exceptions import AgentOutputError, ServiceError
 from ...core.logging_config import logger
 from ...repositories.bigquery_repository import BigQueryRepository
+from ...utils.tracing import job_attrs, traced
+from .agent.sales.agent import create_sales_agent_app
+from .agent.session_service_factory import build_session_service
 from .agent.utils.agent import log_event
 from .agent.utils.agent_pipeline import run_runner_with_per_agent_retry
-from .session_state_mutator import mutate_stored_session_state
-from ...utils.tracing import job_attrs, traced
 from .progress import ResearchProgressTracker
+from .session_ids import runner_session_id
+from .session_state_mutator import mutate_stored_session_state
 
 
 class ResearchRunnerService:

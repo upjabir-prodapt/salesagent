@@ -11,7 +11,6 @@ They handle:
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from google.adk.agents.callback_context import CallbackContext
@@ -21,6 +20,7 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
 from ......core.logging_config import logger
+from ...utils.agent_pipeline import get_output_key
 from ...utils.callback_common import contains_prompt_injection
 from .evidence import (
     evidence_key,
@@ -28,10 +28,9 @@ from .evidence import (
     get_verification_status,
     set_verification_state,
 )
-from .tools import COLT_PRODUCT_SEARCH_TOOL, SEARCH_AGENT_NAME
-from ...utils.agent_pipeline import get_output_key
 from .output_persistence import persist_output_key
-from .verification import EvidenceStore, PLANNER_TAG_RE
+from .tools import COLT_PRODUCT_SEARCH_TOOL, SEARCH_AGENT_NAME
+from .verification import PLANNER_TAG_RE, EvidenceStore
 
 # Minimum visible-answer length that triggers verification enforcement
 MIN_FINAL_ANSWER_CHARS = 100
@@ -101,8 +100,10 @@ def plan_before_model(
             [
                 f"verify_draft_answer returned FAILED. Use {REPLANNING_TAG}, "
                 f"call {SEARCH_AGENT_NAME} or {COLT_PRODUCT_SEARCH_TOOL} again to find "
-                f"the missing evidence, revise the draft, call verify_draft_answer again, "
-                f"then emit {FINAL_ANSWER_TAG} only after PASSED. "
+                f"the missing evidence, revise the aggregated answer "
+                f"(/*AGGREGATED_ANSWER*/), call verify_draft_answer again, "
+                f"then emit {FINAL_ANSWER_TAG} only after PASSED with the same "
+                f"verified aggregated answer. "
                 f"Unsupported claims: {bad[:3]}"
             ]
         )

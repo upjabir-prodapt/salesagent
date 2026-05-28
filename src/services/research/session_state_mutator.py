@@ -21,6 +21,13 @@ def requires_cold_retry(exc: Exception) -> bool:
     """True when invocation resume cannot reliably re-run the failed leaf."""
     if isinstance(exc, AgentOutputError):
         error_class = getattr(exc, "error_class", None) or classify_error(str(exc))
+        if error_class == "REPORT_VALIDATION_FAILED":
+            logger.info(
+                "Warm-retry decision: agent=%s error_class=%s reason=compiler_validation_failure",
+                exc.agent_name,
+                error_class,
+            )
+            return False
         if retry_scope_for_error_class(error_class) == RETRY_SCOPE_RUNNER_COLD:
             logger.info(
                 "Cold-retry decision: agent=%s error_class=%s reason=error_class_scope",

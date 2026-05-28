@@ -12,6 +12,7 @@ from .....utils.guardrails import InputGuardrail
 from .....utils.url_utils import is_authoritative
 from ..sales.utils.evidence import append_evidence, evidence_key
 from .callback_common import record_callback_span_event
+from .retry_state import pop_retry_hint
 
 
 def before_model_callback(
@@ -60,6 +61,7 @@ def before_model_callback(
     except Exception as e:  # pragma: no cover
         logger.debug(f"[Callback] Jailbreak scan in callback failed: {e}")
 
+    _inject_retry_hint(callback_context, llm_request)
     return None
 
 
@@ -220,4 +222,21 @@ def _create_validation_error_response(error_message: str) -> LlmResponse:
             ],
         )
     )
+
+
+def _inject_retry_hint(
+    callback_context: CallbackContext, llm_request: LlmRequest
+) -> None:
+    """Append one-shot retry guidance for the current agent when available."""
+    hint = pop_retry_hint(callback_context.state, callback_context.agent_name)
+    if not hint:
+        return
+    try:
+        llm_request.append_instructions([hint])
+    except Exception as exc:  # pragma: no cover
+        logger.debug(
+            "Could not append retry hint for %s: %s",
+            callback_context.agent_name,
+            exc,
+        )
 

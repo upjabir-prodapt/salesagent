@@ -1,4 +1,5 @@
 import pytest
+from google.adk.sessions.state import State
 
 from src.core.exceptions import AgentOutputError
 from src.services.research.agent.utils.agent_contracts import (
@@ -16,6 +17,7 @@ from src.services.research.agent.utils.retry_errors import (
 from src.services.research.agent.utils.retry_state import (
     clear_retry_flag,
     increment_retry_count,
+    pop_retry_hint,
     prepare_agent_retry,
 )
 from src.services.research.session_state_mutator import requires_cold_retry
@@ -42,6 +44,16 @@ def test_prepare_retry_state_contract():
     assert state["agent_status_map"]["ExecutiveAgent"] == "retrying"
     clear_retry_flag(state)
     assert "pipeline_retry_agent" not in state
+
+
+def test_pop_retry_hint_works_on_adk_state_wrapper():
+    adk_state = State(
+        value={"agent_retry_hints": {"ExecutiveAgent": "retry me"}},
+        delta={},
+    )
+    hint = pop_retry_hint(adk_state, "ExecutiveAgent")
+    assert hint == "retry me"
+    assert "agent_retry_hints" not in adk_state.to_dict()
 
 
 def test_requires_cold_retry_contract():
@@ -80,4 +92,14 @@ def test_retry_scope_mapping_contract():
     assert retry_scope_for_error_class("CONNECT_ERROR") == RETRY_SCOPE_RUNNER_COLD
     assert retry_scope_for_error_class("RESOURCE_EXHAUSTED") == RETRY_SCOPE_RUNNER_WARM
     assert retry_scope_for_error_class("AGENT_ERROR") == RETRY_SCOPE_RUNNER_WARM
+
+
+def test_report_compiler_validation_failure_uses_warm_retry_contract():
+    state = {"report_validation_status": "FAILED"}
+    with pytest.raises(AgentOutputError) as exc_info:
+        validate_agent_output(state, "ReportCompiler")
+
+    exc = exc_info.value
+    assert exc.error_class == "REPORT_VALIDATION_FAILED"
+    assert requires_cold_retry(exc) is False
 

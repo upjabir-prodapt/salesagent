@@ -20,7 +20,6 @@ from rank_bm25 import BM25Okapi
 
 from .evidence import (
     append_evidence,
-    evidence_key,
     get_agent_evidence,
     normalize_entry,
 )

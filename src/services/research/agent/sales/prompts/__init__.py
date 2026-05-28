@@ -1,6 +1,7 @@
 """Sales agent prompts package — re-exports for backward compatibility."""
 
 from .research_prompts import (
+    AGGREGATED_ANSWER_TAG,
     CAMPAIGN_SIGNALS_PROMPT,
     COMPLIANCE_PROMPT,
     ECOSYSTEM_PROMPT,
@@ -19,6 +20,7 @@ from .research_prompts import (
 from .synthesis_prompts import ALIGNMENT_PROMPT, COLT_DETAILS, REPORT_COMPILER_PROMPT
 
 __all__ = [
+    "AGGREGATED_ANSWER_TAG",
     "RESEARCH_GUIDELINES",
     "PLAN_REACT_RESEARCH_BLOCK",
     "GROWTH_SIGNALS_PROMPT",
