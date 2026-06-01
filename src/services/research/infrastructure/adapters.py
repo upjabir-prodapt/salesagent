@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from ....repositories.bigquery_repository import BigQueryRepository
-from ..artifact_service import ResearchArtifactService
-from ..finalization_service import ResearchFinalizationService
-from ..runner_service import ResearchRunnerService
+from ..artifacts.service import ResearchArtifactService
+from ..finalization.service import ResearchFinalizationService
+from ..runtime.runner import ResearchRunnerService
 
 
 class BigQueryStatusAdapter:

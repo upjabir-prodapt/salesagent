@@ -81,8 +81,8 @@ def get_embedder() -> OnnxSentenceEmbedder | None:
         path = settings.eval_embedding_onnx_path
         if not path.is_file():
             logger.warning(
-                "[Embedding] ONNX model not found at %s — semantic metrics disabled",
-                path,
+                f"[Pipeline] ONNX embedding model not found at {path} — "
+                f"semantic metrics disabled"
             )
             return None
         _embedder = OnnxSentenceEmbedder(str(path))
@@ -138,7 +138,7 @@ def compute_semantic_groundedness(
         corpus_vecs = embedder.encode(corpus_texts)
         claim_vecs = embedder.encode(claims)
     except Exception as e:
-        logger.warning("[Embedding] encode failed: %s", e)
+        logger.warning(f"[Pipeline] Embedding encode failed: {e}")
         return 0.0
 
     threshold = settings.EVAL_EMBEDDING_SIMILARITY_THRESHOLD

@@ -16,7 +16,7 @@ AGENT_RETRY_COUNTS_KEY = "agent_retry_counts"
 PIPELINE_RETRY_AGENT_KEY = "pipeline_retry_agent"
 AGENT_RETRY_HINTS_KEY = "agent_retry_hints"
 
-StateMutator = Callable[[Callable[[dict[str, Any]], None]], None]
+StateMutator = Callable[[Callable[[dict[str, Any]], None]], bool]
 
 
 def get_retry_count(state: dict[str, Any], agent_name: str) -> int:
@@ -53,12 +53,11 @@ def prepare_agent_retry(state: dict[str, Any], agent_name: str) -> str | None:
     state["agent_status_map"] = agent_status_map
     state[PIPELINE_RETRY_AGENT_KEY] = agent_name
 
+    attempt = get_retry_count(state, agent_name)
     logger.warning(
-        "Preparing retry for %s (attempt %s/%s), cleared output key %r",
-        agent_name,
-        get_retry_count(state, agent_name),
-        settings.AGENT_RETRY_ATTEMPTS,
-        output_key,
+        f"[Retry] Preparing retry for agent={agent_name} "
+        f"attempt={attempt}/{settings.AGENT_RETRY_ATTEMPTS} "
+        f"cleared output_key={output_key!r}"
     )
     return output_key
 
@@ -71,7 +70,9 @@ def set_retry_hint(state: dict[str, Any], agent_name: str, hint: str) -> None:
     hints = dict(state.get(AGENT_RETRY_HINTS_KEY) or {})
     hints[agent_name] = hint
     state[AGENT_RETRY_HINTS_KEY] = hints
-    logger.debug("Stored retry hint for %s", agent_name)
+    logger.info(
+        f"[Retry] Stored retry hint for agent={agent_name} ({len(hint)} chars)"
+    )
 
 
 def pop_retry_hint(state: dict[str, Any], agent_name: str) -> str | None:
@@ -82,7 +83,9 @@ def pop_retry_hint(state: dict[str, Any], agent_name: str) -> str | None:
     else:
         state_remove(state, AGENT_RETRY_HINTS_KEY)
     if value:
-        logger.debug("Popped retry hint for %s", agent_name)
+        logger.info(
+            f"[Retry] Popped retry hint for agent={agent_name} ({len(value)} chars)"
+        )
     return value
 
 
@@ -96,18 +99,19 @@ async def apply_retry(
     error_class = getattr(exc, "error_class", None)
     if retry_scope_for_error_class(error_class) == RETRY_SCOPE_NONE:
         logger.error(
-            "Retry denied for agent=%s error_class=%s (non-retryable)",
-            exc.agent_name,
-            error_class,
+            f"[Retry] Denied for agent={exc.agent_name} "
+            f"error_class={error_class} (non-retryable)"
         )
         return False
     if not is_tracked_agent(exc.agent_name):
+        logger.warning(
+            f"[Retry] Denied for agent={exc.agent_name} (not a tracked agent)"
+        )
         return False
     if max_retries_exceeded(state, exc.agent_name):
         logger.error(
-            "Agent %s exceeded max retries (%s)",
-            exc.agent_name,
-            settings.AGENT_RETRY_ATTEMPTS,
+            f"[Retry] Agent {exc.agent_name} exceeded max retries "
+            f"({settings.AGENT_RETRY_ATTEMPTS})"
         )
         return False
 
@@ -122,14 +126,24 @@ async def apply_retry(
         def _mutator(target: dict[str, Any]) -> None:
             attempt_ref[0] = _prepare(target)
 
-        persist_state(_mutator)
-        attempt = attempt_ref[0]
+        if not persist_state(_mutator):
+            logger.error(
+                f"[Retry] Failed to persist retry state for agent={exc.agent_name}; "
+                f"applying to fetched session state"
+            )
+            attempt = _prepare(state)
+        else:
+            attempt = attempt_ref[0]
     else:
         attempt = _prepare(state)
+
+    logger.info(
+        f"[Retry] Approved for agent={exc.agent_name} "
+        f"attempt={attempt}/{settings.AGENT_RETRY_ATTEMPTS} error_class={error_class}"
+    )
 
     if on_retry:
         result = on_retry(exc.agent_name, attempt)
         if result is not None:
             await result
     return True
-

@@ -2,8 +2,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.services.research.agent.sales.prompts import EXECUTIVE_PROMPT, FIRMOGRAPHICS_PROMPT
-from src.services.research.agent.sales.sub_agents.research_agents import create_research_agents
+from src.services.research.agents.sales.prompts import (
+    EXECUTIVE_PROMPT,
+    FIRMOGRAPHICS_PROMPT,
+)
+from src.services.research.agents.sales.sub_agents.research import create_research_agents
 
 
 @pytest.fixture
@@ -11,10 +14,10 @@ def mock_agents():
     # We want to test the logic of the agents, not the LLM itself
     with (
         patch(
-            "src.services.research.agent.sales.sub_agents.research_agents.create_plan_react_agent"
+            "src.services.research.agents.sales.factory.create_plan_react_agent"
         ) as mock_factory,
         patch(
-            "src.services.research.agent.sales.sub_agents.research_agents.SequentialAgent"
+            "src.services.research.agents.sales.factory.SequentialAgent"
         ) as mock_sequential,
     ):
 
@@ -66,7 +69,7 @@ def test_no_bullet_points_instruction_in_guidelines():
     Test Case: No bullet points in narrative sections
     Objective: Verify that the global research guidelines forbid generic statements and prioritize specific formatting
     """
-    from src.services.research.agent.sales.prompts import RESEARCH_GUIDELINES
+    from src.services.research.agents.sales.prompts import RESEARCH_GUIDELINES
 
     # Although the 'no bullet points' is specifically a Compiler/Synthesis rule,
     # we verify that the agents are pushed towards specific, factual evidence over generic lists.
@@ -78,7 +81,7 @@ def test_report_compiler_enforces_no_bullets():
     Test Case: No bullet points in narrative sections
     Objective: Verify that the Report Compiler prompt explicitly forbids bullet points in Section 12
     """
-    from src.services.research.agent.sales.prompts import REPORT_COMPILER_PROMPT
+    from src.services.research.agents.sales.prompts import REPORT_COMPILER_PROMPT
 
     assert "no bullet points" in REPORT_COMPILER_PROMPT.lower()
     assert "dashes" in REPORT_COMPILER_PROMPT.lower()

@@ -7,7 +7,7 @@ from google.adk.agents.run_config import RunConfig
 from google.genai import types
 
 from src.core.exceptions import AgentOutputError
-from src.services.research.agent.utils.agent_pipeline import (
+from src.services.research.runtime.retry.pipeline import (
     run_runner_with_per_agent_retry,
 )
 
@@ -48,8 +48,9 @@ async def test_run_runner_with_per_agent_retry_unwraps_exception_group():
     async def _get_session_state() -> dict[str, object]:
         return state
 
-    def _persist_state(mutator) -> None:
+    def _persist_state(mutator) -> bool:
         mutator(state)
+        return True
 
     async def _on_retry(agent_name: str, attempt: int) -> None:
         retry_calls.append((agent_name, attempt))

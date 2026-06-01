@@ -1,6 +1,8 @@
 import json
 import logging
-from unittest.mock import MagicMock
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from src.core.logging_config import gcp_json_formatter, setup_logging
 
@@ -46,3 +48,19 @@ def test_setup_logging_prod(mock_settings):
     mock_settings.LOG_LEVEL = "INFO"
     setup_logging()
     assert logging.getLogger().handlers
+
+
+def test_setup_logging_mirrors_to_file(mock_settings):
+    mock_settings.DEBUG = True
+    mock_settings.LOG_LEVEL = "DEBUG"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_path = Path(tmpdir) / "app.log"
+        mock_settings.LOG_FILE = str(log_path)
+        with patch("src.core.logging_config.settings", mock_settings):
+            mock_settings.app_log_path = log_path
+            setup_logging()
+            logging.getLogger("sales_agent").info("mirror me")
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+
+        assert log_path.read_text(encoding="utf-8").strip().endswith("mirror me")

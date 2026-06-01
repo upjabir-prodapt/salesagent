@@ -1,1 +1,5 @@
-"""Research job orchestration and ADK agent runtime."""
+"""Research service package entry points."""
+
+from .service import ResearchService
+
+__all__ = ["ResearchService"]

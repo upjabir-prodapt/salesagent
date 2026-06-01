@@ -7,8 +7,8 @@ from google.adk.agents import LlmAgent
 
 from src.core.config import settings
 from src.core.exceptions import AgentOutputError
-from src.services.research.agent.utils.retry_state import AGENT_RETRY_COUNTS_KEY
-from src.services.research.agent.utils.retrying_llm_agent import RetryingLlmAgent
+from src.services.research.runtime.retry.state import AGENT_RETRY_COUNTS_KEY
+from src.services.research.runtime.retry.retrying_llm_agent import RetryingLlmAgent
 
 
 @pytest.mark.asyncio

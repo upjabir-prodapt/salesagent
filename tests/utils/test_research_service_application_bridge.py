@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.services.research.research_service import ResearchService
+from src.services.research import ResearchService
 
 
 @pytest.mark.asyncio

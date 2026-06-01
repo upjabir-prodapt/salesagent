@@ -7,17 +7,17 @@ Usage:
 Or with uvicorn directly:
     uvicorn main:app --reload
 """
-
+import os
 import uvicorn
-
+from src.routes.app import app
 from src.core.config import settings
 
+def main() -> None:
+    port = int(os.environ.get("PORT", 8080))
+    host = settings.HOST
+    print(f"Starting server on {host}:{port}...", flush=True)
+    uvicorn.run(app, host=host, port=port,log_level=settings.LOG_LEVEL.lower())
+
+
 if __name__ == "__main__":
-    uvicorn.run(
-        "src.routes.app:app",
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=settings.DEBUG,
-        workers=settings.WORKERS if not settings.DEBUG else 1,
-        log_level=settings.LOG_LEVEL.lower(),
-    )
+    main()

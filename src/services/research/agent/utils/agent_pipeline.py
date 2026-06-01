@@ -66,11 +66,8 @@ def build_retry_continuation_message(
             "Emit /*FINAL_ANSWER*/ with valid output when done."
         )
     logger.info(
-        "Building retry continuation message mode=%s agent=%s error_class=%s output_key=%r",
-        retry_mode,
-        agent_name,
-        error_class,
-        output_key,
+        f"[Retry] Building continuation message mode={retry_mode} agent={agent_name} "
+        f"error_class={error_class} output_key={output_key!r}"
     )
     return types.UserContent(
         parts=[
@@ -95,27 +92,25 @@ async def _handle_agent_failure_retry(
     company_name: str | None,
 ) -> tuple[str | None, types.Content | None]:
     """Apply retry bookkeeping; resume invocation or start a new one on the main app."""
-    from ...session_state_mutator import requires_cold_retry
+    from ...runtime.state_mutation import requires_cold_retry
 
     state = await get_session_state()
-    logger.debug(
-        "Evaluating retry for agent=%s error_class=%s current_retry_counts=%s",
-        exc.agent_name,
-        getattr(exc, "error_class", None),
-        state.get("agent_retry_counts"),
+    logger.info(
+        f"[Retry] Evaluating agent={exc.agent_name} "
+        f"error_class={getattr(exc, 'error_class', None)} "
+        f"current_retry_counts={state.get('agent_retry_counts')}"
     )
     if not await apply_retry(state, exc, on_retry, persist_state=persist_state):
         logger.error(
-            "Retry denied for agent=%s (exceeded retries or not tracked)",
-            exc.agent_name,
+            f"[Retry] Denied for agent={exc.agent_name} "
+            f"(exceeded retries or not tracked)"
         )
         raise exc
 
     if requires_cold_retry(exc):
         logger.warning(
-            "Cold retry for %s via main app (new invocation, not resuming %s)",
-            exc.agent_name,
-            last_invocation_id,
+            f"[Retry] Cold retry for agent={exc.agent_name} via main app "
+            f"(new invocation, not resuming {last_invocation_id})"
         )
         if persist_state is not None:
             persist_state(clear_retry_flag)
@@ -130,9 +125,8 @@ async def _handle_agent_failure_retry(
         )
 
     logger.info(
-        "Warm retry for %s via invocation resume=%s",
-        exc.agent_name,
-        last_invocation_id,
+        f"[Retry] Warm retry for agent={exc.agent_name} "
+        f"via invocation resume={last_invocation_id}"
     )
     if persist_state is not None:
         persist_state(clear_retry_flag)
@@ -158,6 +152,7 @@ async def run_runner_with_per_agent_retry(
     """Run ADK runner on the main app; retry via resume or new message on the same app."""
     last_invocation_id: str | None = None
     initial_message = new_message
+    is_first_iteration = True
 
     while True:
         run_kwargs: dict[str, Any] = {
@@ -167,13 +162,25 @@ async def run_runner_with_per_agent_retry(
         }
         if last_invocation_id:
             logger.info(
-                "Resuming ADK invocation %s after agent failure", last_invocation_id
+                f"[Retry] Resuming ADK invocation {last_invocation_id} after agent failure"
             )
             run_kwargs["invocation_id"] = last_invocation_id
         elif initial_message is not None:
+            if is_first_iteration:
+                logger.info(
+                    f"[Pipeline] Starting ADK runner session_id={session_id} "
+                    f"app_name={app_name}"
+                )
+            else:
+                logger.info(
+                    f"[Retry] Starting new runner iteration with continuation message "
+                    f"session_id={session_id}"
+                )
             run_kwargs["new_message"] = initial_message
         else:
             raise ServiceError("Cannot start runner: no message and no invocation to resume")
+
+        is_first_iteration = False
 
         try:
             async for event in runner.run_async(**run_kwargs):
@@ -186,20 +193,24 @@ async def run_runner_with_per_agent_retry(
                     detail = error_message or f"error_code={error_code}"
                     if is_tracked_agent(author):
                         raise agent_failure_from_event(author, detail)
+                    logger.warning(
+                        f"[Pipeline] Untracked agent={author} failed: {detail}"
+                    )
                     raise ServiceError(f"Agent '{author}' failed: {detail}")
 
                 result = process_event(event)
                 if asyncio.iscoroutine(result):
                     await result
 
+            logger.info(
+                f"[Pipeline] ADK runner finished successfully session_id={session_id}"
+            )
             return
 
         except AgentOutputError as exc:
             logger.warning(
-                "Agent output failure agent=%s error_class=%s: %s",
-                exc.agent_name,
-                getattr(exc, "error_class", None),
-                exc,
+                f"[Retry] Agent output failure agent={exc.agent_name} "
+                f"error_class={getattr(exc, 'error_class', None)}: {exc}"
             )
             last_invocation_id, initial_message = await _handle_agent_failure_retry(
                 exc,
@@ -212,12 +223,15 @@ async def run_runner_with_per_agent_retry(
         except Exception as exc:
             grouped_error = _extract_agent_output_error(exc)
             if grouped_error is None:
+                logger.error(
+                    f"[Pipeline] Unhandled runner exception session_id={session_id}: {exc}"
+                )
                 raise
             logger.warning(
-                "Agent output failure from grouped exception agent=%s error_class=%s: %s",
-                grouped_error.agent_name,
-                getattr(grouped_error, "error_class", None),
-                grouped_error,
+                f"[Retry] Agent output failure from grouped exception "
+                f"agent={grouped_error.agent_name} "
+                f"error_class={getattr(grouped_error, 'error_class', None)}: "
+                f"{grouped_error}"
             )
             last_invocation_id, initial_message = await _handle_agent_failure_retry(
                 grouped_error,
@@ -234,16 +248,16 @@ def _extract_agent_output_error(exc: Exception) -> AgentOutputError | None:
         return exc
     if isinstance(exc, BaseExceptionGroup):
         logger.debug(
-            "Inspecting ExceptionGroup for nested AgentOutputError: %s",
-            type(exc).__name__,
+            f"[Retry] Inspecting ExceptionGroup for nested AgentOutputError: "
+            f"{type(exc).__name__}"
         )
         for nested in exc.exceptions:
             if isinstance(nested, Exception):
                 found = _extract_agent_output_error(nested)
                 if found is not None:
                     logger.info(
-                        "Recovered nested AgentOutputError from grouped exception agent=%s",
-                        found.agent_name,
+                        f"[Retry] Recovered nested AgentOutputError from grouped "
+                        f"exception agent={found.agent_name}"
                     )
                     return found
     return None

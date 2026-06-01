@@ -33,38 +33,33 @@ class RetryingLlmAgent(LlmAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        logger.debug("Starting leaf execution with retry wrapper for %s", self.name)
+        logger.info(f"[Retry] Starting leaf execution for agent={self.name}")
         while True:
             try:
                 async for event in super()._run_async_impl(ctx):
                     yield event
                 self._clear_retry_artifacts(ctx)
-                logger.debug("Leaf execution succeeded for %s", self.name)
+                logger.info(f"[Retry] Leaf execution succeeded for agent={self.name}")
                 return
             except Exception as exc:
                 if isinstance(exc, asyncio.CancelledError):
-                    logger.debug("Leaf execution cancelled for %s", self.name)
+                    logger.debug(
+                        f"[Retry] Leaf execution cancelled for agent={self.name}"
+                    )
                     raise
-                if not self._should_retry_leaf(ctx, exc):
+                reason = self._leaf_retry_block_reason(ctx, exc)
+                if reason is not None:
                     logger.warning(
-                        "Leaf error for %s is not retryable; propagating: %s",
-                        self.name,
-                        exc,
+                        f"[Retry] Leaf error for agent={self.name} not retried "
+                        f"({reason}): {exc}"
                     )
                     raise
 
                 state = self._session_state(ctx)
-                if state is None:
-                    logger.warning(
-                        "Leaf retry for %s skipped because session state is unavailable",
-                        self.name,
-                    )
-                    raise
                 if max_retries_exceeded(state, self.name):
                     logger.error(
-                        "Leaf retry exhausted for %s after %s configured attempts",
-                        self.name,
-                        settings.AGENT_RETRY_ATTEMPTS,
+                        f"[Retry] Leaf retry exhausted for agent={self.name} "
+                        f"after {settings.AGENT_RETRY_ATTEMPTS} attempts"
                     )
                     raise self._as_agent_output_error(exc) from exc
 
@@ -75,22 +70,23 @@ class RetryingLlmAgent(LlmAgent):
 
                 wait_seconds = max(0, int(settings.AGENT_RETRY_WAIT_FIXED))
                 logger.warning(
-                    "Leaf retry for %s attempt=%s/%s output_key=%r error=%s",
-                    self.name,
-                    attempt,
-                    settings.AGENT_RETRY_ATTEMPTS,
-                    output_key,
-                    exc,
+                    f"[Retry] Leaf retry for agent={self.name} "
+                    f"attempt={attempt}/{settings.AGENT_RETRY_ATTEMPTS} "
+                    f"output_key={output_key!r} error={exc}"
                 )
                 if wait_seconds:
                     await asyncio.sleep(wait_seconds)
 
-    def _should_retry_leaf(self, ctx: InvocationContext, exc: Exception) -> bool:
+    def _leaf_retry_block_reason(
+        self, ctx: InvocationContext, exc: Exception
+    ) -> str | None:
         if not is_leaf_retryable_exception(exc):
-            return False
+            return "non-retryable error class"
         if not is_tracked_agent(self.name):
-            return False
-        return self._session_state(ctx) is not None
+            return "untracked agent"
+        if self._session_state(ctx) is None:
+            return "session state unavailable"
+        return None
 
     def _clear_retry_artifacts(self, ctx: InvocationContext) -> None:
         state = self._session_state(ctx)
@@ -98,10 +94,12 @@ class RetryingLlmAgent(LlmAgent):
             return
         cleared_hint = pop_retry_hint(state, self.name)
         if cleared_hint:
-            logger.debug("Cleared retry hint for %s", self.name)
+            logger.debug(f"[Retry] Cleared retry hint for agent={self.name}")
         if state.get(PIPELINE_RETRY_AGENT_KEY) == self.name:
             clear_retry_flag(state)
-            logger.debug("Cleared pipeline retry flag for %s", self.name)
+            logger.debug(
+                f"[Retry] Cleared pipeline retry flag for agent={self.name}"
+            )
 
     def _output_key(self) -> str:
         if self.output_key:

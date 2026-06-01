@@ -38,7 +38,11 @@ async def initiate_research(
     return await handler.initiate_research(request, background_tasks, current_user)
 
 
-@router.get("/status/{job_id}", response_model=ResearchStatusResponse)
+@router.get(
+    "/status/{job_id}",
+    response_model=ResearchStatusResponse,
+    response_model_exclude_none=True,
+)
 async def get_research_status(job_id: str, handler: ResearchHandlerDep):
     """Poll the status and progress of a research job."""
     return handler.get_research_status(job_id)

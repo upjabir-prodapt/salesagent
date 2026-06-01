@@ -1,4 +1,14 @@
-"""Logging configuration for standard Python logging."""
+"""Logging configuration for standard Python logging.
+
+Log message prefixes (grep-friendly):
+  [Retry]       — leaf/runner retry decisions and attempts
+  [Validation]  — output contract and guardrail failures
+  [Persist]     — session output_key persistence
+  [Pipeline]    — job/runner/orchestrator lifecycle
+  [Callback]    — ADK callback hooks
+
+Use LOG_LEVEL=DEBUG locally to see verbose skip paths. LOG_FILE mirrors stderr.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +18,8 @@ import json
 import logging
 import sys
 from datetime import UTC, datetime
-from typing import Any
+from pathlib import Path
+from typing import Any, TextIO
 
 from opentelemetry import trace
 
@@ -145,29 +156,50 @@ def contextualize(**kwargs: Any):
         _LOG_CONTEXT.reset(token)
 
 
+def _build_formatter() -> logging.Formatter:
+    if settings.DEBUG:
+        return logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(trace_id)s | %(user_email)s | "
+            "%(name)s:%(funcName)s:%(lineno)d - %(message)s"
+        )
+    return _GCPJsonLogFormatter()
+
+
+def _build_stream_handler(stream: TextIO | None = None) -> logging.Handler:
+    """Handler that always mirrors logs to the terminal."""
+    handler = logging.StreamHandler(stream or sys.stderr)
+    handler.addFilter(_ContextFilter())
+    handler.setFormatter(_build_formatter())
+    return handler
+
+
+def _build_file_handler(path: Path) -> logging.Handler:
+    """Optional handler that mirrors the same logs to a file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler: logging.Handler = logging.FileHandler(path, encoding="utf-8")
+    handler.addFilter(_ContextFilter())
+    handler.setFormatter(_build_formatter())
+    return handler
+
+
 def setup_logging() -> None:
     """Configure root logging handlers and formatting."""
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
 
-    handler = logging.StreamHandler(sys.stderr)
-    handler.addFilter(_ContextFilter())
-    if settings.DEBUG:
-        handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s | %(levelname)-8s | %(trace_id)s | %(user_email)s | "
-                "%(name)s:%(funcName)s:%(lineno)d - %(message)s"
-            )
-        )
-    else:
-        handler.setFormatter(_GCPJsonLogFormatter())
+    # Terminal is always required.
+    root_logger.addHandler(_build_stream_handler(stream=sys.stderr))
 
-    root_logger.addHandler(handler)
+    # When LOG_FILE is set, mirror the same logs to disk as well.
+    log_path = settings.app_log_path
+    if log_path is not None:
+        root_logger.addHandler(_build_file_handler(log_path))
+
     logger.info(
-        "Logging configured with level: %s (GCP correlation: %s)",
-        settings.LOG_LEVEL,
-        "OFF" if settings.DEBUG else "ON",
+        f"Logging configured with level: {settings.LOG_LEVEL} "
+        f"(GCP correlation: {'OFF' if settings.DEBUG else 'ON'}"
+        f"{f', file={log_path}' if log_path is not None else ', terminal only'})"
     )
 
 

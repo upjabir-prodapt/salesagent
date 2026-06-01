@@ -1,20 +1,12 @@
-"""Tests for PlanReAct FINAL_ANSWER → output_key persistence helpers."""
-
-import importlib.util
-from pathlib import Path
+"""Tests for PlanReAct FINAL_ANSWER -> output_key persistence helpers."""
 
 from google.adk.planners.plan_re_act_planner import FINAL_ANSWER_TAG
 
-_ROOT = Path(__file__).resolve().parents[2]
-_MOD = _ROOT / "src/services/research/agent/sales/utils/output_persistence.py"
-_spec = importlib.util.spec_from_file_location("output_persistence", _MOD)
-_mod = importlib.util.module_from_spec(_spec)
-assert _spec.loader is not None
-_spec.loader.exec_module(_mod)
-
-extract_final_answer_payload = _mod.extract_final_answer_payload
-persist_output_key = _mod.persist_output_key
-persist_output_from_session_events = _mod.persist_output_from_session_events
+from src.services.research.agents.sales.tools.output_persistence import (
+    extract_final_answer_payload,
+    persist_output_from_session_events,
+    persist_output_key,
+)
 
 
 def test_extract_final_answer_payload_after_tag():

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import Any
 
 from google.adk.planners.plan_re_act_planner import FINAL_ANSWER_TAG
 
-logger = logging.getLogger(__name__)
+from ......core.logging_config import logger
 
 PLANNER_TAG_RE = re.compile(r"/\*[A-Z_]+\*/")
 
@@ -44,16 +43,22 @@ def persist_output_key(
 ) -> bool:
     """Write extracted FINAL_ANSWER (or full text fallback) into state. Returns True if set."""
     if has_nonempty_output(state, output_key):
+        logger.debug(
+            f"[Persist] Skipped agent={agent_name} output_key={output_key!r} "
+            f"(already populated)"
+        )
         return False
     payload = extract_final_answer_payload(text) or text.strip()
     if not payload:
+        logger.warning(
+            f"[Persist] Could not extract payload for agent={agent_name} "
+            f"output_key={output_key!r} (missing or empty FINAL_ANSWER)"
+        )
         return False
     state[output_key] = payload
     logger.info(
-        "Persisted output_key=%r for agent=%s (%d chars)",
-        output_key,
-        agent_name,
-        len(payload),
+        f"[Persist] Stored output_key={output_key!r} for agent={agent_name} "
+        f"({len(payload)} chars)"
     )
     return True
 
@@ -90,11 +95,19 @@ def persist_output_from_session_events(
 ) -> bool:
     """Scan events for FINAL_ANSWER text and persist to output_key if missing."""
     if has_nonempty_output(state, output_key):
+        logger.debug(
+            f"[Persist] Skipped event scan for agent={agent_name} "
+            f"output_key={output_key!r} (already populated)"
+        )
         return False
     combined = collect_agent_visible_text(
         events, agent_name=agent_name, invocation_id=invocation_id
     )
     if not combined.strip():
+        logger.warning(
+            f"[Persist] No visible events for agent={agent_name} "
+            f"output_key={output_key!r} invocation_id={invocation_id}"
+        )
         return False
     return persist_output_key(
         state,

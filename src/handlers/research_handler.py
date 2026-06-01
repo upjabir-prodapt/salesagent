@@ -21,7 +21,7 @@ from ..models.research_schemas import (
     ResearchResultResponse,
     ResearchStatusResponse,
 )
-from ..services.research.research_service import ResearchService
+from ..services.research import ResearchService
 from ..utils.guardrails import InputGuardrail
 
 
@@ -90,7 +90,7 @@ class ResearchHandler:
 
                 return ResearchInitiateResponse(
                     job_id=job_id,
-                    status="QUEUED",
+                    status="PENDING",
                     check_status_url=f"{settings.API_PREFIX}/research/status/{job_id}",
                 )
 
@@ -145,4 +145,4 @@ class ResearchHandler:
 def _sanitize_filename(name: str) -> str:
     safe_name = re.sub(r"[^\w\s-]", "", name).strip()
     safe_name = re.sub(r"\s+", "_", safe_name)
-    return f"{safe_name}.pdf"
+    return f"Research_Report_{safe_name}.pdf"

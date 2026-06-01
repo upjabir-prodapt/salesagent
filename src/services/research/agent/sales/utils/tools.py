@@ -4,7 +4,7 @@ ADK tools for the sales research agent.
 - Google Search sub-agent (PlanReAct)
 - BM25 draft verification
 - Colt product catalog vector search
-- Final report output guardrail validation (ReportVerificationAgent)
+- Final report output guardrail validation (validate_final_report)
 """
 
 from __future__ import annotations
@@ -15,13 +15,13 @@ from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
 from google.adk.planners.plan_re_act_planner import FINAL_ANSWER_TAG, REPLANNING_TAG
 from google.adk.tools import google_search
-from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.google_search_agent_tool import GoogleSearchAgentTool
 from google.adk.tools.tool_context import ToolContext
 
 from ......core.config import settings
 from ......core.exceptions import AgentOutputError
+from ......core.logging_config import logger
 from ......core.model import retry_config
 from ......utils.guardrails import OutputGuardrail
 from .....catalog.search import colt_product_search
@@ -32,15 +32,7 @@ from .verification import Bm25Verifier, EvidenceStore
 
 SEARCH_AGENT_NAME = "google_search_agent"
 COLT_PRODUCT_SEARCH_TOOL = "colt_product_search"
-REPORT_VERIFICATION_AGENT_NAME = "ReportVerificationAgent"
-
-REPORT_VERIFICATION_INSTRUCTION = """
-You validate compiled sales research markdown reports.
-
-When you receive a request containing a report draft:
-1. Call `validate_final_report` with the **full draft markdown** exactly as provided in the request.
-2. Return the tool JSON result only — no extra commentary, no new facts, no rewriting of the report.
-"""
+VALIDATE_FINAL_REPORT_TOOL = "validate_final_report"
 
 _verifier = Bm25Verifier()
 
@@ -129,28 +121,77 @@ def aggregate_raw_search_cache(state: dict[str, Any]) -> list[dict]:
     return aggregate_job_evidence(state)
 
 
+def _state_to_dict(state: Any) -> dict[str, Any]:
+    if hasattr(state, "to_dict"):
+        return state.to_dict()
+    return dict(state)
+
+
+async def run_report_output_guardrail(
+    draft: str,
+    state: Any,
+) -> tuple[str, list[dict[str, str]]]:
+    """Run report OutputGuardrail and return status plus normalized violations."""
+    state_dict = _state_to_dict(state)
+    job_evidence = aggregate_job_evidence(state_dict)
+    result = await OutputGuardrail().validate(
+        draft, raw_search_cache=job_evidence or None
+    )
+    violations = [{"rule": v.rule, "detail": v.detail} for v in result.violations]
+    status = "PASSED" if result.is_valid else "FAILED"
+    return status, violations
+
+
+def persist_report_validation_state(
+    state: Any,
+    *,
+    status: str,
+    violations: list[dict[str, str]],
+    terminal: bool = False,
+) -> None:
+    """Persist report validation state keys consumed by callbacks/contracts."""
+    state["report_validation_status"] = status
+    state["report_validation_violations"] = violations
+    if terminal:
+        state["report_validation_terminal"] = True
+
+
+async def ensure_report_validated(draft: str, state: Any) -> str:
+    """Run fallback report validation when tool call was skipped."""
+    current_status = str(state.get("report_validation_status") or "").upper()
+    if current_status in ("PASSED", "FAILED"):
+        return current_status
+
+    status, violations = await run_report_output_guardrail(draft, state)
+    persist_report_validation_state(
+        state,
+        status=status,
+        violations=violations,
+        terminal=status != "PASSED",
+    )
+    logger.info(
+        f"[Validation] Fallback report validation completed: status={status} "
+        f"violations={len(violations)}"
+    )
+    return status
+
+
 async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[str, Any]:
     """Run OutputGuardrail checks on a compiled markdown report draft."""
     attempts = int(tool_context.state.get("report_validation_attempts") or 0) + 1
     tool_context.state["report_validation_attempts"] = attempts
 
     max_attempts = settings.OUTPUT_GUARDRAIL_MAX_RETRIES + 1
-    state_dict = (
-        tool_context.state.to_dict()
-        if hasattr(tool_context.state, "to_dict")
-        else dict(tool_context.state)
+    status, violations = await run_report_output_guardrail(draft, tool_context.state)
+    logger.info(
+        f"[Validation] Report validation result: status={status} "
+        f"violations={len(violations)}"
     )
-    job_evidence = aggregate_job_evidence(state_dict)
-
-    result = await OutputGuardrail().validate(
-        draft, raw_search_cache=job_evidence or None
+    persist_report_validation_state(
+        tool_context.state,
+        status=status,
+        violations=violations,
     )
-
-    violations = [{"rule": v.rule, "detail": v.detail} for v in result.violations]
-    status = "PASSED" if result.is_valid else "FAILED"
-
-    tool_context.state["report_validation_status"] = status
-    tool_context.state["report_validation_violations"] = violations
 
     if status == "PASSED":
         message = (
@@ -167,7 +208,16 @@ async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[s
 
     details = "; ".join(f"{v['rule']}: {v['detail']}" for v in violations[:5])
     if attempts >= max_attempts:
-        tool_context.state["report_validation_terminal"] = True
+        persist_report_validation_state(
+            tool_context.state,
+            status=status,
+            violations=violations,
+            terminal=True,
+        )
+        logger.error(
+            f"[Validation] Report validation exhausted attempts={attempts}/"
+            f"{max_attempts} violations={details}"
+        )
         raise AgentOutputError(
             (
                 f"Report failed validation (attempt {attempts}/{max_attempts}). "
@@ -182,7 +232,11 @@ async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[s
     message = (
         f"Report failed validation (attempt {attempts}/{max_attempts}). "
         f"Use {REPLANNING_TAG}, fix the draft per violations, then call "
-        f"{REPORT_VERIFICATION_AGENT_NAME} again. Violations: {details}"
+        f"{VALIDATE_FINAL_REPORT_TOOL} again. Violations: {details}"
+    )
+    logger.warning(
+        f"[Validation] Report validation failed attempt={attempts}/{max_attempts} "
+        f"violations={details}"
     )
 
     return {
@@ -195,26 +249,3 @@ async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[s
 
 
 validate_final_report_tool = FunctionTool(validate_final_report)
-
-
-def create_report_verification_agent() -> LlmAgent:
-    """Create a fresh ReportVerificationAgent (one per ReportCompiler instance)."""
-    return LlmAgent(
-        name=REPORT_VERIFICATION_AGENT_NAME,
-        model=Gemini(model=settings.GEMINI_MODEL, retry_options=retry_config),
-        description=(
-            "Validates the final markdown report against format, completeness, "
-            "prohibited content, and evidence-backed hallucination checks."
-        ),
-        instruction=REPORT_VERIFICATION_INSTRUCTION,
-        tools=[validate_final_report_tool],
-    )
-
-
-def make_report_verification_agent_tool() -> AgentTool:
-    """AgentTool wrapping ReportVerificationAgent for ReportCompiler PlanReAct loop."""
-    return AgentTool(
-        create_report_verification_agent(),
-        skip_summarization=True,
-        include_plugins=False,
-    )

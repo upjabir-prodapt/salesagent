@@ -85,7 +85,9 @@ class BigQueryRepository:
             return True
         except GoogleCloudError as e:
             logger.error(f"Google Cloud error creating table {table_ref}: {e}")
-            raise DatabaseError(f"Failed to create table {table_ref}: {e}") from e
+            raise DatabaseError(
+                f"Failed to create BigQuery table {table_ref}: {e}"
+            ) from e
         except Exception as e:
             logger.error(f"Unexpected error creating table {table_ref}: {e}")
             raise DatabaseError(

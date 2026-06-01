@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .....core.exceptions import AgentOutputError
+from .....core.logging_config import logger
 from ...domain.agent_contracts import (
     AGENT_OUTPUT_KEYS,
     get_output_key,
@@ -27,11 +28,27 @@ def validate_agent_output(state: dict[str, Any], agent_name: str) -> None:
 
     if agent_name == "ReportCompiler":
         validation_status = str(state.get("report_validation_status") or "").upper()
-        if validation_status and validation_status != "PASSED":
+        report_text = state.get(output_key)
+        has_report = report_text is not None and bool(str(report_text).strip())
+        if has_report and validation_status != "PASSED":
+            phase_error = str(state.get("report_compiler_phase_error") or "").strip()
+            detail = (
+                phase_error
+                if phase_error
+                else (
+                    f"validate_final_report status was {validation_status!r}"
+                    if validation_status
+                    else "validate_final_report was never called"
+                )
+            )
+            logger.warning(
+                f"[Validation] agent={agent_name} error_class=REPORT_VALIDATION_FAILED "
+                f"validation_status={validation_status!r} detail={detail}"
+            )
             raise AgentOutputError(
                 (
-                    "ReportCompiler output blocked because ReportVerificationAgent "
-                    f"status was {validation_status!r}. Re-run ReportCompiler and "
+                    "ReportCompiler output blocked because report validation did not pass. "
+                    f"{detail}. Re-run ReportCompiler and "
                     "keep FINAL_ANSWER gated on PASSED validation."
                 ),
                 agent_name=agent_name,
@@ -41,6 +58,10 @@ def validate_agent_output(state: dict[str, Any], agent_name: str) -> None:
 
     value = state.get(output_key)
     if value is None or not str(value).strip():
+        logger.warning(
+            f"[Validation] agent={agent_name} error_class=MISSING_OUTPUT "
+            f"output_key={output_key!r}"
+        )
         raise AgentOutputError(
             (
                 f"{agent_name} completed but required output '{output_key}' remained empty "

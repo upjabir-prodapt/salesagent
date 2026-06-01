@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     PORT: int
     WORKERS: int
     LOG_LEVEL: str
+    LOG_FILE: str | None = None
     AGENT_EVENT_LOG_VERBOSE: bool
     AGENT_EVENT_LOG_FILE: str | None = None
 
@@ -211,6 +212,7 @@ class Settings(BaseSettings):
     )
 
     @field_validator(
+        "LOG_FILE",
         "AGENT_EVENT_LOG_FILE",
         "VECTOR_SEARCH_CATALOG_CHUNKS_BLOB",
         "VECTOR_SEARCH_PSC_IP",
@@ -257,6 +259,13 @@ class Settings(BaseSettings):
     @property
     def eval_embedding_onnx_path(self) -> Path:
         return resolve_repo_path(self.EVAL_EMBEDDING_ONNX_PATH)
+
+    @property
+    def app_log_path(self) -> Path | None:
+        """Resolved path for mirrored application logs, or None when disabled."""
+        if not self.LOG_FILE:
+            return None
+        return resolve_repo_path(self.LOG_FILE)
 
     @property
     def agent_event_log_path(self) -> Path | None:

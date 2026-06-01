@@ -22,6 +22,17 @@ from ..core.exceptions import InputValidationException
 from ..core.logging_config import logger
 from ..dependencies.service_dependencies import get_genai_client
 
+
+class _ClientPool:
+    """Compatibility shim for older tests patching client_pool.get_genai_client."""
+
+    @staticmethod
+    def get_genai_client():
+        return get_genai_client()
+
+
+client_pool = _ClientPool()
+
 # ---------------------------------------------------------------------------
 # PII patterns — label → regex
 # ---------------------------------------------------------------------------
@@ -435,7 +446,7 @@ class OutputGuardrail:
         try:
             from google.genai import types as genai_types
 
-            client = get_genai_client()
+            client = client_pool.get_genai_client()
 
             prompt = (
                 "You are a strict fact-checking auditor for a B2B sales intelligence report.\n\n"
@@ -548,7 +559,7 @@ class OutputGuardrail:
         try:
             from google.genai import types as genai_types
 
-            client = get_genai_client()
+            client = client_pool.get_genai_client()
 
             prompt = (
                 "You are a strict fact-checking auditor for a B2B sales intelligence report.\n\n"

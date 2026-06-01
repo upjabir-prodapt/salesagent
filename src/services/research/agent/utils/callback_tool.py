@@ -32,7 +32,7 @@ def before_tool_callback(
     if tool_name == "google_search":
         query = args.get("query", "")
         if any(p in query.lower() for p in _QUERY_INJECTION_PATTERNS):
-            logger.warning(f"[Callback] Blocked injected search query: {query!r}")
+            logger.warning(f"[Validation] Blocked injected search query: {query!r}")
             return {"error": "Search query blocked by input policy"}
 
     return None

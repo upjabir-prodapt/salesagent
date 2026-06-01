@@ -19,7 +19,7 @@ class ResearchInitiateRequest(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            "example": {"account_id": "ACC-123", "company_name": "Acme Corp"}
+            "example": {"account_id": "ACC-123", "company_name": "Microsoft"}
         }
     }
 

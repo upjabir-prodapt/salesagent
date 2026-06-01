@@ -53,7 +53,7 @@ def get_gcs_repository():
 
 def get_research_service():
     """Get Research service instance."""
-    from ..services.research.research_service import ResearchService
+    from ..services.research import ResearchService
 
     return ResearchService(
         bigquery_repository=get_bigquery_repository(),

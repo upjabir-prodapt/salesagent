@@ -2,27 +2,25 @@ import pytest
 from google.adk.sessions.state import State
 
 from src.core.exceptions import AgentOutputError
-from src.services.research.agent.utils.agent_contracts import (
+from src.services.research.runtime.retry.pipeline import (
+    build_retry_continuation_message,
     get_output_key,
     validate_agent_output,
 )
-from src.services.research.agent.utils.agent_pipeline import (
-    build_retry_continuation_message,
-)
-from src.services.research.agent.utils.retry_errors import (
+from src.services.research.runtime.retry.errors import (
     RETRY_SCOPE_NONE,
     RETRY_SCOPE_RUNNER_COLD,
     RETRY_SCOPE_RUNNER_WARM,
     retry_scope_for_error_class,
 )
-from src.services.research.agent.utils.retry_state import (
+from src.services.research.runtime.retry.state import (
     apply_retry,
     clear_retry_flag,
     increment_retry_count,
     pop_retry_hint,
     prepare_agent_retry,
 )
-from src.services.research.session_state_mutator import requires_cold_retry
+from src.services.research.runtime.state_mutation import requires_cold_retry
 
 
 def test_validate_agent_output_contract():
@@ -99,7 +97,7 @@ def test_retry_scope_mapping_contract():
 
 @pytest.mark.asyncio
 async def test_report_compiler_validation_failure_is_not_retried():
-    state = {"report_validation_status": "FAILED"}
+    state = {"report_validation_status": "FAILED", "final_report": "# report"}
     with pytest.raises(AgentOutputError) as exc_info:
         validate_agent_output(state, "ReportCompiler")
 
@@ -111,4 +109,13 @@ async def test_report_compiler_validation_failure_is_not_retried():
     allowed = await apply_retry(state, exc, on_retry=None)
     assert allowed is False
     assert state.get("agent_retry_counts", {}).get("ReportCompiler") is None
+
+
+def test_report_compiler_missing_validation_status_is_blocked() -> None:
+    state = {"final_report": "# report"}
+    with pytest.raises(AgentOutputError) as exc_info:
+        validate_agent_output(state, "ReportCompiler")
+
+    assert exc_info.value.error_class == "REPORT_VALIDATION_FAILED"
+    assert "never called" in str(exc_info.value)
 

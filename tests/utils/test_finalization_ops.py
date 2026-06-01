@@ -1,6 +1,6 @@
 import pytest
 
-from src.services.research.finalization_ops import run_telemetry_flush_op
+from src.services.research.finalization.operations import run_telemetry_flush_op
 
 
 @pytest.mark.asyncio

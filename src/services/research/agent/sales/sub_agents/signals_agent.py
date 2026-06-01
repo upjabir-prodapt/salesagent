@@ -1,8 +1,5 @@
-"""Signals leaves grouped under SignalsOrchestrator."""
+"""Backward-compatible import path for signal orchestrator constructors."""
 
-from ....agents.factories import PlanReActAgentFactory
+from ....agents.sales.sub_agents.signals import create_signals_orchestrator
 
-
-def create_signals_orchestrator():
-    """Create SignalsOrchestrator with fresh PlanReAct signal agents."""
-    return PlanReActAgentFactory.build_signals_orchestrator()
+__all__ = ["create_signals_orchestrator"]

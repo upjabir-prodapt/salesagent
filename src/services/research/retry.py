@@ -1,24 +1,5 @@
-"""Async retry helpers for research side operations."""
+"""Backward-compatible imports for support retry helpers."""
 
-from __future__ import annotations
+from .support.retry import with_retry, with_retry_sync
 
-import asyncio
-
-
-async def with_retry(coro_fn, retries: int = 1, delay: float = 3.0):
-    """Simple async retry wrapper."""
-    for attempt in range(retries + 1):
-        try:
-            return await coro_fn()
-        except Exception:
-            if attempt < retries:
-                await asyncio.sleep(delay)
-            else:
-                raise
-
-
-async def with_retry_sync(fn, retries: int = 1, delay: float = 3.0):
-    """Simple sync-to-thread retry wrapper."""
-    return await with_retry(
-        lambda: asyncio.to_thread(fn), retries=retries, delay=delay
-    )
+__all__ = ["with_retry", "with_retry_sync"]

@@ -1,0 +1,198 @@
+trigger:
+  branches:
+    include:
+      - sandbox
+      - dev
+      - prod
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - ${{ if eq(variables['Build.SourceBranchName'], 'sandbox')}}:
+      - group: sales-sandbox
+  - ${{ if eq(variables['Build.SourceBranchName'], 'dev')}}:
+      - group: sales-dev
+  - ${{ if eq(variables['Build.SourceBranchName'], 'prod')}}:
+      - group: sales-prod
+  - name: GOOGLE_APPLICATION_CREDENTIALS
+    value: '$(Pipeline.Workspace)/.workload_identity.wlconfig'
+  - name: ROOT
+    value: '$(Build.SourcesDirectory)'  
+  
+stages:
+# ============================================================================
+# STAGE 0 — TESTS & COVERAGE GATE (blocks build if coverage < 80%)
+# ============================================================================
+  - stage: UnitTest
+    displayName: Tests & Coverage Gate
+    jobs:
+      - job: PytestCoverage
+        displayName: pytest with coverage >= 80%
+        steps:
+          - checkout: self
+            displayName: 'Checkout source'
+
+          - task: UsePythonVersion@0
+            displayName: 'Use Python 3.11'
+            inputs:
+              versionSpec: '3.11'
+              addToPath: true
+
+          - script: |
+              python -m pip install --upgrade pip
+              pip install uv
+              uv sync --frozen
+            displayName: 'Install dependencies (uv sync)'
+
+          - script: |
+              uv run pytest \
+                --cov=src \
+                --cov-report=xml:$(System.DefaultWorkingDirectory)/coverage.txt \
+                --cov-report=term-missing \
+                --cov-fail-under=80 \
+                --junitxml=$(System.DefaultWorkingDirectory)/test-results.txt
+            displayName: 'Run pytest with coverage gate (>= 80%)'
+
+          - task: PublishTestResults@2
+            displayName: 'Publish test results'
+            condition: always()
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '$(System.DefaultWorkingDirectory)/test-results.txt'
+              testRunTitle: 'pytest'
+              failTaskOnFailedTests: true
+
+          - task: PublishCodeCoverageResults@2
+            displayName: 'Publish coverage report'
+            condition: always()
+            inputs:
+              summaryFileLocation: '$(System.DefaultWorkingDirectory)/coverage.txt'
+
+# ============================================================================
+# STAGE 1 — BUILD and PUSH (only runs if Test stage succeeded)
+# ============================================================================
+  - stage: BuildAndPush
+    dependsOn: UnitTest
+    displayName: Build & Push Docker Image
+    jobs:
+      - job: BuildPush        
+        steps:
+          # ── Step 1: Checkout ─────────────────────────────────────────────────
+        - checkout: self
+          displayName: 'Checkout source'
+          # ── Step 1: Install Docker ───────────────────────────────
+        - task: DockerInstaller@0
+          displayName: Install Docker
+          inputs:
+            dockerVersion: '17.09.0-ce'
+
+          # ── Step 2: Authenticate, Build & Push ─────────────────────────────────
+        - task: AzureCLI@3
+          displayName: Authenticate, Build & Push Docker Image
+          inputs:
+            connectionType: 'azureRM'
+            azureSubscription: $(Azure.WorkloadIdentity.Connection)
+            addSpnToEnvironment: true
+            scriptType: 'bash'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
+              # Generate WIF Credentials
+              echo $idToken > $(Pipeline.Workspace)/.workload_identity.jwt
+              cat << EOF > $GOOGLE_APPLICATION_CREDENTIALS
+              {
+                "type": "external_account",
+                "audience": "//iam.googleapis.com/projects/$(GoogleCloud.WorkloadIdentity.ProjectNumber)/locations/global/workloadIdentityPools/$(GoogleCloud.WorkloadIdentity.Pool)/providers/$(GoogleCloud.WorkloadIdentity.Provider)",
+                "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+                "token_url": "https://sts.googleapis.com/v1/token",
+                "credential_source": {
+                  "file": "$(Pipeline.Workspace)/.workload_identity.jwt"
+                },
+                "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/$(GoogleCloud.WorkloadIdentity.ServiceAccount):generateAccessToken"         
+              }
+              EOF
+              
+              # Login and Configure Docker (Direct Token method)
+              gcloud auth login --cred-file=$GOOGLE_APPLICATION_CREDENTIALS
+              gcloud config set project $PROJECT_ID
+              
+              # Get a fresh token and login to Docker directly
+              gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://$REGION-docker.pkg.dev
+              
+              # Build and Push
+              cd $(ROOT)
+              docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId) .
+              docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId)
+
+# ============================================================================
+# STAGE 2 — Deploy Approve
+# ============================================================================
+
+  - stage: Deploy_Approve
+    displayName: 'Deploy-Approve'
+    dependsOn: BuildAndPush
+    jobs:
+    - deployment: Deploy_Approve
+      displayName: 'Approve Deploy'
+      environment: $(ENV)        # ← ADO Environment with approval gate
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - script: |
+                echo "Approval granted for Deploy"
+                echo "Reviewer approved at: $(date -u)"
+              displayName: 'Approval Confirmed'
+
+# ============================================================================
+# STAGE 3 — DEPLOY
+# ============================================================================
+  - stage: Deploy
+    displayName: Deploy to Cloud Run
+    dependsOn: Deploy_Approve
+    jobs:
+      - job: DeployJob
+        steps:
+          
+          # ── Step 1: Deploy to Cloud Run ─────────────────────────────────────────
+          - task: AzureCLI@3
+            displayName: Deploy to Cloud Run
+            inputs:
+              connectionType: 'azureRM'
+              azureSubscription: $(Azure.WorkloadIdentity.Connection)
+              addSpnToEnvironment: true
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo $idToken > $(Pipeline.Workspace)/.workload_identity.jwt
+                cat << EOF > $GOOGLE_APPLICATION_CREDENTIALS
+                {
+                  "type": "external_account",
+                  "audience": "//iam.googleapis.com/projects/$(GoogleCloud.WorkloadIdentity.ProjectNumber)/locations/global/workloadIdentityPools/$(GoogleCloud.WorkloadIdentity.Pool)/providers/$(GoogleCloud.WorkloadIdentity.Provider)",
+                  "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+                  "token_url": "https://sts.googleapis.com/v1/token",
+                  "credential_source": {
+                    "file": "$(Pipeline.Workspace)/.workload_identity.jwt"
+                  },
+                  "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/$(GoogleCloud.WorkloadIdentity.ServiceAccount):generateAccessToken"         
+                }
+                EOF
+
+                gcloud auth login --cred-file=$GOOGLE_APPLICATION_CREDENTIALS 
+                gcloud config set project $PROJECT_ID
+
+                gcloud run deploy $SERVICE_NAME \
+                  --quiet \
+                  --image $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$(Build.BuildId) \
+                  --platform=managed \
+                  --region=$REGION \
+                  --project=$PROJECT_ID \
+                  --network="$(NETWORK)"  \
+                  --subnet="$(SUBNET)"  \
+                  --service-account="$(CLOUD_RUN_SA)" \
+                  --min-instances=1 \
+                  --port=8080 \
+                  --memory=4Gi \
+                  --cpu=2 \
+                  --no-cpu-throttling \
+                  --set-secrets="/secrets/.env=sales-agent-service-env:1"

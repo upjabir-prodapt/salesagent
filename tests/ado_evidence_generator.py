@@ -1,6 +1,6 @@
 import csv
 
-from src.services.research.agent.sales import prompts
+from src.services.research.agents.sales import prompts
 from src.core import config
 
 # --- Config & Setup ---

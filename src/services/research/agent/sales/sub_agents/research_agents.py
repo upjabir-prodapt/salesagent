@@ -1,8 +1,5 @@
-"""Research leaves grouped into sequential lanes for ResearchOrchestrator."""
+"""Backward-compatible import path for research lane constructors."""
 
-from ....agents.factories import PlanReActAgentFactory
+from ....agents.sales.sub_agents.research import create_research_agents
 
-
-def create_research_agents():
-    """Create research agents and sequential lanes for ResearchOrchestrator."""
-    return PlanReActAgentFactory.build_research_lanes()
+__all__ = ["create_research_agents"]

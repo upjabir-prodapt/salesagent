@@ -17,7 +17,11 @@ class _StatusRepoStub:
 class _RunnerStub:
     def __init__(self, final_report: str = "# report", state: dict | None = None) -> None:
         self.final_report = final_report
-        self.state = state or {"report_validation_status": "PASSED"}
+        self.state = (
+            {"report_validation_status": "PASSED"}
+            if state is None
+            else dict(state)
+        )
 
     async def run(self, job_id: str, company_name: str):
         return self.final_report, dict(self.state)
@@ -152,3 +156,76 @@ async def test_orchestrator_marks_failed_when_runner_raises() -> None:
 
     assert status.calls[-1]["status"] == "FAILED"
     assert "runner exploded" in status.calls[-1]["metadata_update"]["raw_error"]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_runs_validation_gate_when_agent_skipped_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Violation:
+        def __init__(self, rule: str, detail: str) -> None:
+            self.rule = rule
+            self.detail = detail
+
+    class _GuardrailResult:
+        def __init__(self, is_valid: bool, violations: list) -> None:
+            self.is_valid = is_valid
+            self.violations = violations
+
+    async def _fake_validate(self, draft: str, raw_search_cache=None):
+        return _GuardrailResult(
+            is_valid=False,
+            violations=[_Violation("missing_sources", "No source summary URLs found.")],
+        )
+
+    monkeypatch.setattr(
+        "src.services.research.agents.sales.tools.report_validation.OutputGuardrail.validate",
+        _fake_validate,
+    )
+
+    status = _StatusRepoStub()
+    orchestrator = ResearchJobOrchestrator(
+        status_repository=status,
+        runner=_RunnerStub(state={}),
+        artifacts=_ArtifactStub(),
+        finalization=_FinalizationStub(),
+    )
+
+    await orchestrator.run("job-gate-fail", "Acme Corp")
+
+    assert status.calls[-1]["status"] == "FAILED"
+    metadata = status.calls[-1]["metadata_update"]
+    assert metadata["report_validation_status"] == "FAILED"
+    assert metadata["failure_summary"]["dominant_rule"] == "missing_sources"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_validation_gate_passes_when_agent_skipped_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _GuardrailResult:
+        def __init__(self) -> None:
+            self.is_valid = True
+            self.violations = []
+
+    async def _fake_validate(self, draft: str, raw_search_cache=None):
+        return _GuardrailResult()
+
+    monkeypatch.setattr(
+        "src.services.research.agents.sales.tools.report_validation.OutputGuardrail.validate",
+        _fake_validate,
+    )
+
+    status = _StatusRepoStub()
+    artifacts = _ArtifactStub()
+    orchestrator = ResearchJobOrchestrator(
+        status_repository=status,
+        runner=_RunnerStub(state={}),
+        artifacts=artifacts,
+        finalization=_FinalizationStub(),
+    )
+
+    await orchestrator.run("job-gate-pass", "Acme Corp")
+
+    assert status.calls[-1]["status"] == "COMPLETED"
+    assert artifacts.upload_called is True

@@ -9,15 +9,16 @@ from opentelemetry.trace import Span
 from ....core.config import settings
 from ....core.logging_config import logger
 from ....utils.guardrails import GuardrailViolation
-from ..agent.sales.utils.evidence import aggregate_job_evidence
+from ..agents.sales.tools.evidence import aggregate_job_evidence
+from ..agents.sales.tools.report_validation import ensure_report_validated
 from ..infrastructure.ports import (
     AgentRunnerPort,
     ArtifactPort,
     FinalizationPort,
     StatusRepositoryPort,
 )
-from ..metrics import calculate_metrics, reconcile_cost
-from ..status_helpers import (
+from ..support.metrics import calculate_metrics, reconcile_cost
+from ..support.status import (
     build_completion_metadata,
     build_failure_summary,
 )
@@ -41,6 +42,9 @@ class ResearchJobOrchestrator:
 
     async def run(self, job_id: str, company_name: str, *, span: Span | None = None) -> None:
         """Execute the full background pipeline from run to completion state."""
+        logger.info(
+            f"[Pipeline] Starting research job job_id={job_id} company={company_name!r}"
+        )
         self._status_repository.update_status(
             job_id,
             "PROCESSING",
@@ -71,10 +75,18 @@ class ResearchJobOrchestrator:
             try:
                 await self._artifacts.upload_agent_artifacts(job_id, session_state)
             except Exception as artifact_error:
-                logger.warning(f"Per-agent artifact upload failed: {artifact_error}")
+                logger.warning(
+                    f"[Pipeline] Per-agent artifact upload failed job_id={job_id}: "
+                    f"{artifact_error}"
+                )
 
             side_op_failures, pdf_available = await self._finalization.finalize(
                 job_id, final_report, session_state, metrics
+            )
+
+            logger.info(
+                f"[Pipeline] Finalization completed job_id={job_id} "
+                f"pdf_available={pdf_available}"
             )
 
             self._mark_completed(
@@ -101,13 +113,23 @@ class ResearchJobOrchestrator:
         span: Span | None = None,
     ) -> tuple[str | None, dict]:
         """Execute sales agents, aggregate evidence, and enforce report validation gate."""
+        logger.info(
+            f"[Pipeline] Running research agents job_id={job_id} "
+            f"company={company_name!r}"
+        )
         final_report, session_state = await self._runner.run(job_id, company_name)
 
         session_state["job_evidence"] = aggregate_job_evidence(session_state)
         session_state["raw_search_cache"] = session_state["job_evidence"]
+        if final_report:
+            await ensure_report_validated(final_report, session_state)
 
         validation_status = session_state.get("report_validation_status")
         if validation_status != "PASSED":
+            logger.warning(
+                f"[Validation] Post-run report validation gate failed "
+                f"job_id={job_id} status={validation_status!r}"
+            )
             await self._handle_validation_failure(
                 job_id,
                 session_state,
@@ -148,16 +170,15 @@ class ResearchJobOrchestrator:
             )
         except Exception as export_error:
             logger.warning(
-                "Validation-failure telemetry export failed for job %s: %s",
-                job_id,
-                export_error,
+                f"[Pipeline] Validation-failure telemetry export failed for "
+                f"job_id={job_id}: {export_error}"
             )
             side_op_failures["failure_telemetry_export"] = str(export_error)
             if span is not None:
                 span.record_exception(export_error)
 
         logger.error(
-            f"[ReportValidation] Job {job_id} blocked: status={validation_status!r}, "
+            f"[Validation] Job {job_id} blocked: status={validation_status!r}, "
             f"dominant_rule={dominant}"
         )
 
@@ -212,7 +233,7 @@ class ResearchJobOrchestrator:
             current_step="Completed",
             metadata_update=metadata,
         )
-        logger.info(f"Research completed successfully for job {job_id}")
+        logger.info(f"[Pipeline] Research completed successfully for job {job_id}")
 
     def _handle_failure(self, error: Exception, job_id: str, span: Span | None) -> None:
         """Mark failed jobs with normalized error context."""
@@ -224,7 +245,9 @@ class ResearchJobOrchestrator:
             span.record_exception(error)
             span.set_attribute("research.status", "failed")
 
-        logger.error(f"Error processing research for job {job_id}: {error}")
+        logger.error(
+            f"[Pipeline] Error processing research for job_id={job_id}: {error}"
+        )
         self._status_repository.update_status(
             job_id,
             "FAILED",

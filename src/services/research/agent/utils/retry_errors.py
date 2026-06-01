@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .....core.exceptions import AgentOutputError
+from .....core.logging_config import logger
 from .agent_contracts import get_output_key
 
 _MALFORMED_MARKERS = ("MALFORMED_FUNCTION_CALL", "Malformed function call")
@@ -49,19 +50,33 @@ def retry_scope_for_error_class(error_class: str | None) -> str:
 
 def is_leaf_retryable_exception(exc: Exception) -> bool:
     if isinstance(exc, AgentOutputError):
+        logger.debug(
+            f"[Retry] Leaf retry skipped: nested AgentOutputError ({exc.error_class})"
+        )
         return False
     detail = str(exc).lower()
-    if any(marker in detail for marker in _NO_RETRY_MARKERS):
+    for marker in _NO_RETRY_MARKERS:
+        if marker in detail:
+            logger.debug(
+                f"[Retry] Leaf retry skipped: matched no-retry marker {marker!r}"
+            )
+            return False
+    if "did not produce required output" in detail:
+        logger.debug("[Retry] Leaf retry skipped: missing-output phrase in exception")
         return False
-    return "did not produce required output" not in detail
+    return True
 
 
 def agent_failure_from_event(author: str, detail: str) -> AgentOutputError:
     output_key = get_output_key(author) or f"{author.lower()}_output"
+    error_class = classify_error(detail)
+    logger.warning(
+        f"[Retry] ADK event failure agent={author} error_class={error_class} "
+        f"output_key={output_key!r} detail={detail}"
+    )
     return AgentOutputError(
         f"Agent '{author}' failed: {detail}",
         agent_name=author,
         output_key=output_key,
-        error_class=classify_error(detail),
+        error_class=error_class,
     )
-

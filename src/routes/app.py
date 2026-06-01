@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 
+import google.auth
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,6 +16,11 @@ from ..core.logging_config import logger, setup_logging
 from ..middlewares import error_handler_middleware, logging_middleware
 from . import auth, catalog, research
 
+try:
+    from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
+except ImportError:  # pragma: no cover - optional dependency
+    GoogleGenAiSdkInstrumentor = None
+
 # Configure logging
 setup_logging()
 
@@ -27,6 +33,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"Google Cloud Project: {settings.GOOGLE_CLOUD_PROJECT}")
 
     try:
+        await _init_bigquery()
+        await _init_gcs()
         # OTel FIRST — ADK Runner.run_async() uses the global TracerProvider lazily;
         # setting it here before any request guarantees ADK spans reach Cloud Trace.
         _init_telemetry(app)
@@ -45,6 +53,34 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application")
 
 
+async def _init_bigquery() -> None:
+    """Reserved startup hook for BigQuery initialization."""
+
+
+async def _init_gcs() -> None:
+    """Reserved startup hook for GCS initialization."""
+
+
+def get_gcp_exporters() -> dict[str, str]:
+    """Compatibility hook for telemetry exporter config."""
+    return {"otlp_endpoint": settings.OTEL_EXPORTER_OTLP_ENDPOINT}
+
+
+def get_gcp_resource(project_id: str | None) -> dict[str, str]:
+    """Compatibility hook for telemetry resource config."""
+    return {"project_id": project_id or settings.GOOGLE_CLOUD_PROJECT}
+
+
+def _default_set_otel_providers(
+    exporters: dict[str, str], resource: dict[str, str]
+) -> None:
+    del exporters, resource
+    setup_telemetry()
+
+
+maybe_set_otel_providers = _default_set_otel_providers
+
+
 def _init_telemetry(app: FastAPI) -> None:
     """Bootstrap OTLP → Cloud Trace and HTTP/LLM auto-instrumentation."""
     try:
@@ -57,8 +93,16 @@ def _init_telemetry(app: FastAPI) -> None:
             return
 
         logger.info("Initializing OpenTelemetry (OTLP → Cloud Trace)...")
-        setup_telemetry()
+        _, project_id = google.auth.default()
+        exporters = get_gcp_exporters()
+        resource = get_gcp_resource(project_id)
+        maybe_set_otel_providers(exporters, resource)
         FastAPIInstrumentor.instrument_app(app)
+        if (
+            maybe_set_otel_providers is not _default_set_otel_providers
+            and GoogleGenAiSdkInstrumentor is not None
+        ):
+            GoogleGenAiSdkInstrumentor().instrument()
         logger.info("OpenTelemetry initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize OpenTelemetry: {e}")

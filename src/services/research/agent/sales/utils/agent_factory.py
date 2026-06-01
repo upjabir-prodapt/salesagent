@@ -16,7 +16,7 @@ from google.adk.planners import BasePlanner, PlanReActPlanner
 from ......core.config import settings
 from ......core.logging_config import logger
 from ......core.model import llm, retry_config
-from ...utils.callbacks import (
+from ....runtime.callbacks import (
     after_agent_callback,
     after_model_callback,
     after_tool_callback,
@@ -24,9 +24,9 @@ from ...utils.callbacks import (
     before_model_callback,
     before_tool_callback,
 )
-from ...utils.retrying_llm_agent import RetryingLlmAgent
-from ...utils.safety import get_safety_config_for_agent
-from .callbacks import (
+from ....runtime.retry.retrying_llm_agent import RetryingLlmAgent
+from ....runtime.safety import get_safety_config_for_agent
+from ....agents.sales.callbacks import (
     plan_after_agent,
     plan_after_model,
     plan_after_tool,

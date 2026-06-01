@@ -93,13 +93,18 @@ def after_agent_callback(callback_context: CallbackContext) -> types.Content | N
 
     output_key = get_output_key(agent_name)
     if is_tracked_agent(agent_name) and output_key:
-        persist_output_from_session_events(
+        persisted = persist_output_from_session_events(
             callback_context.state,
             callback_context.session.events,
             agent_name=agent_name,
             output_key=output_key,
             invocation_id=callback_context.invocation_id,
         )
+        if not persisted and not callback_context.state.get(output_key):
+            logger.warning(
+                f"[Persist] after_agent persist failed for agent={agent_name} "
+                f"output_key={output_key!r} invocation_id={invocation_id}"
+            )
 
     try:
         agent_status_map = dict(callback_context.state.get("agent_status_map") or {})
@@ -108,9 +113,8 @@ def after_agent_callback(callback_context: CallbackContext) -> types.Content | N
             if value is None or not str(value).strip():
                 agent_status_map[agent_name] = "failed_missing_output"
                 logger.warning(
-                    "[Callback] Agent %s ended without output_key %r",
-                    agent_name,
-                    output_key,
+                    f"[Callback] Agent {agent_name} ended without output_key="
+                    f"{output_key!r} invocation_id={invocation_id}"
                 )
             else:
                 callback_context.state["last_completed_agent"] = agent_name
@@ -165,5 +169,8 @@ def _record_bm25_telemetry(callback_context: CallbackContext, agent_name: str) -
             :8
         ]
     except Exception as e:  # pragma: no cover
-        logger.debug(f"[Callback] BM25 telemetry failed for {agent_name}: {e}")
+        logger.warning(
+            f"[Callback] BM25 telemetry failed for agent={agent_name} "
+            f"session_id={session_id}: {e}"
+        )
 

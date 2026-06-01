@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from google.genai import types
 
-from src.services.research.agent.utils.safety import (
+from src.services.research.runtime.safety import (
     analyze_safety_block,
     create_safety_summary,
     format_safety_ratings,
@@ -21,7 +21,7 @@ def test_get_default_safety_settings(mock_settings):
     mock_settings.SAFETY_DANGEROUS_THRESHOLD = "BLOCK_ONLY_HIGH"
 
     with patch(
-        "src.services.research.agent.utils.safety.get_default_safety_settings",
+        "src.services.research.runtime.safety.get_default_safety_settings",
         wraps=get_default_safety_settings,
     ), patch("src.core.config.settings", mock_settings):
         # Need to patch the settings used INSIDE the function if it's imported there
@@ -103,7 +103,7 @@ def test_is_safety_block():
 
 
 def test_log_safety_event(mock_settings):
-    with patch("src.services.research.agent.utils.safety.logger") as mock_logger:
+    with patch("src.services.research.runtime.safety.logger") as mock_logger:
         mock_settings.SAFETY_LOGGING_ENABLED = True
         log_safety_event("BLOCK", {"info": "test"}, level="ERROR")
         mock_logger.error.assert_called()
@@ -123,7 +123,7 @@ def test_log_safety_event(mock_settings):
 
 
 def test_log_safety_event_disabled(mock_settings):
-    with patch("src.services.research.agent.utils.safety.logger") as mock_logger:
+    with patch("src.services.research.runtime.safety.logger") as mock_logger:
         mock_settings.SAFETY_LOGGING_ENABLED = False
         log_safety_event("BLOCK", {"info": "test"})
         mock_logger.warning.assert_not_called()

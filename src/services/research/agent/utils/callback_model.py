@@ -233,10 +233,13 @@ def _inject_retry_hint(
         return
     try:
         llm_request.append_instructions([hint])
+        logger.info(
+            f"[Retry] Injected retry hint for agent={callback_context.agent_name} "
+            f"({len(hint)} chars)"
+        )
     except Exception as exc:  # pragma: no cover
-        logger.debug(
-            "Could not append retry hint for %s: %s",
-            callback_context.agent_name,
-            exc,
+        logger.warning(
+            f"[Retry] Could not append retry hint for "
+            f"agent={callback_context.agent_name}: {exc}"
         )
 
