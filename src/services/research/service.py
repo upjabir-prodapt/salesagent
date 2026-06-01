@@ -13,20 +13,20 @@ from ...core.logging_config import contextualize, logger
 from ...repositories.bigquery_repository import BigQueryRepository
 from ...repositories.gcs_repository import GCSRepository
 from ...utils.tracing import job_attrs, traced_with_context
-from .application.commands import ResearchJobCommand
-from .application.orchestrator import ResearchJobOrchestrator
-from .application.service import ResearchApplicationService
-from .artifacts.service import ResearchArtifactService
-from .finalization.evaluation_service import EvaluationService
-from .finalization.service import ResearchFinalizationService
-from .infrastructure.adapters import (
+from .pipeline import (
     AdkRunnerAdapter,
     BigQueryStatusAdapter,
     FinalizationAdapter,
     GcsArtifactAdapter,
+    ResearchApplicationService,
+    ResearchJobCommand,
+    ResearchJobOrchestrator,
 )
-from .runtime.runner import ResearchRunnerService
-from .support.status import build_model_card
+from .artifacts.service import ResearchArtifactService
+from .finalization.evaluation_service import EvaluationService
+from .finalization.service import ResearchFinalizationService
+from .run.runner import ResearchRunnerService
+from .utils.status import build_model_card
 
 
 class ResearchService:

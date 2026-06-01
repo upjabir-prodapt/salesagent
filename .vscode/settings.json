@@ -1,4 +1,6 @@
 {
+  "editor.largeFileOptimizations": false,
+  "editor.maxTokenizationLineLength": 1000000,
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.terminal.activateEnvironment": true,
   "debugpy.debugJustMyCode": false,

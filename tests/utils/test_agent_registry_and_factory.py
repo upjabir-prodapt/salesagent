@@ -1,5 +1,5 @@
-from src.services.research.agents.sales import create_sales_agent_app
-from src.services.research.agents.sales.registry import AgentRegistry
+from src.services.research.graph import create_sales_agent_app
+from src.services.research.graph.sales.registry import AgentRegistry
 
 
 def test_agent_registry_has_expected_leaf_counts() -> None:

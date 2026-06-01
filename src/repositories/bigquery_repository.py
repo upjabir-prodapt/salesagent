@@ -32,6 +32,24 @@ class BigQueryRepository:
             f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.users_table_id}"
         )
 
+    def _validate_agent_telemetry_schema(self, table: bigquery.Table) -> None:
+        """Log remediation guidance when live schema drifts from AgentTelemetryRecord."""
+        by_name = {field.name: field for field in table.schema}
+        sections = by_name.get("sections_produced")
+        if sections is None:
+            logger.warning(
+                f"[BQ] Table {table.table_id} missing sections_produced column; "
+                "migrate schema to JSON NULLABLE."
+            )
+            return
+        if sections.field_type != "JSON":
+            logger.warning(
+                f"[BQ] Table {table.table_id} sections_produced is {sections.field_type} "
+                f"mode={sections.mode}; expected JSON NULLABLE. "
+                "Alter table or recreate agent_telemetry to match "
+                "AgentTelemetryRecord.to_dict()."
+            )
+
     def _execute_query(
         self,
         query: str,
@@ -59,8 +77,10 @@ class BigQueryRepository:
             return True
         try:
             try:
-                self.client.get_table(table_ref)
+                table = self.client.get_table(table_ref)
                 logger.info(f"BigQuery table already exists: {table_ref}")
+                if table_ref == self.agent_telemetry_table_ref:
+                    self._validate_agent_telemetry_schema(table)
                 return True
             except NotFound:
                 pass
@@ -506,8 +526,12 @@ class BigQueryRepository:
         for record in records:
             row = dict(record)
             sections = row.get("sections_produced")
-            if sections is not None and not isinstance(sections, str):
-                row["sections_produced"] = json.dumps(sections)
+            # JSON column: pass list/dict natively; only encode if already a string scalar.
+            if isinstance(sections, str):
+                try:
+                    row["sections_produced"] = json.loads(sections)
+                except json.JSONDecodeError:
+                    pass
             rows.append(row)
         try:
             errors = self.client.insert_rows_json(self.agent_telemetry_table_ref, rows)

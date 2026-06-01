@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
+
+from ....core.exceptions import AgentOutputError
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,16 @@ AGENT_CONTRACTS: Final[tuple[AgentContract, ...]] = (
     AgentContract("ReportCompiler", "final_report"),
 )
 
+RESEARCH_AGENT_CONTRACTS: Final[tuple[AgentContract, ...]] = tuple(
+    contract
+    for contract in AGENT_CONTRACTS
+    if contract.agent_name not in ("AlignmentAnalyst", "ReportCompiler")
+)
+
+SYNTHESIS_AGENT_NAMES: Final[frozenset[str]] = frozenset(
+    {"AlignmentAnalyst", "ReportCompiler"}
+)
+
 AGENT_OUTPUT_KEYS: Final[dict[str, str]] = {
     contract.agent_name: contract.output_key for contract in AGENT_CONTRACTS
 }
@@ -54,3 +66,35 @@ def get_output_key(agent_name: str) -> str | None:
 def is_tracked_agent(agent_name: str) -> bool:
     """Whether an agent participates in output contract validation."""
     return get_agent_contract(agent_name) is not None
+
+
+def _output_nonempty(state: dict[str, Any], output_key: str) -> bool:
+    value = state.get(output_key)
+    return value is not None and bool(str(value).strip())
+
+
+def list_missing_research_outputs(state: dict[str, Any]) -> list[str]:
+    """Return research agent names with empty required output_key in *state*."""
+    missing: list[str] = []
+    for contract in RESEARCH_AGENT_CONTRACTS:
+        if contract.required and not _output_nonempty(state, contract.output_key):
+            missing.append(contract.agent_name)
+    return missing
+
+
+def validate_research_outputs_complete(state: dict[str, Any]) -> None:
+    """Raise AgentOutputError if any parallel research output is missing."""
+    missing = list_missing_research_outputs(state)
+    if not missing:
+        return
+    first = missing[0]
+    output_key = get_output_key(first) or f"{first.lower()}_output"
+    raise AgentOutputError(
+        (
+            "Research phase incomplete before synthesis: missing outputs for "
+            f"{', '.join(missing)}."
+        ),
+        agent_name="AlignmentAnalyst",
+        output_key=output_key,
+        error_class="MISSING_OUTPUT",
+    )

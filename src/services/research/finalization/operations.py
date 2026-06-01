@@ -9,9 +9,9 @@ from typing import Any
 
 from ....core.config import settings
 from ....core.logging_config import logger
-from ..runtime.telemetry import TELEMETRY_RECORDS_KEY
-from ..support.metrics import reconcile_cost
-from ..support.retry import with_retry, with_retry_sync
+from ..run.telemetry import TELEMETRY_RECORDS_KEY
+from ..utils.metrics import reconcile_cost
+from ..utils.async_retry import with_retry, with_retry_sync
 
 
 async def run_pdf_op(

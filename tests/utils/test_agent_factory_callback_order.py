@@ -2,7 +2,10 @@ from pathlib import Path
 
 
 def test_plan_react_callback_order_source_contract():
-    path = Path(__file__).resolve().parents[2] / "src/services/research/agent/sales/utils/agent_factory.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "src/services/research/graph/sales/build/leaf.py"
+    )
     source = path.read_text(encoding="utf-8")
 
     assert "before_model_callback=[plan_before_model, before_model_callback]" in source
