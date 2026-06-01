@@ -87,6 +87,45 @@ def _record_report_compiler_phases(state: dict[str, Any], raw_text: str) -> set[
     return phases
 
 
+def _report_compiler_missing_planreact_phase(
+    *,
+    text: str,
+    phases: set[str],
+    has_final_answer_tag: bool,
+) -> tuple[str, str] | None:
+    """Return phase violation (rule, detail) when PlanReAct tags are required but absent."""
+    has_planner_tags = any(
+        tag.lower() in text.lower()
+        for tag in (
+            PLANNING_TAG,
+            AGGREGATED_ANSWER_TAG,
+            ACTION_TAG,
+            FINAL_ANSWER_TAG,
+            REPLANNING_TAG,
+        )
+    )
+    if "## " in text and not has_planner_tags:
+        return (
+            "output:missing_planreact_phase",
+            (
+                "ReportCompiler emitted markdown without PlanReAct tags "
+                f"({PLANNING_TAG}, {AGGREGATED_ANSWER_TAG}, {ACTION_TAG}, "
+                f"{FINAL_ANSWER_TAG})."
+            ),
+        )
+    if has_final_answer_tag and (
+        PLANNING_TAG not in phases or AGGREGATED_ANSWER_TAG not in phases
+    ):
+        return (
+            "output:missing_planreact_phase",
+            (
+                "ReportCompiler emitted FINAL_ANSWER before showing required "
+                f"phases ({PLANNING_TAG} and {AGGREGATED_ANSWER_TAG})."
+            ),
+        )
+    return None
+
+
 def _set_report_validation_failed(
     state: dict[str, Any],
     *,
@@ -242,47 +281,33 @@ def plan_after_model(
             validation_status = str(
                 callback_context.state.get("report_validation_status") or ""
             ).upper()
-            has_planner_tags = any(
-                tag.lower() in raw_text.lower()
-                for tag in (
-                    PLANNING_TAG,
-                    AGGREGATED_ANSWER_TAG,
-                    ACTION_TAG,
-                    FINAL_ANSWER_TAG,
-                    REPLANNING_TAG,
-                )
+            phase_violation = _report_compiler_missing_planreact_phase(
+                text=raw_text,
+                phases=phases,
+                has_final_answer_tag=has_final_answer_tag,
             )
-
-            if "## " in text and not has_planner_tags:
+            if phase_violation and validation_status != "PASSED":
+                rule, detail = phase_violation
                 _set_report_validation_failed(
                     callback_context.state,
-                    rule="output:missing_planreact_phase",
+                    rule=rule,
+                    detail=detail,
+                )
+            elif phase_violation and validation_status == "PASSED":
+                callback_context.state.pop(REPORT_COMPILER_PHASE_ERROR_KEY, None)
+                logger.info(
+                    "[Validation] ReportCompiler PlanReAct phase tags absent but "
+                    f"{VALIDATE_FINAL_REPORT_TOOL} already PASSED; not failing"
+                )
+            elif has_final_answer_tag and validation_status != "PASSED":
+                _set_report_validation_failed(
+                    callback_context.state,
+                    rule="output:validation_not_passed",
                     detail=(
-                        "ReportCompiler emitted markdown without PlanReAct tags "
-                        f"({PLANNING_TAG}, {AGGREGATED_ANSWER_TAG}, {ACTION_TAG}, "
-                        f"{FINAL_ANSWER_TAG})."
+                        "ReportCompiler emitted FINAL_ANSWER before "
+                        f"{VALIDATE_FINAL_REPORT_TOOL} reached PASSED."
                     ),
                 )
-
-            if has_final_answer_tag:
-                if PLANNING_TAG not in phases or AGGREGATED_ANSWER_TAG not in phases:
-                    _set_report_validation_failed(
-                        callback_context.state,
-                        rule="output:missing_planreact_phase",
-                        detail=(
-                            "ReportCompiler emitted FINAL_ANSWER before showing required "
-                            f"phases ({PLANNING_TAG} and {AGGREGATED_ANSWER_TAG})."
-                        ),
-                    )
-                elif validation_status != "PASSED":
-                    _set_report_validation_failed(
-                        callback_context.state,
-                        rule="output:validation_not_passed",
-                        detail=(
-                            "ReportCompiler emitted FINAL_ANSWER before "
-                            f"{VALIDATE_FINAL_REPORT_TOOL} reached PASSED."
-                        ),
-                    )
         elif has_final_answer_tag and get_verification_status(
             callback_context.state, agent_name
         ) != "PASSED":

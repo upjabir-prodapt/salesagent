@@ -138,6 +138,25 @@ def test_report_compiler_direct_markdown_without_planreact_tags_fails_validation
     assert "PlanReAct tags" in str(state.get(REPORT_COMPILER_PHASE_ERROR_KEY))
 
 
+def test_report_compiler_final_answer_after_passed_validation_ignores_missing_phases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.services.research.graph.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
+        lambda *args, **kwargs: None,
+    )
+    state: dict = {"report_validation_status": "PASSED", "report_validation_violations": []}
+    callback_context = _CallbackContextStub(agent_name="ReportCompiler", state=state)
+
+    plan_after_model(
+        callback_context,
+        _response_with_text("/*FINAL_ANSWER*/\n## Company Snapshot\n- Company Name: Example"),
+    )
+
+    assert state.get("report_validation_status") == "PASSED"
+    assert REPORT_COMPILER_PHASE_ERROR_KEY not in state
+
+
 def test_report_compiler_final_answer_without_passed_validation_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
