@@ -24,7 +24,9 @@ class AgentRunnerPort(Protocol):
 
 
 class ArtifactPort(Protocol):
-    def upload_artifacts(self, job_id: str, final_report: str, session_state: dict) -> str: ...
+    def upload_artifacts(
+        self, job_id: str, final_report: str, session_state: dict
+    ) -> str: ...
 
     async def upload_agent_artifacts(
         self, job_id: str, session_state: dict

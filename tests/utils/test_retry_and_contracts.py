@@ -2,16 +2,16 @@ import pytest
 from google.adk.sessions.state import State
 
 from src.core.exceptions import AgentOutputError
-from src.services.research.run.resilience.runner_loop import (
-    build_retry_continuation_message,
-    get_output_key,
-    validate_agent_output,
-)
 from src.services.research.run.resilience.errors import (
     RETRY_SCOPE_LEAF_LOCAL,
     RETRY_SCOPE_NONE,
     RETRY_SCOPE_RUNNER_WARM,
     retry_scope_for_error_class,
+)
+from src.services.research.run.resilience.runner_loop import (
+    build_retry_continuation_message,
+    get_output_key,
+    validate_agent_output,
 )
 from src.services.research.run.resilience.state import (
     apply_retry,
@@ -118,4 +118,3 @@ def test_report_compiler_missing_validation_status_is_blocked() -> None:
 
     assert exc_info.value.error_class == "REPORT_VALIDATION_FAILED"
     assert "never called" in str(exc_info.value)
-

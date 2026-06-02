@@ -50,11 +50,15 @@ def _log_otel_content_capture_config() -> None:
     """Validate and log OTEL content-capture settings at startup."""
     semconv = settings.OTEL_SEMCONV_STABILITY_OPT_IN
     capture_mode = settings.OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
-    adk_spans = (
-        "true" if settings.ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS else "false"
-    )
+    adk_spans = "true" if settings.ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS else "false"
 
-    _VALID_CAPTURE_MODES = {"", "NO_CONTENT", "SPAN_ONLY", "EVENT_ONLY", "SPAN_AND_EVENT"}
+    _VALID_CAPTURE_MODES = {
+        "",
+        "NO_CONTENT",
+        "SPAN_ONLY",
+        "EVENT_ONLY",
+        "SPAN_AND_EVENT",
+    }
     if capture_mode.upper() not in _VALID_CAPTURE_MODES:
         logger.warning(
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT has unrecognised value %r "
@@ -63,7 +67,11 @@ def _log_otel_content_capture_config() -> None:
             ", ".join(sorted(_VALID_CAPTURE_MODES - {""})),
         )
 
-    effective_capture = capture_mode.upper() if capture_mode.upper() in _VALID_CAPTURE_MODES else "NO_CONTENT"
+    effective_capture = (
+        capture_mode.upper()
+        if capture_mode.upper() in _VALID_CAPTURE_MODES
+        else "NO_CONTENT"
+    )
     experimental_mode = "gen_ai_latest_experimental" in semconv
 
     logger.info(
@@ -118,9 +126,8 @@ def setup_telemetry() -> None:
             GoogleCloudResourceDetector,
         )
 
-        resource = (
-            base_resource.merge(OTELResourceDetector().detect())
-            .merge(GoogleCloudResourceDetector(raise_on_error=False).detect())
+        resource = base_resource.merge(OTELResourceDetector().detect()).merge(
+            GoogleCloudResourceDetector(raise_on_error=False).detect()
         )
     except ImportError:
         logger.warning(

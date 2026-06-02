@@ -46,7 +46,9 @@ class ResearchHandler:
             with tracer.start_as_current_span("research.request.accepted") as span:
                 span.set_attribute("research.company_name", request.company_name)
                 span.set_attribute("research.account_id", request.account_id)
-                InputGuardrail().validate(request.company_name, field_name="company_name")
+                InputGuardrail().validate(
+                    request.company_name, field_name="company_name"
+                )
 
                 metadata = {
                     "account_id": request.account_id,

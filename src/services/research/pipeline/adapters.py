@@ -54,13 +54,19 @@ class GcsArtifactAdapter:
     def __init__(self, artifact_service: ResearchArtifactService) -> None:
         self._artifact_service = artifact_service
 
-    def upload_artifacts(self, job_id: str, final_report: str, session_state: dict) -> str:
-        return self._artifact_service.upload_artifacts(job_id, final_report, session_state)
+    def upload_artifacts(
+        self, job_id: str, final_report: str, session_state: dict
+    ) -> str:
+        return self._artifact_service.upload_artifacts(
+            job_id, final_report, session_state
+        )
 
     async def upload_agent_artifacts(
         self, job_id: str, session_state: dict
     ) -> dict[str, str]:
-        return await self._artifact_service.upload_agent_artifacts(job_id, session_state)
+        return await self._artifact_service.upload_agent_artifacts(
+            job_id, session_state
+        )
 
 
 class FinalizationAdapter:

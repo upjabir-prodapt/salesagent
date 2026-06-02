@@ -14,10 +14,6 @@ from google.adk.events import Event
 from .....core.config import settings
 from .....core.exceptions import AgentOutputError
 from .....core.logging_config import logger
-from ..sales.tools.output_persistence import (
-    has_nonempty_output,
-    persist_output_from_session_events,
-)
 from ...domain.agent_contracts import get_output_key, is_tracked_agent
 from ...run.resilience.errors import classify_error, is_leaf_retryable_exception
 from ...run.resilience.state import (
@@ -30,6 +26,10 @@ from ...run.resilience.state import (
     set_retry_hint,
 )
 from ...run.state_mutation import is_mutable_state
+from ..sales.tools.output_persistence import (
+    has_nonempty_output,
+    persist_output_from_session_events,
+)
 
 __all__ = ["RetryingLlmAgent"]
 
@@ -187,9 +187,7 @@ class RetryingLlmAgent(LlmAgent):
             logger.debug(f"[Retry] Cleared retry hint for agent={self.name}")
         if state.get(PIPELINE_RETRY_AGENT_KEY) == self.name:
             clear_retry_flag(state)
-            logger.debug(
-                f"[Retry] Cleared pipeline retry flag for agent={self.name}"
-            )
+            logger.debug(f"[Retry] Cleared pipeline retry flag for agent={self.name}")
 
     def _output_key(self) -> str:
         if self.output_key:

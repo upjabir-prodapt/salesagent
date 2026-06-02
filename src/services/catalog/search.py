@@ -85,9 +85,7 @@ def _load_catalog_chunks() -> dict[str, str]:
 
 def _format_neighbor(neighbor: Any, index: int, chunks: dict[str, str]) -> str:
     distance = getattr(neighbor, "distance", None)
-    dist_str = (
-        f"{distance:.4f}" if isinstance(distance, (int, float)) else str(distance)
-    )
+    dist_str = f"{distance:.4f}" if isinstance(distance, int | float) else str(distance)
     match_info = f"Match {index + 1} - ID: {neighbor.id} (Confidence: {dist_str})"
 
     if hasattr(neighbor, "restricts") and neighbor.restricts:

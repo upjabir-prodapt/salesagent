@@ -4,7 +4,9 @@ import pytest
 
 from src.core.config import settings
 from src.core.exceptions import AgentOutputError
-from src.services.research.graph.sales.tools.report_validation import validate_final_report
+from src.services.research.graph.sales.tools.report_validation import (
+    validate_final_report,
+)
 
 
 class _ToolContextStub:

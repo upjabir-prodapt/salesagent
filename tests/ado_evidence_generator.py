@@ -1,7 +1,7 @@
 import csv
 
-from src.services.research.graph.sales import prompts
 from src.core import config
+from src.services.research.graph.sales import prompts
 
 # --- Config & Setup ---
 TEST_CASES_CSV = "COLT_SRA_Test_Cases_ADO_Test (1).csv"
@@ -13,116 +13,119 @@ def get_actual_result(row):
     category = row.get("Tag", row.get("Tags", ""))
 
     # 1. Agent Functional Logic Mapping
-    if "Revenue extraction from Annual Report" in title:
-        if (
-            "global_revenue" in prompts.FIRMOGRAPHICS_PROMPT.lower()
-            and "annual report" in prompts.FIRMOGRAPHICS_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "FIRMOGRAPHICS_PROMPT explicitly mandates global revenue extraction from Annual Reports (PDF/landing page).",
-            )
+    if (
+        "Revenue extraction from Annual Report" in title
+        and "global_revenue" in prompts.FIRMOGRAPHICS_PROMPT.lower()
+        and "annual report" in prompts.FIRMOGRAPHICS_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "FIRMOGRAPHICS_PROMPT explicitly mandates global revenue extraction from Annual Reports (PDF/landing page).",
+        )
 
-    if "Headcount from LinkedIn" in title:
-        if (
-            "employee_count" in prompts.FIRMOGRAPHICS_PROMPT.lower()
-            and "annual report" in prompts.FIRMOGRAPHICS_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "FIRMOGRAPHICS_PROMPT requires 'Employee Count' extraction from reliable sources including LinkedIn.",
-            )
+    if (
+        "Headcount from LinkedIn" in title
+        and "employee_count" in prompts.FIRMOGRAPHICS_PROMPT.lower()
+        and "annual report" in prompts.FIRMOGRAPHICS_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "FIRMOGRAPHICS_PROMPT requires 'Employee Count' extraction from reliable sources including LinkedIn.",
+        )
 
-    if "Publicly Unavailable data handling" in title:
-        if (
-            "publicly unavailable" in prompts.RESEARCH_GUIDELINES.lower()
-            and "do not estimate" in prompts.RESEARCH_GUIDELINES.lower()
-        ):
-            return (
-                "PASS",
-                "RESEARCH_GUIDELINES (Rule 5 & 6) strictly mandate 'publicly unavailable' for missing data and forbid estimation.",
-            )
+    if (
+        "Publicly Unavailable data handling" in title
+        and "publicly unavailable" in prompts.RESEARCH_GUIDELINES.lower()
+        and "do not estimate" in prompts.RESEARCH_GUIDELINES.lower()
+    ):
+        return (
+            "PASS",
+            "RESEARCH_GUIDELINES (Rule 5 & 6) strictly mandate 'publicly unavailable' for missing data and forbid estimation.",
+        )
 
-    if "Multi-location extraction" in title:
-        if (
-            "office locations" in prompts.GEOGRAPHIC_PROMPT.lower()
-            and "city" in prompts.GEOGRAPHIC_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "GEOGRAPHIC_PROMPT instructs the agent to map office locations with city and country details.",
-            )
+    if (
+        "Multi-location extraction" in title
+        and "office locations" in prompts.GEOGRAPHIC_PROMPT.lower()
+        and "city" in prompts.GEOGRAPHIC_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "GEOGRAPHIC_PROMPT instructs the agent to map office locations with city and country details.",
+        )
 
-    if "Stale data rejection" in title:
-        if "2024-2025" in prompts.FIRMOGRAPHICS_PROMPT:
-            return (
-                "PASS",
-                "FIRMOGRAPHICS_PROMPT requires explicit financial data for the 2024-2025 period to ensure recency.",
-            )
+    if "Stale data rejection" in title and "2024-2025" in prompts.FIRMOGRAPHICS_PROMPT:
+        return (
+            "PASS",
+            "FIRMOGRAPHICS_PROMPT requires explicit financial data for the 2024-2025 period to ensure recency.",
+        )
 
-    if "C-Suite biography extraction" in title:
-        if (
-            "c-suite" in prompts.EXECUTIVE_PROMPT.lower()
-            and "linkedin url" in prompts.EXECUTIVE_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "EXECUTIVE_PROMPT mandates finding names, roles, bios, and LinkedIn URLs for C-Suite members.",
-            )
+    if (
+        "C-Suite biography extraction" in title
+        and "c-suite" in prompts.EXECUTIVE_PROMPT.lower()
+        and "linkedin url" in prompts.EXECUTIVE_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "EXECUTIVE_PROMPT mandates finding names, roles, bios, and LinkedIn URLs for C-Suite members.",
+        )
 
-    if "Executive quote extraction" in title:
-        if (
-            "strategy quote" in prompts.EXECUTIVE_PROMPT.lower()
-            or "leadership quotes" in prompts.STRATEGY_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "Prompts instruct researchers to find verbatim strategic statements and leadership quotes.",
-            )
+    if (
+        "Executive quote extraction" in title
+        and "strategy quote" in prompts.EXECUTIVE_PROMPT.lower()
+        or "leadership quotes" in prompts.STRATEGY_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "Prompts instruct researchers to find verbatim strategic statements and leadership quotes.",
+        )
 
-    if "PII guardrail" in title:
-        if (
-            "publicly available" in prompts.EXECUTIVE_PROMPT.lower()
-            and "email" in prompts.EXECUTIVE_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "EXECUTIVE_PROMPT restricts PII fields (email/phone) to only those that are 'publicly available'.",
-            )
+    if (
+        "PII guardrail" in title
+        and "publicly available" in prompts.EXECUTIVE_PROMPT.lower()
+        and "email" in prompts.EXECUTIVE_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "EXECUTIVE_PROMPT restricts PII fields (email/phone) to only those that are 'publicly available'.",
+        )
 
-    if "Leadership change detection" in title:
-        if "recent leadership changes" in prompts.EXECUTIVE_PROMPT.lower():
-            return (
-                "PASS",
-                "EXECUTIVE_PROMPT includes a specific requirement for tracking recent appointments and departures.",
-            )
+    if (
+        "Leadership change detection" in title
+        and "recent leadership changes" in prompts.EXECUTIVE_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "EXECUTIVE_PROMPT includes a specific requirement for tracking recent appointments and departures.",
+        )
 
-    if "No leadership page found" in title:
-        if "publicly unavailable" in prompts.RESEARCH_GUIDELINES:
-            return (
-                "PASS",
-                "Global guidelines prevent hallucination by requiring 'publicly unavailable' for missing leadership data.",
-            )
+    if (
+        "No leadership page found" in title
+        and "publicly unavailable" in prompts.RESEARCH_GUIDELINES
+    ):
+        return (
+            "PASS",
+            "Global guidelines prevent hallucination by requiring 'publicly unavailable' for missing leadership data.",
+        )
 
-    if "Annual Report PDF ingestion" in title:
-        if (
-            "annual report" in prompts.STRATEGY_PROMPT.lower()
-            and "strategic priorities" in prompts.STRATEGY_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "STRATEGY_PROMPT defines Annual Reports as a target source for strategic priority extraction.",
-            )
+    if (
+        "Annual Report PDF ingestion" in title
+        and "annual report" in prompts.STRATEGY_PROMPT.lower()
+        and "strategic priorities" in prompts.STRATEGY_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "STRATEGY_PROMPT defines Annual Reports as a target source for strategic priority extraction.",
+        )
 
-    if "Business challenge extraction" in title:
-        if (
-            "challenges" in prompts.STRATEGY_PROMPT.lower()
-            and "commercial impact" in prompts.STRATEGY_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "STRATEGY_PROMPT requires structured challenges mapped to commercial impact (cost, revenue, risk).",
-            )
+    if (
+        "Business challenge extraction" in title
+        and "challenges" in prompts.STRATEGY_PROMPT.lower()
+        and "commercial impact" in prompts.STRATEGY_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "STRATEGY_PROMPT requires structured challenges mapped to commercial impact (cost, revenue, risk).",
+        )
 
     if "Investor briefing HTML ingestion fallback" in title:
         return (
@@ -130,52 +133,54 @@ def get_actual_result(row):
             "ADK Google Search tool provides HTML snippets when PDF is unavailable, satisfying fallback requirements.",
         )
 
-    if "Complex financial table preservation" in title:
-        if (
-            "revenue breakdown" in prompts.MARKET_PROMPT.lower()
-            and "amounts" in prompts.MARKET_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "MARKET_PROMPT requires detailed revenue breakdown with specific amounts and segment associations.",
-            )
+    if (
+        "Complex financial table preservation" in title
+        and "revenue breakdown" in prompts.MARKET_PROMPT.lower()
+        and "amounts" in prompts.MARKET_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "MARKET_PROMPT requires detailed revenue breakdown with specific amounts and segment associations.",
+        )
 
-    if "Competitor identification" in title:
-        if (
-            "competitors" in prompts.MARKET_PROMPT.lower()
-            and "market share" in prompts.MARKET_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "MARKET_PROMPT explicitly mandates the identification of key competitors and market landscape.",
-            )
+    if (
+        "Competitor identification" in title
+        and "competitors" in prompts.MARKET_PROMPT.lower()
+        and "market share" in prompts.MARKET_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "MARKET_PROMPT explicitly mandates the identification of key competitors and market landscape.",
+        )
 
-    if "Cloud vendor detection" in title:
-        if (
-            "cloud strategy" in prompts.TECH_STACK_PROMPT.lower()
-            and "key vendors" in prompts.TECH_STACK_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "TECH_STACK_PROMPT instructs the agent to profile cloud strategy and identify known vendors.",
-            )
+    if (
+        "Cloud vendor detection" in title
+        and "cloud strategy" in prompts.TECH_STACK_PROMPT.lower()
+        and "key vendors" in prompts.TECH_STACK_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "TECH_STACK_PROMPT instructs the agent to profile cloud strategy and identify known vendors.",
+        )
 
-    if "Hiring signal detection" in title:
-        if "hiring" in prompts.GROWTH_SIGNALS_PROMPT.lower():
-            return (
-                "PASS",
-                "GROWTH_SIGNALS_PROMPT targets hiring trends and specific role categories (e.g. Cloud Engineer).",
-            )
+    if (
+        "Hiring signal detection" in title
+        and "hiring" in prompts.GROWTH_SIGNALS_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "GROWTH_SIGNALS_PROMPT targets hiring trends and specific role categories (e.g. Cloud Engineer).",
+        )
 
-    if "No bullet points in narrative" in title:
-        if (
-            "no bullet points" in prompts.REPORT_COMPILER_PROMPT.lower()
-            and "prose paragraphs" in prompts.REPORT_COMPILER_PROMPT.lower()
-        ):
-            return (
-                "PASS",
-                "REPORT_COMPILER_PROMPT (Section 12) strictly forbids bullet points and enforces narrative prose.",
-            )
+    if (
+        "No bullet points in narrative" in title
+        and "no bullet points" in prompts.REPORT_COMPILER_PROMPT.lower()
+        and "prose paragraphs" in prompts.REPORT_COMPILER_PROMPT.lower()
+    ):
+        return (
+            "PASS",
+            "REPORT_COMPILER_PROMPT (Section 12) strictly forbids bullet points and enforces narrative prose.",
+        )
 
     # 2. API Logic Mapping (checking src/routes/research.py via logic)
     if "Valid POST /initiate" in title:
@@ -203,14 +208,14 @@ def get_actual_result(row):
         )
 
     # 3. Security & Governance Mapping
-    if "All compute resources execute in europe-west2" in title:
-        if (
-            config.settings.GOOGLE_CLOUD_LOCATION == "europe-west1"
-        ):  # Note: Current .env says west1, but test wants west2?
-            return (
-                "FAIL",
-                f"Config location is set to {config.settings.GOOGLE_CLOUD_LOCATION} instead of europe-west2.",
-            )
+    if (
+        "All compute resources execute in europe-west2" in title
+        and config.settings.GOOGLE_CLOUD_LOCATION == "europe-west1"
+    ):
+        return (
+            "FAIL",
+            f"Config location is set to {config.settings.GOOGLE_CLOUD_LOCATION} instead of europe-west2.",
+        )
         return (
             "PASS",
             f"Location verified as {config.settings.GOOGLE_CLOUD_LOCATION} in Settings.",

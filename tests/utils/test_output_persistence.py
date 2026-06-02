@@ -10,7 +10,7 @@ from src.services.research.graph.sales.tools.output_persistence import (
 
 
 def test_extract_final_answer_payload_after_tag():
-    text = f"/*PLANNING*/ step {FINAL_ANSWER_TAG}\n{{\"company\": \"Acme\"}}"
+    text = f'/*PLANNING*/ step {FINAL_ANSWER_TAG}\n{{"company": "Acme"}}'
     out = extract_final_answer_payload(text)
     assert out is not None
     assert "Acme" in out
@@ -22,7 +22,7 @@ def test_persist_output_key_writes_state():
         state,
         agent_name="GrowthSignals",
         output_key="growthsignals_output",
-        text=f"{FINAL_ANSWER_TAG}\n{{\"signals\": []}}",
+        text=f'{FINAL_ANSWER_TAG}\n{{"signals": []}}',
     )
     assert ok is True
     assert state["growthsignals_output"]
@@ -48,7 +48,7 @@ def test_persist_output_from_events():
     events = [
         _Event(
             "GrowthSignals",
-            f"{FINAL_ANSWER_TAG}\n{{\"growth\": true}}",
+            f'{FINAL_ANSWER_TAG}\n{{"growth": true}}',
             "inv-1",
         )
     ]

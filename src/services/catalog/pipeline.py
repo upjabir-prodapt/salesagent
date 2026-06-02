@@ -14,7 +14,12 @@ from ...core.logging_config import logger
 from .chunking import chunk_pdf
 from .embeddings import embed_chunks
 from .paths import CatalogPaths
-from .storage import GcsPublisher, LocalArtifacts, PublishedRelease, write_local_artifacts
+from .storage import (
+    GcsPublisher,
+    LocalArtifacts,
+    PublishedRelease,
+    write_local_artifacts,
+)
 from .vertex import VertexIndexManager
 
 
@@ -39,7 +44,9 @@ class VectorCatalogPipeline:
 
     def _version_from_pdf(self, pdf_path: Path) -> tuple[str, str]:
         pdf_bytes = pdf_path.read_bytes()
-        return hashlib.sha256(pdf_bytes).hexdigest()[:8], hashlib.sha256(pdf_bytes).hexdigest()
+        return hashlib.sha256(pdf_bytes).hexdigest()[:8], hashlib.sha256(
+            pdf_bytes
+        ).hexdigest()
 
     def prepare(self, pdf_path: Path) -> tuple[LocalArtifacts, dict]:
         pdf = pdf_path.resolve()
@@ -71,10 +78,10 @@ class VectorCatalogPipeline:
         *,
         pdf_path: Path,
     ) -> PublishedRelease:
-        publisher = GcsPublisher(
-            self.settings, self.paths, client=self._storage_client
+        publisher = GcsPublisher(self.settings, self.paths, client=self._storage_client)
+        published = publisher.publish(
+            artifacts, pdf_path=pdf_path, chunks_payload=chunks_payload
         )
-        published = publisher.publish(artifacts, pdf_path=pdf_path, chunks_payload=chunks_payload)
         logger.info("Published manifest %s", published.manifest_uri)
         return published
 
@@ -117,7 +124,9 @@ class VectorCatalogPipeline:
         chunk_list = chunks_payload.get("chunks", [])
         source_sha256 = chunks_payload.get("source_sha256")
         if not source_sha256:
-            _, source_sha256 = self._version_from_pdf(self.resolve_build_pdf(version_id))
+            _, source_sha256 = self._version_from_pdf(
+                self.resolve_build_pdf(version_id)
+            )
 
         artifacts = LocalArtifacts(
             version_id=version_id,

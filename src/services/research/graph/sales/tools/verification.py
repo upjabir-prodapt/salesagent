@@ -258,9 +258,7 @@ class EvidenceStore:
                     agent_name=agent,
                 )
             )
-        entries.extend(
-            _entries_from_search_response(tool_response, agent_name=agent)
-        )
+        entries.extend(_entries_from_search_response(tool_response, agent_name=agent))
         if entries:
             append_evidence(self._state, agent, entries)
         self.ingest_grounding(None, agent_name=agent)

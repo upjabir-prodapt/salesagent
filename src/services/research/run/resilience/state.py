@@ -92,9 +92,7 @@ def set_retry_hint(state: dict[str, Any], agent_name: str, hint: str) -> None:
     hints = dict(state.get(AGENT_RETRY_HINTS_KEY) or {})
     hints[agent_name] = hint
     state[AGENT_RETRY_HINTS_KEY] = hints
-    logger.info(
-        f"[Retry] Stored retry hint for agent={agent_name} ({len(hint)} chars)"
-    )
+    logger.info(f"[Retry] Stored retry hint for agent={agent_name} ({len(hint)} chars)")
 
 
 def pop_retry_hint(state: dict[str, Any], agent_name: str) -> str | None:

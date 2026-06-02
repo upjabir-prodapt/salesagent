@@ -15,12 +15,12 @@ class _StatusRepoStub:
 
 
 class _RunnerStub:
-    def __init__(self, final_report: str = "# report", state: dict | None = None) -> None:
+    def __init__(
+        self, final_report: str = "# report", state: dict | None = None
+    ) -> None:
         self.final_report = final_report
         self.state = (
-            {"report_validation_status": "PASSED"}
-            if state is None
-            else dict(state)
+            {"report_validation_status": "PASSED"} if state is None else dict(state)
         )
 
     async def run(self, job_id: str, company_name: str):
@@ -32,7 +32,9 @@ class _ArtifactStub:
         self.upload_called = False
         self.upload_agents_called = False
 
-    def upload_artifacts(self, job_id: str, final_report: str, session_state: dict) -> str:
+    def upload_artifacts(
+        self, job_id: str, final_report: str, session_state: dict
+    ) -> str:
         self.upload_called = True
         return f"gs://bucket/{job_id}/final_report.md"
 
@@ -46,7 +48,9 @@ class _FinalizationStub:
         self.failure_exports: list[dict] = []
         self.fail_failure_export = fail_failure_export
 
-    async def finalize(self, job_id: str, final_report: str, session_state: dict, metrics: dict):
+    async def finalize(
+        self, job_id: str, final_report: str, session_state: dict, metrics: dict
+    ):
         return {}, True
 
     async def export_failure_telemetry(
@@ -87,8 +91,12 @@ async def test_orchestrator_marks_failed_when_validation_fails() -> None:
     runner = _RunnerStub(
         state={
             "report_validation_status": "FAILED",
-            "report_validation_violations": [{"rule": "missing_source", "detail": "No source"}],
-            "agent_telemetry_records": [{"record_id": "r1", "agent_name": "ReportCompiler"}],
+            "report_validation_violations": [
+                {"rule": "missing_source", "detail": "No source"}
+            ],
+            "agent_telemetry_records": [
+                {"record_id": "r1", "agent_name": "ReportCompiler"}
+            ],
         }
     )
     orchestrator = ResearchJobOrchestrator(
@@ -110,14 +118,18 @@ async def test_orchestrator_marks_failed_when_validation_fails() -> None:
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_still_marks_failed_when_failure_telemetry_export_fails() -> None:
+async def test_orchestrator_still_marks_failed_when_failure_telemetry_export_fails() -> (
+    None
+):
     status = _StatusRepoStub()
     artifacts = _ArtifactStub()
     finalization = _FinalizationStub(fail_failure_export=True)
     runner = _RunnerStub(
         state={
             "report_validation_status": "FAILED",
-            "report_validation_violations": [{"rule": "missing_source", "detail": "No source"}],
+            "report_validation_violations": [
+                {"rule": "missing_source", "detail": "No source"}
+            ],
         }
     )
     orchestrator = ResearchJobOrchestrator(
@@ -131,7 +143,9 @@ async def test_orchestrator_still_marks_failed_when_failure_telemetry_export_fai
 
     assert status.calls[-1]["status"] == "FAILED"
     assert (
-        status.calls[-1]["metadata_update"]["side_op_failures"]["failure_telemetry_export"]
+        status.calls[-1]["metadata_update"]["side_op_failures"][
+            "failure_telemetry_export"
+        ]
         == "telemetry export failed"
     )
     assert artifacts.upload_called is False

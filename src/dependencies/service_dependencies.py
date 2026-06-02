@@ -1,16 +1,17 @@
 """Service dependencies and shared GCP client pooling."""
 
 import threading
-from typing import Optional
+
 from google import genai
 from google.cloud import bigquery, storage  # type: ignore
 
 from ..core.config import settings
 
-_bq_client: Optional[bigquery.Client] = None
-_storage_client: Optional[storage.Client] = None
-_genai_client: Optional[genai.Client] = None
+_bq_client: bigquery.Client | None = None
+_storage_client: storage.Client | None = None
+_genai_client: genai.Client | None = None
 _lock = threading.Lock()
+
 
 def get_bigquery_client() -> bigquery.Client:
     """Get shared BigQuery client singleton."""
@@ -42,12 +43,14 @@ def get_genai_client() -> genai.Client:
 def get_bigquery_repository():
     """Get BigQuery repository instance."""
     from ..repositories.bigquery_repository import BigQueryRepository
+
     return BigQueryRepository(client=get_bigquery_client())
 
 
 def get_gcs_repository():
     """Get GCS repository instance."""
     from ..repositories.gcs_repository import GCSRepository
+
     return GCSRepository(client=get_storage_client())
 
 

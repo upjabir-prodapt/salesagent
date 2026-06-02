@@ -11,8 +11,8 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.trace import NoOpTracerProvider
 
 from ..core.config import settings
-from ..core.otel_setup import setup_telemetry, shutdown_telemetry
 from ..core.logging_config import logger, setup_logging
+from ..core.otel_setup import setup_telemetry, shutdown_telemetry
 from ..middlewares import error_handler_middleware, logging_middleware
 from . import auth, catalog, research
 
@@ -23,6 +23,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 # Configure logging
 setup_logging()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

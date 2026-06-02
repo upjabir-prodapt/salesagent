@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -319,9 +320,7 @@ class BigQueryRepository:
             merged = {**self._get_metadata_dict(job_id), **metadata_update}
             update_fields.append("metadata = PARSE_JSON(@metadata)")
             query_params.append(
-                bigquery.ScalarQueryParameter(
-                    "metadata", "STRING", json.dumps(merged)
-                )
+                bigquery.ScalarQueryParameter("metadata", "STRING", json.dumps(merged))
             )
 
         query = f"""
@@ -370,9 +369,7 @@ class BigQueryRepository:
         query_parameters = [
             bigquery.ScalarQueryParameter("job_execution_id", "STRING", job_id)
         ]
-        results = list(
-            self._execute_query(query, query_parameters, "getting metadata")
-        )
+        results = list(self._execute_query(query, query_parameters, "getting metadata"))
         if not results:
             return {}
         return self._parse_metadata_row(getattr(results[0], "metadata", None))
@@ -528,10 +525,8 @@ class BigQueryRepository:
             sections = row.get("sections_produced")
             # JSON column: pass list/dict natively; only encode if already a string scalar.
             if isinstance(sections, str):
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     row["sections_produced"] = json.loads(sections)
-                except json.JSONDecodeError:
-                    pass
             rows.append(row)
         try:
             errors = self.client.insert_rows_json(self.agent_telemetry_table_ref, rows)

@@ -33,9 +33,7 @@ def verification_unsupported_key(agent_name: str) -> str:
 
 def normalize_entry(entry: dict[str, Any], *, agent_name: str = "") -> dict[str, Any]:
     """Normalize evidence dict: uri->url, standard fields."""
-    url = (
-        str(entry.get("url") or entry.get("uri") or entry.get("link") or "")
-    ).strip()
+    url = (str(entry.get("url") or entry.get("uri") or entry.get("link") or "")).strip()
     title = str(entry.get("title") or "").strip()[:200]
     snippet = str(
         entry.get("snippet") or entry.get("description") or entry.get("body") or ""
@@ -51,7 +49,9 @@ def normalize_entry(entry: dict[str, Any], *, agent_name: str = "") -> dict[str,
     }
     if url:
         normalized["authoritative"] = bool(
-            entry.get("authoritative") if "authoritative" in entry else is_authoritative(url)
+            entry.get("authoritative")
+            if "authoritative" in entry
+            else is_authoritative(url)
         )
     if entry.get("flagged_injection"):
         normalized["flagged_injection"] = True
@@ -91,7 +91,11 @@ def _legacy_raw_cache_entries(state: dict[str, Any]) -> list[dict]:
         if key.startswith(LEGACY_RAW_CACHE_PREFIX) and isinstance(value, list):
             for item in value:
                 if isinstance(item, dict):
-                    agent = str(item.get("agent") or key.split("_")[3] if len(key.split("_")) > 3 else "")
+                    agent = str(
+                        item.get("agent") or key.split("_")[3]
+                        if len(key.split("_")) > 3
+                        else ""
+                    )
                     merged.append(normalize_entry(item, agent_name=agent))
     legacy = state.get("raw_search_cache")
     if isinstance(legacy, list):
@@ -194,7 +198,7 @@ def format_agent_outputs_for_judge(
                 parsed = json.loads(stripped)
                 body = (
                     json.dumps(parsed, indent=2, ensure_ascii=False)
-                    if isinstance(parsed, (dict, list))
+                    if isinstance(parsed, dict | list)
                     else stripped
                 )
             except (json.JSONDecodeError, TypeError):

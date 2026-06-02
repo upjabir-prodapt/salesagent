@@ -10,8 +10,8 @@ from ......core.config import settings
 from ......core.logging_config import logger
 from ......utils.guardrails import InputGuardrail
 from ......utils.url_utils import is_authoritative
-from ...sales.tools.evidence import append_evidence, evidence_key
 from ....run.resilience.state import pop_retry_hint
+from ...sales.tools.evidence import append_evidence, evidence_key
 from .common import record_callback_span_event
 
 __all__ = ["before_model_callback", "after_model_callback"]
@@ -175,7 +175,9 @@ def after_model_callback(
                                     web, "get", lambda x, default=None: None
                                 )("uri")
                                 title = getattr(web, "title", None) or getattr(
-                                    web, "get", lambda x, default="Grounded Source": default
+                                    web,
+                                    "get",
+                                    lambda x, default="Grounded Source": default,
                                 )("title")
                                 if uri:
                                     grounding_entries.append(

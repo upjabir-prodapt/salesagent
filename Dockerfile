@@ -1,5 +1,11 @@
 # Stage 1: Builder - Install dependencies using uv
-FROM python:3.11-slim AS builder
+FROM python:3.11-bookworm AS builder
+
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list \
+    && apt-get update -qq \
+    && apt-get install -y -qq curl ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 

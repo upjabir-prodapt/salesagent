@@ -6,7 +6,6 @@ from typing import Any
 
 from ....core.exceptions import AgentOutputError
 from ....core.logging_config import logger
-
 from .agent_contracts import get_output_key
 
 __all__ = ["validate_agent_output"]

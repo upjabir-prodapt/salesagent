@@ -232,10 +232,7 @@ class EvaluationService:
         if job_evidence:
             evidence_block = evidence_to_block(job_evidence, max_chars=6000)
             if evidence_block:
-                evidence_section = (
-                    "## VERIFIED EVIDENCE:\n"
-                    f"{evidence_block}\n"
-                )
+                evidence_section = f"## VERIFIED EVIDENCE:\n{evidence_block}\n"
 
         return textwrap.dedent(
             f"""

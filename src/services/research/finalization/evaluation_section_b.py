@@ -29,7 +29,9 @@ def compute_agent_output_coverage(session_state: dict[str, Any]) -> float:
 
 
 def compute_evidence_breadth(job_evidence: list[dict]) -> float:
-    urls = [entry.get("url", "") for entry in job_evidence if entry.get("url", "").strip()]
+    urls = [
+        entry.get("url", "") for entry in job_evidence if entry.get("url", "").strip()
+    ]
     unique_domains = count_unique_domains(urls)
     return min(1.0, unique_domains / MIN_EXPECTED_DOMAINS)
 

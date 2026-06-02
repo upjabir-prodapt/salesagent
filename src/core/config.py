@@ -2,10 +2,9 @@
 
 import os
 from pathlib import Path
-
-from dotenv import load_dotenv
 from typing import Self
 
+from dotenv import load_dotenv
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -161,7 +160,6 @@ class Settings(BaseSettings):
     RESEARCH_UPLOAD_PROGRESS: int
     RESEARCH_EVAL_STEP_LABEL: str
     RESEARCH_EVAL_PROGRESS: int
-    
 
     # Safety
     SAFETY_HARASSMENT_THRESHOLD: str

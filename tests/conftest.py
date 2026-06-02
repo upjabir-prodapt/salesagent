@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,6 +16,43 @@ from src.dependencies.auth import get_current_user
 from src.dependencies.handler_dependencies import get_research_handler
 from src.handlers.research_handler import ResearchHandler
 from src.routes.app import app
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_env_vars():
+    mp = pytest.MonkeyPatch()
+    mp.setenv("APP_NAME", "TestApp")
+    mp.setenv("APP_VERSION", "0.0.1")
+    mp.setenv("API_PREFIX", "/api")
+    mp.setenv("DEBUG", "true")
+    mp.setenv("IS_LOCAL", "true")
+    mp.setenv("HOST", "127.0.0.1")
+    mp.setenv("PORT", "8000")
+    mp.setenv("WORKERS", "1")
+    mp.setenv("LOG_LEVEL", "INFO")
+    mp.setenv("SECRET_KEY", "dummysecret")
+    mp.setenv("ALGORITHM", "HS256")
+    mp.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+    mp.setenv("GOOGLE_CLOUD_PROJECT", "fake-project")
+    mp.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    mp.setenv("BIGQUERY_DATASET", "test_dataset")
+    mp.setenv("BIGQUERY_TABLE", "test_table")
+    mp.setenv("GCS_BUCKET_NAME", "fake-bucket")
+    mp.setenv("CORS_ALLOW_ORIGINS", "*")
+    mp.setenv("CORS_ALLOW_CREDENTIALS", "true")
+    mp.setenv("CORS_ALLOW_METHODS", "GET,POST")
+    mp.setenv("CORS_ALLOW_HEADERS", "*")
+    mp.setenv("OTEL_ENABLED", "false")
+    mp.setenv("OTEL_SERVICE_NAME", "test-service")
+    mp.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+    mp.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+    mp.setenv("OTEL_RESOURCE_ATTRIBUTES", "env=test")
+
+    yield
+
+    # Clean up after the session
+    mp.undo()
+
 
 
 @pytest.fixture
@@ -102,7 +140,9 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     mock_service.get_pdf_report.return_value = (b"%PDF-1.4 test", "Acme Corp")
 
     previous_overrides = dict(app.dependency_overrides)
-    app.dependency_overrides[get_research_handler] = lambda: ResearchHandler(mock_service)
+    app.dependency_overrides[get_research_handler] = lambda: ResearchHandler(
+        mock_service
+    )
     app.dependency_overrides[get_current_user] = lambda: {
         "email": "test@colt.net",
         "business_unit": "Sales",
@@ -114,7 +154,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(app_module, "_init_telemetry", lambda _app: None)
 
     with TestClient(app) as test_client:
-        setattr(test_client, "mock_service", mock_service)
+        test_client.mock_service = mock_service
         yield test_client
 
     app.dependency_overrides.clear()

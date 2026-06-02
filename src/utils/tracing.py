@@ -15,7 +15,9 @@ _tracer = trace.get_tracer(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-def _apply_attributes(span: trace.Span, attributes: Any, bound: inspect.BoundArguments) -> None:
+def _apply_attributes(
+    span: trace.Span, attributes: Any, bound: inspect.BoundArguments
+) -> None:
     if attributes is None:
         return
     if isinstance(attributes, dict):
@@ -40,7 +42,9 @@ def job_attrs(bound: inspect.BoundArguments) -> dict[str, Any]:
 def traced(
     span_name: str,
     *,
-    attributes: dict[str, Any] | Callable[[inspect.BoundArguments], dict[str, Any]] | None = None,
+    attributes: dict[str, Any]
+    | Callable[[inspect.BoundArguments], dict[str, Any]]
+    | None = None,
     record_exception: bool = True,
 ) -> Callable[[F], F]:
     """Create a child span around a sync or async function."""
@@ -85,7 +89,9 @@ def traced_with_context(
     span_name: str,
     *,
     context_kwarg: str = "trace_context_headers",
-    attributes: dict[str, Any] | Callable[[inspect.BoundArguments], dict[str, Any]] | None = None,
+    attributes: dict[str, Any]
+    | Callable[[inspect.BoundArguments], dict[str, Any]]
+    | None = None,
     record_exception: bool = True,
 ) -> Callable[[F], F]:
     """Create a span linked to an upstream trace via W3C carrier headers."""

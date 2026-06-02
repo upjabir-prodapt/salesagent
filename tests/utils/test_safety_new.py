@@ -20,10 +20,13 @@ def test_get_default_safety_settings(mock_settings):
     mock_settings.SAFETY_SEXUAL_THRESHOLD = "BLOCK_LOW_AND_ABOVE"
     mock_settings.SAFETY_DANGEROUS_THRESHOLD = "BLOCK_ONLY_HIGH"
 
-    with patch(
-        "src.services.research.graph.adk.safety.get_default_safety_settings",
-        wraps=get_default_safety_settings,
-    ), patch("src.core.config.settings", mock_settings):
+    with (
+        patch(
+            "src.services.research.graph.adk.safety.get_default_safety_settings",
+            wraps=get_default_safety_settings,
+        ),
+        patch("src.core.config.settings", mock_settings),
+    ):
         # Need to patch the settings used INSIDE the function if it's imported there
         settings = get_default_safety_settings()
         assert len(settings) == 4

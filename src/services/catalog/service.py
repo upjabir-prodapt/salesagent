@@ -17,8 +17,8 @@ from ...core.logging_config import contextualize, logger
 from ...models.catalog_schemas import CatalogJobOptions, CatalogOperation
 from ...repositories.catalog_job_repository import CatalogJobRepository
 from .pipeline import VectorCatalogPipeline
-from .vertex import VertexIndexManager
 from .search import colt_product_search
+from .vertex import VertexIndexManager
 
 tracer = trace.get_tracer(__name__)
 
@@ -98,9 +98,7 @@ class CatalogService:
 
     def require_uploaded_pdf(self, uploaded_path: Path | None) -> Path:
         if uploaded_path is None:
-            raise ValueError(
-                "Catalog PDF upload is required for this operation"
-            )
+            raise ValueError("Catalog PDF upload is required for this operation")
         path = uploaded_path.resolve()
         if not path.is_file():
             raise FileNotFoundError(f"Uploaded catalog PDF not found: {path}")
@@ -180,7 +178,10 @@ class CatalogService:
         path = self.require_uploaded_pdf(pdf_path)
         artifacts, _ = self.pipeline.prepare(path)
         self.job_repo.update_job(
-            job_id, version_id=artifacts.version_id, progress=80, current_step="Prepared"
+            job_id,
+            version_id=artifacts.version_id,
+            progress=80,
+            current_step="Prepared",
         )
 
     def _run_publish(
@@ -204,7 +205,9 @@ class CatalogService:
     ) -> None:
         if not version_id:
             raise ValueError("version_id is required for index_update")
-        self.job_repo.update_job(job_id, current_step="Updating Vertex index", progress=50)
+        self.job_repo.update_job(
+            job_id, current_step="Updating Vertex index", progress=50
+        )
         delta_uri = self.pipeline.paths.embeddings_delta_uri(version_id)
         count = VertexIndexManager(settings).update_index(
             delta_uri, complete_overwrite=complete_overwrite
@@ -231,7 +234,9 @@ class CatalogService:
         options: CatalogJobOptions,
     ) -> None:
         path = self.require_uploaded_pdf(pdf_path)
-        self.job_repo.update_job(job_id, current_step="Chunking and embedding", progress=15)
+        self.job_repo.update_job(
+            job_id, current_step="Chunking and embedding", progress=15
+        )
         result = self.pipeline.run(
             path,
             skip_publish=options.skip_publish,

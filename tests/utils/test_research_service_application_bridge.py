@@ -8,10 +8,14 @@ from src.services.research import ResearchService
 
 
 @pytest.mark.asyncio
-async def test_research_service_delegates_background_processing_to_application_layer() -> None:
+async def test_research_service_delegates_background_processing_to_application_layer() -> (
+    None
+):
     bigquery_repo = MagicMock()
     gcs_repo = MagicMock()
-    service = ResearchService(bigquery_repository=bigquery_repo, gcs_repository=gcs_repo)
+    service = ResearchService(
+        bigquery_repository=bigquery_repo, gcs_repository=gcs_repo
+    )
 
     called: dict[str, str] = {}
 

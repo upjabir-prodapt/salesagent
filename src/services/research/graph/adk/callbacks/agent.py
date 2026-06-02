@@ -8,8 +8,6 @@ from google.adk.agents.callback_context import CallbackContext
 from google.genai import types
 
 from ......core.logging_config import logger
-from ...sales.tools.output_persistence import persist_output_from_session_events
-from ...sales.tools.verification import Bm25Verifier
 from ....domain.agent_contracts import (
     get_output_key,
     is_tracked_agent,
@@ -18,6 +16,8 @@ from ....domain.agent_contracts import (
 )
 from ....domain.output_validation import validate_agent_output
 from ....run.telemetry import track_agent_end, track_agent_start
+from ...sales.tools.output_persistence import persist_output_from_session_events
+from ...sales.tools.verification import Bm25Verifier
 from .common import record_callback_span_event
 
 __all__ = ["before_agent_callback", "after_agent_callback"]

@@ -41,7 +41,9 @@ class VertexIndexManager:
             d.id == self._settings.VECTOR_SEARCH_DEPLOYED_INDEX_ID for d in deployed
         )
 
-    def create_index(self, *, initial_embeddings_uri: str) -> aiplatform.MatchingEngineIndex:
+    def create_index(
+        self, *, initial_embeddings_uri: str
+    ) -> aiplatform.MatchingEngineIndex:
         distance = getattr(
             matching_engine.matching_engine_index_config.DistanceMeasureType,
             self._settings.VECTOR_SEARCH_DISTANCE_MEASURE_TYPE,

@@ -19,6 +19,4 @@ async def with_retry(coro_fn, retries: int = 1, delay: float = 3.0):
 
 async def with_retry_sync(fn, retries: int = 1, delay: float = 3.0):
     """Simple sync-to-thread retry wrapper."""
-    return await with_retry(
-        lambda: asyncio.to_thread(fn), retries=retries, delay=delay
-    )
+    return await with_retry(lambda: asyncio.to_thread(fn), retries=retries, delay=delay)

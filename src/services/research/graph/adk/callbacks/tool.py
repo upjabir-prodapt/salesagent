@@ -25,7 +25,9 @@ def before_tool_callback(
     tool: BaseTool, args: dict[str, Any], tool_context: ToolContext
 ) -> dict[str, Any] | None:
     tool_name = tool.name
-    logger.info(f"\n[Callback] BEFORE TOOL Calling '{tool_name}' with original args: {args}")
+    logger.info(
+        f"\n[Callback] BEFORE TOOL Calling '{tool_name}' with original args: {args}"
+    )
     record_callback_span_event(
         "adk.before_tool",
         {"tool_name": tool_name, "has_args": bool(args)},
@@ -139,7 +141,10 @@ def _extract_search_entries(
             url = result.get("url") or result.get("link") or result.get("href") or ""
             title = result.get("title") or result.get("name") or ""
             snippet = (
-                result.get("snippet") or result.get("description") or result.get("body") or ""
+                result.get("snippet")
+                or result.get("description")
+                or result.get("body")
+                or ""
             )
             entries.append(_make_entry(url, title, snippet))
 
@@ -167,7 +172,9 @@ def _extract_search_entries(
                 entries.append(_make_entry("", f"search: {query}", text[:600]))
     elif isinstance(tool_response, dict):
         if not _parse_dict_response(tool_response):
-            entries.append(_make_entry("", f"search: {query}", str(tool_response)[:600]))
+            entries.append(
+                _make_entry("", f"search: {query}", str(tool_response)[:600])
+            )
     elif isinstance(tool_response, str) and tool_response:
         entries.append(_make_entry("", f"search: {query}", tool_response[:600]))
 

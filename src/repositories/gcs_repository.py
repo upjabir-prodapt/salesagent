@@ -87,7 +87,9 @@ class GCSRepository:
         """
         try:
             filename = f"{agent_name.lower()}_output.json"
-            blob_name = f"{settings.GCS_PARENT_FOLDER}/{session_id}/artifacts/{filename}"
+            blob_name = (
+                f"{settings.GCS_PARENT_FOLDER}/{session_id}/artifacts/{filename}"
+            )
             blob = self.bucket.blob(blob_name)
             blob.upload_from_string(data=content, content_type="application/json")
             uri = f"gs://{self.bucket_name}/{blob_name}"

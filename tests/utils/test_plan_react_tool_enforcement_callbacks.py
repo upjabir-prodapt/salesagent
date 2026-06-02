@@ -14,11 +14,11 @@ from src.services.research.graph.sales.callbacks.plan_react import (
     plan_after_tool,
     plan_before_model,
 )
-from src.services.research.graph.sales.tools.evidence import verification_status_key
 from src.services.research.graph.sales.tools import (
     COLT_PRODUCT_SEARCH_TOOL,
     VALIDATE_FINAL_REPORT_TOOL,
 )
+from src.services.research.graph.sales.tools.evidence import verification_status_key
 
 
 @dataclass
@@ -70,7 +70,10 @@ def test_alignment_before_model_injects_catalog_search_steering() -> None:
     result = plan_before_model(callback_context, llm_request)
 
     assert result is None
-    assert any(COLT_PRODUCT_SEARCH_TOOL in instruction for instruction in llm_request.instructions)
+    assert any(
+        COLT_PRODUCT_SEARCH_TOOL in instruction
+        for instruction in llm_request.instructions
+    )
 
 
 def test_alignment_final_answer_without_catalog_search_sets_observability_flag(
@@ -85,7 +88,7 @@ def test_alignment_final_answer_without_catalog_search_sets_observability_flag(
 
     plan_after_model(
         callback_context,
-        _response_with_text("/*FINAL_ANSWER*/\n{\"alignment_mappings\": []}"),
+        _response_with_text('/*FINAL_ANSWER*/\n{"alignment_mappings": []}'),
     )
 
     assert state.get(ALIGNMENT_CATALOG_MISSING_FINAL_KEY) is True
@@ -105,7 +108,10 @@ def test_report_compiler_before_model_injects_strict_planreact_instruction() -> 
 
 
 def test_report_compiler_validate_tool_call_is_counted() -> None:
-    state: dict = {"report_validation_status": "FAILED", "report_validation_violations": []}
+    state: dict = {
+        "report_validation_status": "FAILED",
+        "report_validation_violations": [],
+    }
     tool_context = _ToolContextStub(agent_name="ReportCompiler", state=state)
 
     result = plan_after_tool(
@@ -145,12 +151,17 @@ def test_report_compiler_final_answer_after_passed_validation_ignores_missing_ph
         "src.services.research.graph.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
         lambda *args, **kwargs: None,
     )
-    state: dict = {"report_validation_status": "PASSED", "report_validation_violations": []}
+    state: dict = {
+        "report_validation_status": "PASSED",
+        "report_validation_violations": [],
+    }
     callback_context = _CallbackContextStub(agent_name="ReportCompiler", state=state)
 
     plan_after_model(
         callback_context,
-        _response_with_text("/*FINAL_ANSWER*/\n## Company Snapshot\n- Company Name: Example"),
+        _response_with_text(
+            "/*FINAL_ANSWER*/\n## Company Snapshot\n- Company Name: Example"
+        ),
     )
 
     assert state.get("report_validation_status") == "PASSED"
@@ -165,13 +176,18 @@ def test_report_compiler_final_answer_without_passed_validation_fails(
         lambda *args, **kwargs: None,
     )
     state: dict = {
-        "report_compiler_seen_planreact_phases": ["/*PLANNING*/", "/*AGGREGATED_ANSWER*/"],
+        "report_compiler_seen_planreact_phases": [
+            "/*PLANNING*/",
+            "/*AGGREGATED_ANSWER*/",
+        ],
     }
     callback_context = _CallbackContextStub(agent_name="ReportCompiler", state=state)
 
     plan_after_model(
         callback_context,
-        _response_with_text("/*FINAL_ANSWER*/\n## Company Snapshot\n- Company Name: Example"),
+        _response_with_text(
+            "/*FINAL_ANSWER*/\n## Company Snapshot\n- Company Name: Example"
+        ),
     )
 
     assert state.get("report_validation_status") == "FAILED"
@@ -179,7 +195,9 @@ def test_report_compiler_final_answer_without_passed_validation_fails(
     assert violations and violations[0]["rule"] == "output:validation_not_passed"
 
 
-def test_alignment_catalog_counter_updates_after_tool_call(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_alignment_catalog_counter_updates_after_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "src.services.research.graph.sales.callbacks.plan_react.EvidenceStore.append_search_response",
         lambda *args, **kwargs: None,

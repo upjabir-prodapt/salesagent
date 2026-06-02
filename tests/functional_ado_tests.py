@@ -2,11 +2,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.services.research.graph.sales.build.lanes import PlanReActAgentFactory
 from src.services.research.graph.sales.prompts import (
     EXECUTIVE_PROMPT,
     FIRMOGRAPHICS_PROMPT,
 )
-from src.services.research.graph.sales.build.lanes import PlanReActAgentFactory
 
 
 def create_research_agents():
@@ -55,7 +55,10 @@ def test_firmographics_prompt_contains_unavailable_instruction():
     Objective: Verify that the Firmographics Agent is instructed to return 'publicly unavailable'
     """
     assert "publicly unavailable" in FIRMOGRAPHICS_PROMPT.lower()
-    assert "not memory" in FIRMOGRAPHICS_PROMPT.lower() or "training" in FIRMOGRAPHICS_PROMPT.lower()
+    assert (
+        "not memory" in FIRMOGRAPHICS_PROMPT.lower()
+        or "training" in FIRMOGRAPHICS_PROMPT.lower()
+    )
     assert "interpolat" in FIRMOGRAPHICS_PROMPT.lower()
 
 
@@ -65,7 +68,10 @@ def test_executive_prompt_contains_unavailable_instruction():
     Objective: Verify that the Executive Agent is instructed to handle missing data gracefully
     """
     assert "publicly unavailable" in EXECUTIVE_PROMPT.lower()
-    assert "no training" in EXECUTIVE_PROMPT.lower() or "not memory" in EXECUTIVE_PROMPT.lower()
+    assert (
+        "no training" in EXECUTIVE_PROMPT.lower()
+        or "not memory" in EXECUTIVE_PROMPT.lower()
+    )
 
 
 def test_no_bullet_points_instruction_in_guidelines():

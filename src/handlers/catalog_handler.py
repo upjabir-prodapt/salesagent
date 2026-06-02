@@ -10,8 +10,8 @@ from typing import Any
 from fastapi import BackgroundTasks, HTTPException, UploadFile, status
 from opentelemetry import trace
 
-from ..core.logging_config import contextualize, logger
 from ..core.exceptions import ResourceNotFoundError
+from ..core.logging_config import contextualize, logger
 from ..models.catalog_schemas import (
     CatalogJobOptions,
     CatalogJobResponse,

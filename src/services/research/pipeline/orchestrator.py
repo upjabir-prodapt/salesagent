@@ -11,16 +11,16 @@ from ....core.logging_config import logger
 from ....utils.guardrails import GuardrailViolation
 from ..graph.sales.tools.evidence import aggregate_job_evidence
 from ..graph.sales.tools.report_validation import ensure_report_validated
+from ..utils.metrics import calculate_metrics, reconcile_cost
+from ..utils.status import (
+    build_completion_metadata,
+    build_failure_summary,
+)
 from .ports import (
     AgentRunnerPort,
     ArtifactPort,
     FinalizationPort,
     StatusRepositoryPort,
-)
-from ..utils.metrics import calculate_metrics, reconcile_cost
-from ..utils.status import (
-    build_completion_metadata,
-    build_failure_summary,
 )
 
 
@@ -40,7 +40,9 @@ class ResearchJobOrchestrator:
         self._artifacts = artifacts
         self._finalization = finalization
 
-    async def run(self, job_id: str, company_name: str, *, span: Span | None = None) -> None:
+    async def run(
+        self, job_id: str, company_name: str, *, span: Span | None = None
+    ) -> None:
         """Execute the full background pipeline from run to completion state."""
         logger.info(
             f"[Pipeline] Starting research job job_id={job_id} company={company_name!r}"
@@ -65,12 +67,16 @@ class ResearchJobOrchestrator:
             if span is not None:
                 span.set_attribute("research.latency_seconds", latency)
                 if metrics["total_tokens"]:
-                    span.set_attribute("research.total_tokens", int(metrics["total_tokens"]))
+                    span.set_attribute(
+                        "research.total_tokens", int(metrics["total_tokens"])
+                    )
                 if metrics["cost_usd"] is not None:
                     span.set_attribute("research.cost_usd", float(metrics["cost_usd"]))
 
             reconciliation = reconcile_cost(session_state, metrics)
-            md_uri = self._artifacts.upload_artifacts(job_id, final_report, session_state)
+            md_uri = self._artifacts.upload_artifacts(
+                job_id, final_report, session_state
+            )
 
             try:
                 await self._artifacts.upload_agent_artifacts(job_id, session_state)
@@ -153,7 +159,9 @@ class ResearchJobOrchestrator:
         """Mark job failed, export telemetry/cost, and record OTEL attributes."""
         violations = session_state.get("report_validation_violations") or []
         guard_violations = [
-            GuardrailViolation(rule=v.get("rule", "unknown"), detail=v.get("detail", ""))
+            GuardrailViolation(
+                rule=v.get("rule", "unknown"), detail=v.get("detail", "")
+            )
             for v in violations
             if isinstance(v, dict)
         ]
@@ -184,10 +192,14 @@ class ResearchJobOrchestrator:
 
         if span is not None:
             span.set_attribute("research.status", "failed")
-            span.set_attribute("research.report_validation_status", str(validation_status))
+            span.set_attribute(
+                "research.report_validation_status", str(validation_status)
+            )
             span.set_attribute("research.latency_seconds", latency)
             if metrics["total_tokens"]:
-                span.set_attribute("research.total_tokens", int(metrics["total_tokens"]))
+                span.set_attribute(
+                    "research.total_tokens", int(metrics["total_tokens"])
+                )
             if metrics["cost_usd"] is not None:
                 span.set_attribute("research.cost_usd", float(metrics["cost_usd"]))
 

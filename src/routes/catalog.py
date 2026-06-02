@@ -61,7 +61,7 @@ async def create_catalog_job(
     operation: str = Form(...),
     version_id: str | None = Form(None),
     options_json: str | None = Form(None),
-    pdf: UploadFile | None = File(None),
+    pdf: UploadFile | None = None,
 ):
     return await handler.create_job(
         background_tasks=background_tasks,
@@ -91,7 +91,7 @@ async def rebuild_catalog(
     background_tasks: BackgroundTasks,
     handler: CatalogHandlerDep,
     current_user: Annotated[dict, Depends(get_current_user)],
-    pdf: UploadFile = File(...),
+    pdf: UploadFile = File(...),  # noqa: B008
     options_json: str | None = Form(None),
 ):
     return await handler.rebuild(

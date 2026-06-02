@@ -29,4 +29,3 @@ async def test_telemetry_flush_deadletters_on_failure():
     deadletter_name, deadletter_payload = captured["deadletter"]
     assert deadletter_name == "job-123_telemetry_deadletter"
     assert deadletter_payload["records"]
-

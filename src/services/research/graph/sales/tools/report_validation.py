@@ -77,7 +77,9 @@ async def ensure_report_validated(draft: str, state: Any) -> str:
     return status
 
 
-async def validate_final_report(draft: str, tool_context: ToolContext) -> dict[str, Any]:
+async def validate_final_report(
+    draft: str, tool_context: ToolContext
+) -> dict[str, Any]:
     """Run OutputGuardrail checks on a compiled markdown report draft."""
     attempts = int(tool_context.state.get("report_validation_attempts") or 0) + 1
     tool_context.state["report_validation_attempts"] = attempts

@@ -56,9 +56,7 @@ class ResearchProgressTracker:
                 try:
                     AgentGuardrail().validate(agent_text, agent_name=author)
                 except Exception as guard_err:
-                    logger.error(
-                        f"[AgentGuardrail] Violation in {author}: {guard_err}"
-                    )
+                    logger.error(f"[AgentGuardrail] Violation in {author}: {guard_err}")
                     raise
 
         if is_final:

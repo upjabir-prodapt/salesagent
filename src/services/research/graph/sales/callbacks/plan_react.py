@@ -188,9 +188,10 @@ def plan_before_model(
             )
         break
 
-    if agent_name != "ReportCompiler" and get_verification_status(
-        callback_context.state, agent_name
-    ) == "FAILED":
+    if (
+        agent_name != "ReportCompiler"
+        and get_verification_status(callback_context.state, agent_name) == "FAILED"
+    ):
         bad = get_unsupported_claims(callback_context.state, agent_name)
         logger.warning(
             f"[Validation] verify_draft_answer FAILED for agent={agent_name} "
@@ -308,9 +309,10 @@ def plan_after_model(
                         f"{VALIDATE_FINAL_REPORT_TOOL} reached PASSED."
                     ),
                 )
-        elif has_final_answer_tag and get_verification_status(
-            callback_context.state, agent_name
-        ) != "PASSED":
+        elif (
+            has_final_answer_tag
+            and get_verification_status(callback_context.state, agent_name) != "PASSED"
+        ):
             logger.warning(
                 f"[Validation] agent={agent_name} emitted FINAL_ANSWER before "
                 f"verify_draft_answer PASSED"
@@ -399,16 +401,18 @@ def plan_after_tool(
         n = len(tool_context.state.get(evidence_key(agent_name), []))
         logger.info(f"{tool.name} done agent={agent_name} evidence_items={n}")
         if agent_name == "AlignmentAnalyst" and tool.name == COLT_PRODUCT_SEARCH_TOOL:
-            tool_context.state[ALIGNMENT_CATALOG_SEARCH_COUNT_KEY] = int(
-                tool_context.state.get(ALIGNMENT_CATALOG_SEARCH_COUNT_KEY) or 0
-            ) + 1
+            tool_context.state[ALIGNMENT_CATALOG_SEARCH_COUNT_KEY] = (
+                int(tool_context.state.get(ALIGNMENT_CATALOG_SEARCH_COUNT_KEY) or 0) + 1
+            )
     elif tool.name == "verify_draft_answer":
         status = get_verification_status(tool_context.state, agent_name)
-        logger.info(f"[Validation] verify_draft_answer agent={agent_name} status={status}")
+        logger.info(
+            f"[Validation] verify_draft_answer agent={agent_name} status={status}"
+        )
     elif tool.name == VALIDATE_FINAL_REPORT_TOOL and agent_name == "ReportCompiler":
-        tool_context.state[REPORT_VALIDATION_TOOL_CALL_COUNT_KEY] = int(
-            tool_context.state.get(REPORT_VALIDATION_TOOL_CALL_COUNT_KEY) or 0
-        ) + 1
+        tool_context.state[REPORT_VALIDATION_TOOL_CALL_COUNT_KEY] = (
+            int(tool_context.state.get(REPORT_VALIDATION_TOOL_CALL_COUNT_KEY) or 0) + 1
+        )
         status = str(tool_context.state.get("report_validation_status") or "UNKNOWN")
         violations = tool_context.state.get("report_validation_violations") or []
         logger.info(

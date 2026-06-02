@@ -12,7 +12,11 @@ from google.genai import types
 
 from .....core.exceptions import AgentOutputError, ServiceError
 from .....core.logging_config import logger
-from ...domain.agent_contracts import AGENT_OUTPUT_KEYS, get_output_key, is_tracked_agent
+from ...domain.agent_contracts import (
+    AGENT_OUTPUT_KEYS,
+    get_output_key,
+    is_tracked_agent,
+)
 from ...domain.output_validation import validate_agent_output
 from .adk_resume import append_agent_reset_events
 from .errors import agent_failure_from_event, resolve_retry_agents
@@ -204,7 +208,9 @@ async def run_runner_with_per_agent_retry(
                 )
             run_kwargs["new_message"] = initial_message
         else:
-            raise ServiceError("Cannot start runner: no message and no invocation to resume")
+            raise ServiceError(
+                "Cannot start runner: no message and no invocation to resume"
+            )
 
         is_first_iteration = False
 

@@ -106,7 +106,11 @@ def extract_tracebacks(path: Path) -> list[dict[str, Any]]:
                 or lines[i].startswith("  File ")
                 or lines[i].startswith("Traceback")
             ):
-                if lines[i].strip() and not lines[i][0].isspace() and "Traceback" not in lines[i]:
+                if (
+                    lines[i].strip()
+                    and not lines[i][0].isspace()
+                    and "Traceback" not in lines[i]
+                ):
                     break
                 block_lines.append(lines[i])
                 i += 1
@@ -251,7 +255,9 @@ def analyze(events: list[LogEvent]) -> dict[str, Any]:
     ]
     otel_init_ok = sum(1 for e in otel_cloud if "initialized successfully" in e.message)
     otel_flush_ok = sum(1 for e in otel_cloud if "force_flush completed" in e.message)
-    otel_shutdown_ok = sum(1 for e in otel_cloud if "TracerProvider shut down" in e.message)
+    otel_shutdown_ok = sum(
+        1 for e in otel_cloud if "TracerProvider shut down" in e.message
+    )
     otel_flush_fail = [e for e in otel_cloud if "force_flush failed" in e.message]
 
     bq_telemetry = [
@@ -259,7 +265,9 @@ def analyze(events: list[LogEvent]) -> dict[str, Any]:
         for e in events
         if "insert_agent_telemetry_batch" in e.logger
         or "insert_agent_telemetry_batch" in e.message
-        or ("Side operation exhausted" in e.message and "telemetry" in e.message.lower())
+        or (
+            "Side operation exhausted" in e.message and "telemetry" in e.message.lower()
+        )
     ]
     bq_errors = [e for e in bq_telemetry if e.level == "ERROR"]
 
@@ -324,18 +332,30 @@ def render_report(
 
     sections.append("# Sales-Agent app.log error report\n")
     sections.append(f"**Generated:** {datetime.utcnow().isoformat()}Z\n")
-    sections.append(f"**Source:** `{app_path}` ({c['total_parsed_lines']} parsed log lines)\n")
+    sections.append(
+        f"**Source:** `{app_path}` ({c['total_parsed_lines']} parsed log lines)\n"
+    )
     if agent_path.exists():
-        sections.append(f"**Agent log:** `{agent_path}` ({agent_log_lines} lines; PlanReAct replan text only)\n")
+        sections.append(
+            f"**Agent log:** `{agent_path}` ({agent_log_lines} lines; PlanReAct replan text only)\n"
+        )
 
     sections.append("## Executive summary\n")
     sections.append(
         "| Finding | Verdict |\n|---------|--------|\n"
         f"| **OpenTelemetry (Cloud Trace)** | Init ×{c['otel_init_success']}, flush ×{c['otel_flush_success']}, shutdown ×{c['otel_shutdown_success']} — "
-        + ("**no flush failures**" if c["otel_flush_fail"] == 0 else f"**{c['otel_flush_fail']} flush failure(s)**")
+        + (
+            "**no flush failures**"
+            if c["otel_flush_fail"] == 0
+            else f"**{c['otel_flush_fail']} flush failure(s)**"
+        )
         + " |\n"
         f"| **Agent telemetry (BigQuery)** | **{c['bq_telemetry_errors']} ERROR(s)** — "
-        + ("schema/insert failures (see below)" if c["bq_telemetry_errors"] else "none in parsed ERROR lines")
+        + (
+            "schema/insert failures (see below)"
+            if c["bq_telemetry_errors"]
+            else "none in parsed ERROR lines"
+        )
         + " |\n"
         f"| **Production ERROR lines** (`88c3c885...`) | **{c['error_production']}** |\n"
         f"| **Test harness ERROR lines** (`no-trace`) | **{c['error_test']}** |\n"
@@ -343,24 +363,28 @@ def render_report(
         f"| **Gemini cache DEBUG noise** | {c['cache_creation_failed']} `Cache creation failed` lines |\n"
     )
 
-    sections.append("\n> **Important:** Log messages saying \"telemetry\" may refer to **BigQuery agent metrics** (`insert_agent_telemetry_batch`), not OpenTelemetry Cloud Trace (`otel_setup`).\n")
+    sections.append(
+        '\n> **Important:** Log messages saying "telemetry" may refer to **BigQuery agent metrics** (`insert_agent_telemetry_batch`), not OpenTelemetry Cloud Trace (`otel_setup`).\n'
+    )
 
     sections.append("## Two telemetry systems\n")
-    sections.append(md_table(
-        ["System", "Log markers", "Status"],
-        [
+    sections.append(
+        md_table(
+            ["System", "Log markers", "Status"],
             [
-                "OpenTelemetry → Cloud Trace",
-                "`src.core.otel_setup`, `_init_telemetry`, `flush_telemetry`, `shutdown_telemetry`",
-                f"OK — {c['otel_init_success']} inits, {c['otel_shutdown_success']} clean shutdowns",
+                [
+                    "OpenTelemetry → Cloud Trace",
+                    "`src.core.otel_setup`, `_init_telemetry`, `flush_telemetry`, `shutdown_telemetry`",
+                    f"OK — {c['otel_init_success']} inits, {c['otel_shutdown_success']} clean shutdowns",
+                ],
+                [
+                    "Agent telemetry → BigQuery",
+                    "`insert_agent_telemetry_batch`, `[Retry] Side operation exhausted`",
+                    f"{'FAILED' if c['bq_telemetry_errors'] else 'No ERROR'} — see BigQuery section",
+                ],
             ],
-            [
-                "Agent telemetry → BigQuery",
-                "`insert_agent_telemetry_batch`, `[Retry] Side operation exhausted`",
-                f"{'FAILED' if c['bq_telemetry_errors'] else 'No ERROR'} — see BigQuery section",
-            ],
-        ],
-    ))
+        )
+    )
 
     sections.append("## Agent retry — production Microsoft run\n")
     sections.append(
@@ -368,48 +392,54 @@ def render_report(
         "Job: `job_4cd5af53-ac4e-4948-b195-33e3eb6e9c2a` (from logs)\n\n"
     )
     sections.append("### Why retries happen (code paths)\n")
-    sections.append(md_table(
-        ["Mechanism", "Source file", "Trigger"],
-        [
+    sections.append(
+        md_table(
+            ["Mechanism", "Source file", "Trigger"],
             [
-                "Output validation",
-                "`src/services/research/run/resilience/runner_loop.py` → `validate_agent_output`",
-                "`MISSING_OUTPUT` if `output_key` empty; `REPORT_VALIDATION_FAILED` for ReportCompiler",
+                [
+                    "Output validation",
+                    "`src/services/research/run/resilience/runner_loop.py` → `validate_agent_output`",
+                    "`MISSING_OUTPUT` if `output_key` empty; `REPORT_VALIDATION_FAILED` for ReportCompiler",
+                ],
+                [
+                    "Retry approval",
+                    "`src/services/research/run/resilience/state.py` → `apply_retry`",
+                    "Up to `AGENT_RETRY_ATTEMPTS`; denies non-retryable `error_class`",
+                ],
+                [
+                    "Cold retry",
+                    "`pipeline.py` → `run_runner_with_per_agent_retry`",
+                    "Full pipeline re-invocation (not ADK session resume) for `MISSING_OUTPUT`",
+                ],
+                [
+                    "BQ telemetry side retry",
+                    "`src/services/research/finalization/operations.py` → `with_retry_sync`",
+                    "Separate from agent retry budget; exhausted at 2 attempts on insert failure",
+                ],
             ],
-            [
-                "Retry approval",
-                "`src/services/research/run/resilience/state.py` → `apply_retry`",
-                "Up to `AGENT_RETRY_ATTEMPTS`; denies non-retryable `error_class`",
-            ],
-            [
-                "Cold retry",
-                "`pipeline.py` → `run_runner_with_per_agent_retry`",
-                "Full pipeline re-invocation (not ADK session resume) for `MISSING_OUTPUT`",
-            ],
-            [
-                "BQ telemetry side retry",
-                "`src/services/research/finalization/operations.py` → `with_retry_sync`",
-                "Separate from agent retry budget; exhausted at 2 attempts on insert failure",
-            ],
-        ],
-    ))
+        )
+    )
 
     prod_rows = []
     for r in data["retry_prod"]:
-        prod_rows.append([
-            r.get("when", ""),
-            r.get("agent", "—"),
-            r.get("error_class", "—"),
-            r.get("action", ""),
-            r.get("attempt", "—"),
-            r.get("output_key", "—"),
-            str(r.get("line", "")),
-        ])
+        prod_rows.append(
+            [
+                r.get("when", ""),
+                r.get("agent", "—"),
+                r.get("error_class", "—"),
+                r.get("action", ""),
+                r.get("attempt", "—"),
+                r.get("output_key", "—"),
+                str(r.get("line", "")),
+            ]
+        )
     sections.append("### Retry timeline (production trace only)\n")
-    sections.append(md_table(
-        ["When", "Agent", "error_class", "Action", "Attempt", "output_key", "Line"],
-        prod_rows[:80],
-    ))
+    sections.append(
+        md_table(
+            ["When", "Agent", "error_class", "Action", "Attempt", "output_key", "Line"],
+            prod_rows[:80],
+        )
+    )
     if len(prod_rows) > 80:
         sections.append(f"\n_({len(prod_rows) - 80} more rows omitted.)_\n")
 
@@ -425,18 +455,22 @@ def render_report(
     all_retry_rows = []
     for r in data["retry_parsed"][:100]:
         seg = "prod" if PROD_TRACE_PREFIX in r.get("trace_id", "") else "test"
-        all_retry_rows.append([
-            seg,
-            r.get("when", ""),
-            r.get("agent", "—"),
-            r.get("error_class", "—"),
-            r.get("action", ""),
-            str(r.get("line", "")),
-        ])
-    sections.append(md_table(
-        ["Segment", "When", "Agent", "error_class", "Action", "Line"],
-        all_retry_rows,
-    ))
+        all_retry_rows.append(
+            [
+                seg,
+                r.get("when", ""),
+                r.get("agent", "—"),
+                r.get("error_class", "—"),
+                r.get("action", ""),
+                str(r.get("line", "")),
+            ]
+        )
+    sections.append(
+        md_table(
+            ["Segment", "When", "Agent", "error_class", "Action", "Line"],
+            all_retry_rows,
+        )
+    )
 
     sections.append("## BigQuery agent telemetry errors\n")
     bq_rows = []
@@ -458,19 +492,26 @@ def render_report(
     sections.append("## OpenTelemetry (Cloud Trace) events\n")
     otel_rows = []
     for e in data["otel_cloud"]:
-        if e.level in ("ERROR", "WARNING") or "success" in e.message.lower() or "shut down" in e.message or "flush" in e.message:
+        if (
+            e.level in ("ERROR", "WARNING")
+            or "success" in e.message.lower()
+            or "shut down" in e.message
+            or "flush" in e.message
+        ):
             otel_rows.append([e.timestamp, e.level, e.message[:100], str(e.line_no)])
     sections.append(md_table(["When", "Level", "Message", "Line"], otel_rows[-40:]))
 
     sections.append("## ERROR summary by category\n")
     cat_counts: Counter[str] = Counter()
-    for sig, evs in data["error_sigs"].items():
+    for _sig, evs in data["error_sigs"].items():
         if evs:
             cat_counts[categorize_error(evs[0].message, evs[0].logger)] += len(evs)
-    sections.append(md_table(
-        ["Category", "Count"],
-        [[k, str(v)] for k, v in cat_counts.most_common()],
-    ))
+    sections.append(
+        md_table(
+            ["Category", "Count"],
+            [[k, str(v)] for k, v in cat_counts.most_common()],
+        )
+    )
 
     sections.append("## ERROR signatures (deduplicated)\n")
     sig_rows = []
@@ -478,23 +519,29 @@ def render_report(
         evs_sorted = sorted(evs, key=lambda e: e.timestamp)
         cat = categorize_error(evs[0].message, evs[0].logger)
         seg = "prod" if any(e.is_production for e in evs) else "test"
-        sig_rows.append([
-            str(len(evs)),
-            seg,
-            cat,
-            evs_sorted[0].timestamp,
-            evs_sorted[-1].timestamp,
-            sig[:100],
-        ])
-    sections.append(md_table(
-        ["Count", "Segment", "Category", "First", "Last", "Message (normalized)"],
-        sig_rows,
-    ))
+        sig_rows.append(
+            [
+                str(len(evs)),
+                seg,
+                cat,
+                evs_sorted[0].timestamp,
+                evs_sorted[-1].timestamp,
+                sig[:100],
+            ]
+        )
+    sections.append(
+        md_table(
+            ["Count", "Segment", "Category", "First", "Last", "Message (normalized)"],
+            sig_rows,
+        )
+    )
 
     sections.append("## Production ERROR lines (full)\n")
     prod_err_rows = []
     for e in data["errors_prod"]:
-        prod_err_rows.append([e.timestamp, e.logger.split(".")[-1][:40], e.message[:150], str(e.line_no)])
+        prod_err_rows.append(
+            [e.timestamp, e.logger.split(".")[-1][:40], e.message[:150], str(e.line_no)]
+        )
     sections.append(md_table(["When", "Logger", "Message", "Line"], prod_err_rows))
 
     sections.append("## Test harness ERROR lines (sample)\n")
@@ -504,27 +551,51 @@ def render_report(
     sections.append(md_table(["When", "Message", "Line"], test_err_rows))
 
     sections.append("## Infrastructure noise\n")
-    sections.append(f"- `Cache creation failed` (Gemini context cache): **{c['cache_creation_failed']}** DEBUG lines (non-fatal)\n")
+    sections.append(
+        f"- `Cache creation failed` (Gemini context cache): **{c['cache_creation_failed']}** DEBUG lines (non-fatal)\n"
+    )
 
     sections.append("## Tracebacks\n")
     if tracebacks:
         for tb in tracebacks[:10]:
-            sections.append(f"### Lines {tb['start_line']}–{tb['end_line']}\n```\n{tb['text'][:2000]}\n```\n")
+            sections.append(
+                f"### Lines {tb['start_line']}–{tb['end_line']}\n```\n{tb['text'][:2000]}\n```\n"
+            )
     else:
         sections.append("_No tracebacks found in app.log._\n")
 
     sections.append("## Code map (log → source)\n")
-    sections.append(md_table(
-        ["Log function / message", "File"],
-        [
-            ["`validate_agent_output`, `run_runner_with_per_agent_retry`", "`src/services/research/run/resilience/runner_loop.py`"],
-            ["`apply_retry`, `prepare_agent_retry`", "`src/services/research/run/resilience/state.py`"],
-            ["`insert_agent_telemetry_batch`", "`src/repositories/bigquery_repository.py`"],
-            ["`with_retry` side operations", "`src/services/research/finalization/operations.py`"],
-            ["`setup_telemetry`, `flush_telemetry`, `shutdown_telemetry`", "`src/core/otel_setup.py`"],
-            ["`track_agent_end`, telemetry records", "`src/services/research/run/telemetry.py`"],
-        ],
-    ))
+    sections.append(
+        md_table(
+            ["Log function / message", "File"],
+            [
+                [
+                    "`validate_agent_output`, `run_runner_with_per_agent_retry`",
+                    "`src/services/research/run/resilience/runner_loop.py`",
+                ],
+                [
+                    "`apply_retry`, `prepare_agent_retry`",
+                    "`src/services/research/run/resilience/state.py`",
+                ],
+                [
+                    "`insert_agent_telemetry_batch`",
+                    "`src/repositories/bigquery_repository.py`",
+                ],
+                [
+                    "`with_retry` side operations",
+                    "`src/services/research/finalization/operations.py`",
+                ],
+                [
+                    "`setup_telemetry`, `flush_telemetry`, `shutdown_telemetry`",
+                    "`src/core/otel_setup.py`",
+                ],
+                [
+                    "`track_agent_end`, telemetry records",
+                    "`src/services/research/run/telemetry.py`",
+                ],
+            ],
+        )
+    )
 
     return "\n".join(sections)
 
@@ -544,7 +615,11 @@ def main() -> None:
 
     events = parse_log_file(app_path)
     tracebacks = extract_tracebacks(app_path)
-    agent_log_lines = len(agent_path.read_text(encoding="utf-8", errors="replace").splitlines()) if agent_path.exists() else 0
+    agent_log_lines = (
+        len(agent_path.read_text(encoding="utf-8", errors="replace").splitlines())
+        if agent_path.exists()
+        else 0
+    )
 
     data = analyze(events)
     report = render_report(app_path, agent_path, data, tracebacks, agent_log_lines)

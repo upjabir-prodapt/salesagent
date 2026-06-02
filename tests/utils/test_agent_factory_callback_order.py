@@ -13,4 +13,3 @@ def test_plan_react_callback_order_source_contract():
     assert "before_tool_callback=[plan_before_tool, before_tool_callback]" in source
     assert "after_tool_callback=[plan_after_tool, after_tool_callback]" in source
     assert "after_agent_callback=[plan_after_agent, after_agent_callback]" in source
-
