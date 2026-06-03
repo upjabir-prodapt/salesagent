@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from src.core.config import settings
-from src.core.exceptions import AgentOutputError
 from src.services.research.agents.sales.tools.report_validation import (
     validate_final_report,
 )
@@ -27,7 +26,7 @@ class _GuardrailResult:
 
 
 @pytest.mark.asyncio
-async def test_report_verification_never_allows_final_answer_on_failed_status(
+async def test_report_verification_exhausted_attempts_is_nonfatal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _fake_validate(self, draft: str, raw_search_cache=None):
@@ -43,11 +42,12 @@ async def test_report_verification_never_allows_final_answer_on_failed_status(
     monkeypatch.setattr(settings, "OUTPUT_GUARDRAIL_MAX_RETRIES", 1)
 
     state = {"report_validation_attempts": 1}
-    with pytest.raises(AgentOutputError) as exc_info:
-        await validate_final_report("## draft", _ToolContextStub(state))
+    response = await validate_final_report("## draft", _ToolContextStub(state))
 
-    assert exc_info.value.error_class == "REPORT_VALIDATION_FAILED"
-    assert "Maximum validation attempts exhausted" in str(exc_info.value)
+    assert response["status"] == "FAILED"
+    assert response["attempt"] == 2
+    assert response["max_attempts"] == 2
+    assert "Maximum validation attempts reached" in response["message"]
     assert state["report_validation_status"] == "FAILED"
     assert state["report_validation_terminal"] is True
 

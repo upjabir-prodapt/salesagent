@@ -40,7 +40,7 @@ def make_search_agent_tool(
     """Create a fresh GoogleSearchAgentTool wrapping a single-turn google_search LlmAgent."""
     search_agent = LlmAgent(
         name=SEARCH_AGENT_NAME,
-        model=Gemini(model=settings.GEMINI_MODEL, retry_options=retry_config),
+        model=Gemini(model=settings.SEARCH_AGENT_MODEL, retry_options=retry_config),
         description=description,
         instruction=instruction,
         tools=[google_search],

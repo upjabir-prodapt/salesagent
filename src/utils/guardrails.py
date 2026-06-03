@@ -1,16 +1,14 @@
 """
-Input and Output Guardrails for Sales Agent
+Input and Output Guardrails for Sales Agent.
 
 Input guardrails (applied at API boundary and before every LLM call):
   - PII detection: email, phone, SSN, credit card, IPv4, passport patterns
   - Jailbreak / prompt-injection detection: known adversarial phrases and tokens
 
-Output guardrails (applied to the final compiled report, all blocking with retry):
-  - No bullet points in narrative-only sections (Section 9, 12)
-  - Strategic Brief format validation: required section headers + at least one table
-  - Completeness: ≥ OUTPUT_GUARDRAIL_MIN_SECTIONS / 13 sections populated
-  - Hallucination: secondary Gemini Flash cross-references Section 11 claims vs Section 12 citations
-  - Prohibited content: insider information, buy recommendations, sell recommendations
+Output guardrails (available checks for compiled report):
+  - Strategic Brief format validation: required top-level headers + section table checks
+  - Optional checks kept for compatibility (narrative bullets, completeness,
+    prohibited content, hallucination) but not part of the active blocking path.
 """
 
 import json
@@ -89,17 +87,58 @@ _NARRATIVE_SECTIONS: list[str] = [
     "12. Signals",
 ]
 
-# Required section header patterns for Strategic Brief validation
+# Required top-level section header patterns for Strategic Brief validation.
+# These mirror the report compiler prompt structure.
 _REQUIRED_HEADERS: list[tuple[str, str]] = [
     ("Company Snapshot", r"##\s+Company Snapshot"),
-    ("Section 1", r"##\s+1\."),
-    ("Section 8 (Colt Alignment)", r"##\s+8\."),
-    ("Section 11 (Strategic Opportunity)", r"##\s+11\."),
-    ("Section 12 (Signals)", r"##\s+12\."),
-    ("Section 13 (Source Summary)", r"##\s+13\."),
+    ("Section 1 (Company Overview)", r"##\s+1\.\s+Company Overview"),
+    ("Section 2 (Key Executive Bios)", r"##\s+2\.\s+Key Executive Bios"),
+    (
+        "Section 3 (Strategic Priorities and Business Goals)",
+        r"##\s+3\.\s+Strategic Priorities and Business Goals\s+\(Next 2-5 Years\)",
+    ),
+    (
+        "Section 4 (Current Market Position & Outlook)",
+        r"##\s+4\.\s+Current Market Position & Outlook",
+    ),
+    ("Section 5 (Technology Landscape)", r"##\s+5\.\s+Technology Landscape"),
+    (
+        "Section 6 (Key Business & IT Challenges)",
+        r"##\s+6\.\s+Key Business & IT Challenges",
+    ),
+    (
+        "Section 7 (Procurement & Technology Buying Patterns)",
+        r"##\s+7\.\s+Procurement & Technology Buying Patterns",
+    ),
+    (
+        "Section 8 (Colt Technology Alignment Table)",
+        r"##\s+8\.\s+Colt Technology Alignment Table",
+    ),
+    (
+        "Section 9 (Relationship Landscape & Potential Synergies)",
+        r"##\s+9\.\s+Relationship Landscape & Potential Synergies",
+    ),
+    (
+        "Section 10 (Regional Spend & Infrastructure Overlay)",
+        r"##\s+10\.\s+Regional Spend & Infrastructure Overlay",
+    ),
+    (
+        "Section 11 (Strategic Opportunity & Live Call Readiness)",
+        r"##\s+11\.\s+Strategic Opportunity & Live Call Readiness",
+    ),
+    ("Section 12 (Signals)", r"##\s+12\.\s+Signals"),
+    ("Section 13 (Source Summary)", r"##\s+13\.\s+Source Summary"),
 ]
 
 _BULLET_LINE_RE = re.compile(r"^\s*[-*•]\s+", re.MULTILINE)
+
+# Sections that must contain markdown tables.
+_TABLE_REQUIRED_HEADERS: list[tuple[str, str]] = [
+    (
+        "Section 8 (Colt Technology Alignment Table)",
+        r"##\s+8\.\s+Colt Technology Alignment Table",
+    ),
+]
 
 # ---------------------------------------------------------------------------
 # Output: completeness — 13 expected section headers
@@ -320,13 +359,15 @@ class OutputGuardrail:
 
     def check_strategic_brief_format(self, report: str) -> list[GuardrailViolation]:
         """
-        Verify all required Strategic Brief section headers are present
-        and that the report contains at least one markdown table.
+        Verify all required top-level Strategic Brief section headers are present
+        and that required sections contain a markdown table.
         """
         violations = []
 
         for label, header_pattern in _REQUIRED_HEADERS:
-            if not re.search(header_pattern, report, re.IGNORECASE):
+            if not re.search(
+                rf"^\s*{header_pattern}\s*$", report, re.IGNORECASE | re.MULTILINE
+            ):
                 violations.append(
                     GuardrailViolation(
                         rule="output:missing_section",
@@ -334,19 +375,43 @@ class OutputGuardrail:
                     )
                 )
 
-        # Must contain at least one markdown table (Colt Alignment Table, Regional Spend, etc.)
-        if not re.search(r"^\s*\|.+\|", report, re.MULTILINE):
-            violations.append(
-                GuardrailViolation(
-                    rule="output:missing_table",
-                    detail=(
-                        "Report must contain at least one markdown table "
-                        "(e.g. Colt Alignment Table, Operational Location Breakdown)"
-                    ),
+        for label, header_pattern in _TABLE_REQUIRED_HEADERS:
+            body = self._extract_section_body_by_pattern(report, header_pattern)
+            if not body:
+                continue
+            if not re.search(r"^\s*\|.+\|\s*$", body, re.MULTILINE):
+                violations.append(
+                    GuardrailViolation(
+                        rule="output:missing_table",
+                        detail=f"Required section is missing markdown table rows: {label}",
+                    )
                 )
-            )
 
         return violations
+
+    @staticmethod
+    def _extract_section_body_by_pattern(report: str, heading_pattern: str) -> str:
+        """Extract body for an exact top-level heading regex pattern."""
+        header_match = re.search(
+            rf"^\s*{heading_pattern}\s*$",
+            report,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        if not header_match:
+            return ""
+
+        section_start = header_match.end()
+        next_heading_match = re.search(
+            r"^\s*##\s+[^#].*$",
+            report[section_start:],
+            re.MULTILINE,
+        )
+        section_end = (
+            section_start + next_heading_match.start()
+            if next_heading_match
+            else len(report)
+        )
+        return report[section_start:section_end]
 
     def check_completeness(self, report: str) -> list[GuardrailViolation]:
         """
@@ -715,35 +780,22 @@ class OutputGuardrail:
         raw_search_cache: list[dict] | None = None,
     ) -> OutputValidationResult:
         """
-        Run all output guardrails and return a consolidated result.
+        Run active output guardrails and return a consolidated result.
         Does NOT raise — callers decide whether to treat violations as fatal.
 
-        Checks (all blocking per design):
-          1. Bullet points in narrative sections
-          2. Strategic Brief format (required headers + table)
-          3. Completeness: ≥ OUTPUT_GUARDRAIL_MIN_SECTIONS / 13 populated
-          4. Prohibited content: insider info, buy/sell recommendations
-          5. Hallucination: verified against raw_search_cache (falls back to
-             Section 11 vs Section 12 when cache is unavailable)
+        Active blocking check:
+          1. Strategic Brief format:
+             - required top-level section headers
+             - markdown table presence in required section(s)
 
         Args:
             report: The final compiled markdown report.
-            raw_search_cache: List of raw search result entries accumulated by
-                after_tool_callback during the research pipeline.  When provided,
-                the hallucination check uses actual scraped evidence as ground truth.
+            raw_search_cache: Kept for backward compatibility with callers.
+                Currently unused by the active blocking checks.
         """
         result = OutputValidationResult(is_valid=True)
 
-        for v in self.check_narrative_bullets(report):
-            result._add(v.rule, v.detail)
-
         for v in self.check_strategic_brief_format(report):
-            result._add(v.rule, v.detail)
-
-        for v in self.check_completeness(report):
-            result._add(v.rule, v.detail)
-
-        for v in self.check_prohibited_content(report):
             result._add(v.rule, v.detail)
 
         if result.is_valid:

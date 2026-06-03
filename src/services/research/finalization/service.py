@@ -16,6 +16,38 @@ from .operations import (
     run_telemetry_flush_op,
 )
 
+# PyMuPDF Story supports th/td CSS only (not tr-level styling).
+_REPORT_PDF_CSS = """
+body {
+    font-family: Helvetica, Arial, sans-serif;
+    line-height: 1.4;
+    background-color: transparent;
+}
+@page {
+    margin: 1in;
+    background-color: white;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    margin-bottom: 20px;
+    page-break-inside: auto;
+}
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+    font-size: 9pt;
+    vertical-align: top;
+    background-color: transparent;
+}
+th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+"""
+
 
 class ResearchFinalizationService:
     """Run non-fatal side operations after the main research loop."""
@@ -36,7 +68,7 @@ class ResearchFinalizationService:
         from markdown_pdf import MarkdownPdf, Section
 
         pdf = MarkdownPdf(toc_level=0)
-        pdf.add_section(Section(final_report))
+        pdf.add_section(Section(final_report), user_css=_REPORT_PDF_CSS)
         pdf_buffer = io.BytesIO()
         pdf.save(pdf_buffer)
         return pdf_buffer.getvalue()

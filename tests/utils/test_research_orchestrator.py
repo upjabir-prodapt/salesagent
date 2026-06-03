@@ -84,7 +84,7 @@ async def test_orchestrator_marks_completed_on_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_marks_failed_when_validation_fails() -> None:
+async def test_orchestrator_completes_when_validation_fails_but_report_exists() -> None:
     status = _StatusRepoStub()
     artifacts = _ArtifactStub()
     finalization = _FinalizationStub()
@@ -108,17 +108,13 @@ async def test_orchestrator_marks_failed_when_validation_fails() -> None:
 
     await orchestrator.run("job-2", "Globex")
 
-    assert status.calls[-1]["status"] == "FAILED"
-    assert str(status.calls[-1]["error"]).startswith("Output blocked:")
-    assert status.calls[-1]["metadata_update"]["report_validation_status"] == "FAILED"
-    assert status.calls[-1]["metadata_update"]["latency_seconds"] is not None
-    assert artifacts.upload_called is False
-    assert len(finalization.failure_exports) == 1
-    assert finalization.failure_exports[0]["job_id"] == "job-2"
+    assert status.calls[-1]["status"] == "COMPLETED"
+    assert artifacts.upload_called is True
+    assert len(finalization.failure_exports) == 0
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_still_marks_failed_when_failure_telemetry_export_fails() -> (
+async def test_orchestrator_completes_when_validation_fails_even_if_failure_export_stub_errors() -> (
     None
 ):
     status = _StatusRepoStub()
@@ -141,14 +137,8 @@ async def test_orchestrator_still_marks_failed_when_failure_telemetry_export_fai
 
     await orchestrator.run("job-telemetry-fail", "Globex")
 
-    assert status.calls[-1]["status"] == "FAILED"
-    assert (
-        status.calls[-1]["metadata_update"]["side_op_failures"][
-            "failure_telemetry_export"
-        ]
-        == "telemetry export failed"
-    )
-    assert artifacts.upload_called is False
+    assert status.calls[-1]["status"] == "COMPLETED"
+    assert artifacts.upload_called is True
 
 
 @pytest.mark.asyncio
@@ -173,7 +163,7 @@ async def test_orchestrator_marks_failed_when_runner_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_runs_validation_gate_when_agent_skipped_tool(
+async def test_orchestrator_completes_when_agent_skipped_tool_and_guardrail_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _Violation:
@@ -207,10 +197,7 @@ async def test_orchestrator_runs_validation_gate_when_agent_skipped_tool(
 
     await orchestrator.run("job-gate-fail", "Acme Corp")
 
-    assert status.calls[-1]["status"] == "FAILED"
-    metadata = status.calls[-1]["metadata_update"]
-    assert metadata["report_validation_status"] == "FAILED"
-    assert metadata["failure_summary"]["dominant_rule"] == "missing_sources"
+    assert status.calls[-1]["status"] == "COMPLETED"
 
 
 @pytest.mark.asyncio

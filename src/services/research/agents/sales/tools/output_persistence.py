@@ -10,6 +10,10 @@ from google.adk.planners.plan_re_act_planner import FINAL_ANSWER_TAG
 from ......core.logging_config import logger
 
 PLANNER_TAG_RE = re.compile(r"/\*[A-Z_]+\*/")
+CONTROL_TAG_RE = re.compile(
+    r"/\*(PLANNING|AGGREGATED_ANSWER|ACTION|FINAL_ANSWER|REPLANNING)\*/",
+    re.IGNORECASE,
+)
 
 _FINAL_ANSWER_SPLIT_RE = re.compile(
     re.escape(FINAL_ANSWER_TAG) + r"\s*",
@@ -27,6 +31,19 @@ def extract_final_answer_payload(text: str) -> str | None:
     payload = parts[-1] if len(parts) > 1 else text
     payload = PLANNER_TAG_RE.sub("", payload).strip()
     return payload or None
+
+
+def normalize_report_payload(text: str) -> str | None:
+    """Normalize visible model text into clean report markdown."""
+    if not text or not text.strip():
+        return None
+    final_answer_payload = extract_final_answer_payload(text)
+    if final_answer_payload:
+        return final_answer_payload
+    chunks = [chunk.strip() for chunk in CONTROL_TAG_RE.split(text) if chunk.strip()]
+    candidate = chunks[-1] if chunks else text
+    cleaned = PLANNER_TAG_RE.sub("", candidate).strip()
+    return cleaned or None
 
 
 def has_nonempty_output(state: dict[str, Any], output_key: str) -> bool:
@@ -48,11 +65,11 @@ def persist_output_key(
             f"(already populated)"
         )
         return False
-    payload = extract_final_answer_payload(text) or text.strip()
+    payload = normalize_report_payload(text)
     if not payload:
         logger.warning(
             f"[Persist] Could not extract payload for agent={agent_name} "
-            f"output_key={output_key!r} (missing or empty FINAL_ANSWER)"
+            f"output_key={output_key!r} (empty normalized report payload)"
         )
         return False
     state[output_key] = payload

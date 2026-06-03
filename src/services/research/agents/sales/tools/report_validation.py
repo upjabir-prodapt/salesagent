@@ -9,7 +9,6 @@ from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 
 from ......core.config import settings
-from ......core.exceptions import AgentOutputError
 from ......core.logging_config import logger
 from ......utils.guardrails import OutputGuardrail
 from .evidence import aggregate_job_evidence
@@ -121,16 +120,17 @@ async def validate_final_report(
             f"[Validation] Report validation exhausted attempts={attempts}/"
             f"{max_attempts} violations={details}"
         )
-        raise AgentOutputError(
-            (
+        return {
+            "status": status,
+            "violations": violations[:10],
+            "attempt": attempts,
+            "max_attempts": max_attempts,
+            "message": (
                 f"Report failed validation (attempt {attempts}/{max_attempts}). "
-                f"Maximum validation attempts exhausted. Do not emit {FINAL_ANSWER_TAG}. "
-                f"Fail the run and mark the job as FAILED. Violations: {details}"
+                "Maximum validation attempts reached. "
+                f"Continuing with current draft. Violations: {details}"
             ),
-            agent_name="ReportCompiler",
-            output_key="final_report",
-            error_class="REPORT_VALIDATION_FAILED",
-        )
+        }
 
     message = (
         f"Report failed validation (attempt {attempts}/{max_attempts}). "

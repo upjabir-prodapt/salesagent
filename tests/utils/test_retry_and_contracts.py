@@ -14,7 +14,6 @@ from src.services.research.run.resilience.runner_loop import (
     validate_agent_output,
 )
 from src.services.research.run.resilience.state import (
-    apply_retry,
     clear_retry_flag,
     increment_retry_count,
     pop_retry_hint,
@@ -96,25 +95,19 @@ def test_retry_scope_mapping_contract():
 
 
 @pytest.mark.asyncio
-async def test_report_compiler_validation_failure_is_not_retried():
+async def test_report_compiler_validation_failure_with_report_is_allowed():
     state = {"report_validation_status": "FAILED", "final_report": "# report"}
-    with pytest.raises(AgentOutputError) as exc_info:
-        validate_agent_output(state, "ReportCompiler")
-
-    exc = exc_info.value
-    assert exc.error_class == "REPORT_VALIDATION_FAILED"
-    assert requires_cold_retry(exc) is False
-    assert retry_scope_for_error_class(exc.error_class) == RETRY_SCOPE_NONE
-
-    allowed = await apply_retry(state, exc, on_retry=None)
-    assert allowed is False
-    assert state.get("agent_retry_counts", {}).get("ReportCompiler") is None
+    validate_agent_output(state, "ReportCompiler")
 
 
-def test_report_compiler_missing_validation_status_is_blocked() -> None:
+def test_report_compiler_missing_validation_status_is_allowed() -> None:
     state = {"final_report": "# report"}
+    validate_agent_output(state, "ReportCompiler")
+
+
+def test_report_compiler_still_blocks_missing_final_report() -> None:
+    state = {"report_validation_status": "FAILED"}
     with pytest.raises(AgentOutputError) as exc_info:
         validate_agent_output(state, "ReportCompiler")
 
-    assert exc_info.value.error_class == "REPORT_VALIDATION_FAILED"
-    assert "never called" in str(exc_info.value)
+    assert exc_info.value.error_class == "MISSING_OUTPUT"

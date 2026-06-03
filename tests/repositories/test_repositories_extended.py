@@ -141,9 +141,10 @@ def test_download_markdown(gcs_repo, mock_storage_client):
     assert content == "# Content"
 
 
-def test_get_signed_url_gs_uri(gcs_repo, mock_storage_client):
+def test_get_signed_url_gs_uri(gcs_repo, mock_storage_client, monkeypatch):
     mock_blob = MagicMock()
     mock_storage_client.bucket.return_value.blob.return_value = mock_blob
+    monkeypatch.setattr(gcs_repo, "_resolve_signing_kwargs", lambda: {})
     gcs_repo.get_signed_url("gs://bucket/path/to/blob")
     mock_storage_client.bucket.return_value.blob.assert_called_with("path/to/blob")
 

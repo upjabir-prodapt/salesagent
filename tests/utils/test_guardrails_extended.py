@@ -169,25 +169,39 @@ async def test_output_guardrail_hallucination_check_with_cache_functional(
 
 @pytest.mark.asyncio
 async def test_output_guardrail_integration_success(mock_settings):
-    """Functional integration test: A well-formatted report should pass all checks."""
+    """Functional integration test: structure + table scoped validation passes."""
     og = OutputGuardrail()
     report = """
 ## Company Snapshot
 Details here.
-## 1. 
-## 8.
-## 11.
-## 12.
+## 1. Company Overview
+Details.
+## 2. Key Executive Bios
+Details.
+## 3. Strategic Priorities and Business Goals (Next 2-5 Years)
+Details.
+## 4. Current Market Position & Outlook
+Details.
+## 5. Technology Landscape
+Details.
+## 6. Key Business & IT Challenges
+Details.
+## 7. Procurement & Technology Buying Patterns
+Details.
+## 8. Colt Technology Alignment Table
+| Business / IT Challenge or Priority | Colt Solution Enabler(s) | Alignment Justification |
+| --- | --- | --- |
+| Legacy network performance | Colt DIA | Improves reliability |
+## 9. Relationship Landscape & Potential Synergies
+Signals in narrative form.
+## 10. Regional Spend & Infrastructure Overlay
+Details.
+## 11. Strategic Opportunity & Live Call Readiness
+Details.
+## 12. Signals
 Signals prose here.
-## 13.
-| Feature | Supported |
-|---------|-----------|
-| Yes     | True      |
+## 13. Source Summary
+https://example.com/source
     """
-    # Fix: Patch settings locally in guardrails module to ensure the requirement is met
-    with patch("src.utils.guardrails.settings") as mock_s:
-        mock_s.OUTPUT_GUARDRAIL_MIN_SECTIONS = 1
-        # Mock hallucinations to avoid external LLM calls during functional unit test
-        with patch.object(OutputGuardrail, "check_hallucinations", return_value=[]):
-            result = await og.validate(report)
-            assert result.is_valid is True
+    result = await og.validate(report)
+    assert result.is_valid is True

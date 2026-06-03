@@ -53,9 +53,38 @@ def test_agent_guardrail_prohibited(agent_guardrail):
 
 
 def test_output_guardrail_strategic_brief_format(output_guardrail):
-    report = "## Company Snapshot\nSome content"
+    report = """
+## Company Snapshot
+Some content
+## 1. Company Overview
+Some content
+## 2. Key Executive Bios
+Some content
+## 3. Strategic Priorities and Business Goals (Next 2-5 Years)
+Some content
+## 4. Current Market Position & Outlook
+Some content
+## 5. Technology Landscape
+Some content
+## 6. Key Business & IT Challenges
+Some content
+## 7. Procurement & Technology Buying Patterns
+Some content
+## 8. Colt Technology Alignment Table
+No markdown table here.
+## 9. Relationship Landscape & Potential Synergies
+Some content
+## 10. Regional Spend & Infrastructure Overlay
+Some content
+## 11. Strategic Opportunity & Live Call Readiness
+Some content
+## 12. Signals
+Signals prose
+## 13. Source Summary
+https://example.com/source
+"""
     violations = output_guardrail.check_strategic_brief_format(report)
-    # Should fail because many headers and tables are missing
+    # Should fail because Section 8 must include markdown table rows.
     assert len(violations) > 0
     assert any(v.rule == "output:missing_table" for v in violations)
 

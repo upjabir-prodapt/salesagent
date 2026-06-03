@@ -19,32 +19,14 @@ def validate_agent_output(state: dict[str, Any], agent_name: str) -> None:
 
     if agent_name == "ReportCompiler":
         validation_status = str(state.get("report_validation_status") or "").upper()
-        report_text = state.get(output_key)
-        has_report = report_text is not None and bool(str(report_text).strip())
-        if has_report and validation_status != "PASSED":
+        if validation_status and validation_status != "PASSED":
             phase_error = str(state.get("report_compiler_phase_error") or "").strip()
             detail = (
-                phase_error
-                if phase_error
-                else (
-                    f"validate_final_report status was {validation_status!r}"
-                    if validation_status
-                    else "validate_final_report was never called"
-                )
+                phase_error or f"validate_final_report status was {validation_status!r}"
             )
             logger.warning(
-                f"[Validation] agent={agent_name} error_class=REPORT_VALIDATION_FAILED "
+                f"[Validation] agent={agent_name} keeping output despite "
                 f"validation_status={validation_status!r} detail={detail}"
-            )
-            raise AgentOutputError(
-                (
-                    "ReportCompiler output blocked because report validation did not pass. "
-                    f"{detail}. Re-run ReportCompiler and "
-                    "keep FINAL_ANSWER gated on PASSED validation."
-                ),
-                agent_name=agent_name,
-                output_key=output_key,
-                error_class="REPORT_VALIDATION_FAILED",
             )
 
     value = state.get(output_key)

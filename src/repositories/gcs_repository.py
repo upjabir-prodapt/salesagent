@@ -2,6 +2,9 @@ import json
 from datetime import timedelta
 from typing import Any
 
+import google.auth
+import requests
+from google.auth.transport import requests as auth_requests
 from google.cloud import storage  # type: ignore
 
 from ..core.config import settings
@@ -142,11 +145,42 @@ class GCSRepository:
             logger.error(f"Unexpected error downloading markdown: {e}")
             return None
 
+    def _resolve_signing_kwargs(self) -> dict[str, Any]:
+        """Build kwargs for V4 signing (key file or IAM signBlob on GCE/Cloud Run)."""
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        auth_request = auth_requests.Request()
+        if not credentials.valid:
+            credentials.refresh(auth_request)
+
+        if getattr(credentials, "signer", None) is not None:
+            return {}
+
+        service_account_email = getattr(credentials, "service_account_email", None)
+        if not service_account_email:
+            response = requests.get(
+                "http://metadata.google.internal/computeMetadata/v1/"
+                "instance/service-accounts/default/email",
+                headers={"Metadata-Flavor": "Google"},
+                timeout=2,
+            )
+            response.raise_for_status()
+            service_account_email = response.text
+
+        return {
+            "service_account_email": service_account_email,
+            "access_token": credentials.token,
+        }
+
     def get_signed_url(
-        self, blob_name_or_uri: str, expiration: timedelta = timedelta(hours=1)
+        self, blob_name_or_uri: str, expiration: timedelta | None = None
     ) -> str | None:
         """Generate a signed URL for a GCS object"""
         try:
+            if expiration is None:
+                expiration = timedelta(hours=settings.GCS_SIGNED_URL_EXPIRATION_HOURS)
+
             blob_name = blob_name_or_uri
             if blob_name_or_uri.startswith("gs://"):
                 # Remove 'gs://bucket_name/' from the string
@@ -160,6 +194,7 @@ class GCSRepository:
                 version="v4",
                 expiration=expiration,
                 method="GET",
+                **self._resolve_signing_kwargs(),
             )
         except Exception as e:
             logger.error(f"Unexpected error generating signed URL: {e}")

@@ -130,6 +130,7 @@ class Settings(BaseSettings):
 
     # Research / Gemini
     GEMINI_MODEL: str
+    SEARCH_AGENT_MODEL: str = "gemini-2.5-flash"
     RESEARCH_STATUS_MIN_UPDATE_INTERVAL_SECONDS: float
     GEMINI_RETRY_ATTEMPTS: int
     GEMINI_RETRY_INITIAL_DELAY: int

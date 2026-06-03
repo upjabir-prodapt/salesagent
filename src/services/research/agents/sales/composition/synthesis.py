@@ -14,7 +14,7 @@ def create_synthesis_agents():
         output_key="alignment_output",
         description="Maps company challenges to Colt solutions.",
         extra_tools=[colt_product_search_tool],
-        model=settings.EVALUATOR_MODEL,
+        model=settings.GEMINI_MODEL,
     )
 
     report_compiler = create_plan_react_agent(
@@ -25,7 +25,7 @@ def create_synthesis_agents():
         include_web_search=False,
         include_bm25_verify=False,
         extra_tools=[validate_final_report_tool],
-        model=settings.EVALUATOR_MODEL,
+        model=settings.GEMINI_MODEL,
     )
 
     return alignment_analyst, report_compiler

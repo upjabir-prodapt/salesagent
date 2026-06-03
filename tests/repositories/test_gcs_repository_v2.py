@@ -111,9 +111,32 @@ def test_get_signed_url_invalid_uri(gcs_repo, mock_storage_client):
     assert gcs_repo.get_signed_url("gs://bucket") is None
 
 
-def test_get_signed_url_exception(gcs_repo, mock_storage_client):
+def test_get_signed_url_uses_iam_signing(gcs_repo, mock_storage_client, monkeypatch):
+    mock_blob = mock_storage_client.bucket.return_value.blob.return_value
+    mock_blob.generate_signed_url.return_value = "https://storage.example/signed"
+
+    monkeypatch.setattr(
+        gcs_repo,
+        "_resolve_signing_kwargs",
+        lambda: {
+            "service_account_email": "sa@test.iam.gserviceaccount.com",
+            "access_token": "token",
+        },
+    )
+
+    url = gcs_repo.get_signed_url("gs://bucket/path/to/blob")
+
+    assert url == "https://storage.example/signed"
+    mock_blob.generate_signed_url.assert_called_once()
+    kwargs = mock_blob.generate_signed_url.call_args.kwargs
+    assert kwargs["service_account_email"] == "sa@test.iam.gserviceaccount.com"
+    assert kwargs["access_token"] == "token"
+
+
+def test_get_signed_url_exception(gcs_repo, mock_storage_client, monkeypatch):
     mock_blob = mock_storage_client.bucket.return_value.blob.return_value
     mock_blob.generate_signed_url.side_effect = Exception("Signed URL failed")
+    monkeypatch.setattr(gcs_repo, "_resolve_signing_kwargs", lambda: {})
 
     assert gcs_repo.get_signed_url("some-blob") is None
 

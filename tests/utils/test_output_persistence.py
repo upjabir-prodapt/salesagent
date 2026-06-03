@@ -61,3 +61,43 @@ def test_persist_output_from_events():
     )
     assert ok is True
     assert "growth" in state["growthsignals_output"]
+
+
+def test_persist_output_key_strips_control_tags_without_final_answer():
+    state: dict = {}
+    text = (
+        "/*PLANNING*/ checklist\n"
+        "/*ACTION*/ call validate_final_report\n"
+        "/*AGGREGATED_ANSWER*/\n"
+        "## Company Snapshot\n- Company Name: Acme"
+    )
+    ok = persist_output_key(
+        state,
+        agent_name="ReportCompiler",
+        output_key="final_report",
+        text=text,
+    )
+    assert ok is True
+    assert "/*PLANNING*/" not in state["final_report"]
+    assert "/*AGGREGATED_ANSWER*/" not in state["final_report"]
+    assert "## Company Snapshot" in state["final_report"]
+    assert "checklist" not in state["final_report"]
+
+
+def test_persist_output_key_prefers_final_answer_payload_and_strips_tags():
+    state: dict = {}
+    text = (
+        "/*PLANNING*/ notes\n"
+        f"{FINAL_ANSWER_TAG}\n"
+        "## Company Overview\n- Revenue: 100\n/*REPLANNING*/"
+    )
+    ok = persist_output_key(
+        state,
+        agent_name="ReportCompiler",
+        output_key="final_report",
+        text=text,
+    )
+    assert ok is True
+    assert "/*FINAL_ANSWER*/" not in state["final_report"]
+    assert "/*REPLANNING*/" not in state["final_report"]
+    assert "## Company Overview" in state["final_report"]
