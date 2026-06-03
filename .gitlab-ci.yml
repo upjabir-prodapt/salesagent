@@ -88,7 +88,7 @@ env-scope-check:
   allow_failure: true
   script:
   - |
-    required_vars="WORKLOAD_IDENTITY_PROJECT_NUMBER WORKLOAD_IDENTITY_POOL WORKLOAD_IDENTITY_PROVIDER SERVICE_ACCOUNT GCP_PROJECT_ID GCP_REGION ARTIFACT_REPO IMAGE_NAME CLOUD_RUN_NETWORK CLOUD_RUN_SUBNET CLOUD_RUN_SA CLOUD_RUN_SERVICE"
+    required_vars="WORKLOAD_IDENTITY_PROJECT_NUMBER WORKLOAD_IDENTITY_POOL WORKLOAD_IDENTITY_PROVIDER SERVICE_ACCOUNT GCP_PROJECT_ID GCP_REGION ARTIFACT_REPO IMAGE_NAME CLOUD_RUN_NETWORK CLOUD_RUN_SUBNET CLOUD_RUN_SA CLOUD_RUN_SERVICE SALES_AGENT_ENV_SECRET_VERSION"
     missing=0
 
     for var in $required_vars; do
@@ -185,7 +185,8 @@ deploy-cloud-run:
       --memory=4Gi \
       --cpu=2 \
       --no-cpu-throttling \
-      --set-secrets="/secrets/.env=sales-agent-service-env:1"
+      --set-env-vars="IS_LOCAL=false" \
+      --set-secrets="/secrets/.env=sales-agent-service-env:${SALES_AGENT_ENV_SECRET_VERSION}"
   rules:
   - if: $CI_COMMIT_BRANCH == "sandbox"
   - if: $CI_COMMIT_BRANCH == "dev"
