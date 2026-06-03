@@ -55,16 +55,20 @@ def test_insert_agent_telemetry_batch(repo, mock_bq_client):
 
 def test_get_request_result_success(repo, mock_bq_client):
     mock_row = MagicMock()
-    mock_row.items.return_value = [("status", "COMPLETED"), ("report_content", "text")]
     mock_row.status = "COMPLETED"
-    mock_row.report_content = "text"
-    mock_row.gcs_uri = "gs://..."
-    mock_row.model_version = "v1"
-    mock_row.tokens_used = 100
-    mock_row.latency_seconds = 1.0
-    mock_row.cost_usd = 0.01
+    mock_row.gcs_uri = "gs://test-bucket/job_123/report.md"
+    mock_row.metadata = None
 
     mock_bq_client.query.return_value.result.return_value = [mock_row]
 
-    result = repo.get_request_result("job_123")
+    mock_gcs = MagicMock()
+    mock_gcs.get_signed_url.return_value = "https://storage.example/signed"
+    mock_gcs.download_markdown.return_value = "# Report"
+
+    result = repo.get_request_result("job_123", gcs_repository=mock_gcs)
+    assert result is not None
     assert result["status"] == "COMPLETED"
+    assert result["report_content"] == "# Report"
+    assert result["download_url"] == "https://storage.example/signed"
+    mock_gcs.get_signed_url.assert_called_once_with(mock_row.gcs_uri)
+    mock_gcs.download_markdown.assert_called_once_with("job_123")
