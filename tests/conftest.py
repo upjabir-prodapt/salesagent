@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -52,7 +51,6 @@ def mock_env_vars():
 
     # Clean up after the session
     mp.undo()
-
 
 
 @pytest.fixture

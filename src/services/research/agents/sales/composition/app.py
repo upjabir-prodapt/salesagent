@@ -30,7 +30,9 @@ class SalesAgentAppFactory:
             tech_stack_agent,
         ) = PlanReActAgentFactory.build_research_lanes()
         signals_orchestrator = PlanReActAgentFactory.build_signals_orchestrator()
-        alignment_analyst, report_compiler = PlanReActAgentFactory.build_synthesis_agents()
+        alignment_analyst, report_compiler = (
+            PlanReActAgentFactory.build_synthesis_agents()
+        )
 
         logger.info("Creating ResearchOrchestrator (6 parallel sub-agents)...")
         research_orchestrator = ParallelAgent(
