@@ -19,11 +19,8 @@ stages:
 - test
 - build
 - deploy
+- promote
 variables:
-  WORKLOAD_IDENTITY_PROJECT_NUMBER: '297743845367'
-  WORKLOAD_IDENTITY_POOL: gitlab-pool
-  WORKLOAD_IDENTITY_PROVIDER: gitlab-provider
-  SERVICE_ACCOUNT: gitlab-deployer@aicoesandox.iam.gserviceaccount.com
   IMAGE_TAG: "$CI_PIPELINE_IID"
   DOCKER_TLS_CERTDIR: "/certs"
 sast:
@@ -42,6 +39,8 @@ sast:
   - container
   - codequality
 ".gcp_wif":
+  environment:
+    name: "$CI_COMMIT_BRANCH"
   id_tokens:
     WORKLOAD_IDENTITY_TOKEN:
       aud: https://iam.googleapis.com
@@ -74,6 +73,39 @@ pre-commit-lint:
   extends: ".python_ci"
   script:
   - uv run pre-commit run --all-files --show-diff-on-failure
+  rules:
+  - if: $CI_COMMIT_BRANCH == "sandbox"
+  - if: $CI_COMMIT_BRANCH == "dev"
+  - if: $CI_COMMIT_BRANCH == "prod"
+env-scope-check:
+  stage: lint
+  image: alpine:3.20
+  tags:
+  - docker1
+  environment:
+    name: "$CI_COMMIT_BRANCH"
+  when: manual
+  allow_failure: true
+  script:
+  - |
+    required_vars="WORKLOAD_IDENTITY_PROJECT_NUMBER WORKLOAD_IDENTITY_POOL WORKLOAD_IDENTITY_PROVIDER SERVICE_ACCOUNT GCP_PROJECT_ID GCP_REGION ARTIFACT_REPO IMAGE_NAME CLOUD_RUN_NETWORK CLOUD_RUN_SUBNET CLOUD_RUN_SA CLOUD_RUN_SERVICE"
+    missing=0
+
+    for var in $required_vars; do
+      if [ -n "$(printenv "$var")" ]; then
+        echo "OK: $var is set"
+      else
+        echo "MISSING: $var is not set for environment ${CI_COMMIT_BRANCH}"
+        missing=1
+      fi
+    done
+
+    if [ "$missing" -eq 1 ]; then
+      echo "One or more required environment-scoped variables are missing."
+      exit 1
+    fi
+
+    echo "All required environment-scoped variables are available."
   rules:
   - if: $CI_COMMIT_BRANCH == "sandbox"
   - if: $CI_COMMIT_BRANCH == "dev"
@@ -134,7 +166,7 @@ deploy-cloud-run:
   needs:
   - build-and-push
   environment:
-    name: "$ENV"
+    name: "$CI_COMMIT_BRANCH"
   when: manual
   script:
   - |
@@ -158,3 +190,28 @@ deploy-cloud-run:
   - if: $CI_COMMIT_BRANCH == "sandbox"
   - if: $CI_COMMIT_BRANCH == "dev"
   - if: $CI_COMMIT_BRANCH == "prod"
+promote-sandbox-to-dev:
+  stage: promote
+  image: alpine/git:2.47.2
+  tags:
+  - docker1
+  variables:
+    GIT_DEPTH: "0"
+  script:
+  - |
+    : "${GITLAB_PUSH_TOKEN:?Set masked+protected variable GITLAB_PUSH_TOKEN (scope: write_repository)}"
+
+    git fetch origin sandbox dev
+    SANDBOX_SHA="$(git rev-parse origin/sandbox)"
+    DEV_SHA="$(git rev-parse origin/dev)"
+
+    if ! git merge-base --is-ancestor "$DEV_SHA" "$SANDBOX_SHA"; then
+      echo "Cannot fast-forward dev from sandbox (dev has extra commits)."
+      echo "Please merge/rebase branches manually once, then rerun."
+      exit 1
+    fi
+
+    git push "https://oauth2:${GITLAB_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+      "${SANDBOX_SHA}:refs/heads/dev"
+  rules:
+  - if: $CI_COMMIT_BRANCH == "sandbox"
