@@ -1,6 +1,6 @@
 """ADK graph construction for sales research."""
 
-from .sales.build.app import SalesAgentAppFactory
+from .sales.composition.app import SalesAgentAppFactory
 
 
 def create_sales_agent_app():

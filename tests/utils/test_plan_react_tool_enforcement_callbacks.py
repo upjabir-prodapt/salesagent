@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.services.research.graph.sales.callbacks.plan_react import (
+from src.services.research.agents.sales.callbacks.plan_react import (
     ALIGNMENT_CATALOG_MISSING_FINAL_KEY,
     ALIGNMENT_CATALOG_SEARCH_COUNT_KEY,
     REPORT_COMPILER_PHASE_ERROR_KEY,
@@ -14,11 +14,11 @@ from src.services.research.graph.sales.callbacks.plan_react import (
     plan_after_tool,
     plan_before_model,
 )
-from src.services.research.graph.sales.tools import (
+from src.services.research.agents.sales.tools import (
     COLT_PRODUCT_SEARCH_TOOL,
     VALIDATE_FINAL_REPORT_TOOL,
 )
-from src.services.research.graph.sales.tools.evidence import verification_status_key
+from src.services.research.agents.sales.tools.evidence import verification_status_key
 
 
 @dataclass
@@ -80,7 +80,7 @@ def test_alignment_final_answer_without_catalog_search_sets_observability_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "src.services.research.graph.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
+        "src.services.research.agents.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
         lambda *args, **kwargs: None,
     )
     state = {verification_status_key("AlignmentAnalyst"): "PASSED"}
@@ -129,7 +129,7 @@ def test_report_compiler_direct_markdown_without_planreact_tags_fails_validation
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "src.services.research.graph.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
+        "src.services.research.agents.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
         lambda *args, **kwargs: None,
     )
     state: dict = {}
@@ -148,7 +148,7 @@ def test_report_compiler_final_answer_after_passed_validation_ignores_missing_ph
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "src.services.research.graph.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
+        "src.services.research.agents.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
         lambda *args, **kwargs: None,
     )
     state: dict = {
@@ -172,7 +172,7 @@ def test_report_compiler_final_answer_without_passed_validation_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "src.services.research.graph.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
+        "src.services.research.agents.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
         lambda *args, **kwargs: None,
     )
     state: dict = {
@@ -199,7 +199,7 @@ def test_alignment_catalog_counter_updates_after_tool_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "src.services.research.graph.sales.callbacks.plan_react.EvidenceStore.append_search_response",
+        "src.services.research.agents.sales.callbacks.plan_react.EvidenceStore.append_search_response",
         lambda *args, **kwargs: None,
     )
     state: dict = {}

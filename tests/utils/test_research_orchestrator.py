@@ -193,7 +193,7 @@ async def test_orchestrator_runs_validation_gate_when_agent_skipped_tool(
         )
 
     monkeypatch.setattr(
-        "src.services.research.graph.sales.tools.report_validation.OutputGuardrail.validate",
+        "src.services.research.agents.sales.tools.report_validation.OutputGuardrail.validate",
         _fake_validate,
     )
 
@@ -226,7 +226,7 @@ async def test_orchestrator_validation_gate_passes_when_agent_skipped_tool(
         return _GuardrailResult()
 
     monkeypatch.setattr(
-        "src.services.research.graph.sales.tools.report_validation.OutputGuardrail.validate",
+        "src.services.research.agents.sales.tools.report_validation.OutputGuardrail.validate",
         _fake_validate,
     )
 

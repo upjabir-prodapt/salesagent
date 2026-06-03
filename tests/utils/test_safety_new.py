@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from google.genai import types
 
-from src.services.research.graph.adk.safety import (
+from src.services.research.agents.adk.safety import (
     analyze_safety_block,
     create_safety_summary,
     format_safety_ratings,
@@ -22,7 +22,7 @@ def test_get_default_safety_settings(mock_settings):
 
     with (
         patch(
-            "src.services.research.graph.adk.safety.get_default_safety_settings",
+            "src.services.research.agents.adk.safety.get_default_safety_settings",
             wraps=get_default_safety_settings,
         ),
         patch("src.core.config.settings", mock_settings),
@@ -106,7 +106,7 @@ def test_is_safety_block():
 
 
 def test_log_safety_event(mock_settings):
-    with patch("src.services.research.graph.adk.safety.logger") as mock_logger:
+    with patch("src.services.research.agents.adk.safety.logger") as mock_logger:
         mock_settings.SAFETY_LOGGING_ENABLED = True
         log_safety_event("BLOCK", {"info": "test"}, level="ERROR")
         mock_logger.error.assert_called()
@@ -126,7 +126,7 @@ def test_log_safety_event(mock_settings):
 
 
 def test_log_safety_event_disabled(mock_settings):
-    with patch("src.services.research.graph.adk.safety.logger") as mock_logger:
+    with patch("src.services.research.agents.adk.safety.logger") as mock_logger:
         mock_settings.SAFETY_LOGGING_ENABLED = False
         log_safety_event("BLOCK", {"info": "test"})
         mock_logger.warning.assert_not_called()

@@ -2,8 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.services.research.graph.sales.build.lanes import PlanReActAgentFactory
-from src.services.research.graph.sales.prompts import (
+from src.services.research.agents.sales.composition.lanes import PlanReActAgentFactory
+from src.services.research.agents.sales.prompts import (
     EXECUTIVE_PROMPT,
     FIRMOGRAPHICS_PROMPT,
 )
@@ -18,10 +18,10 @@ def mock_agents():
     # We want to test the logic of the agents, not the LLM itself
     with (
         patch(
-            "src.services.research.graph.sales.build.lanes.create_plan_react_agent"
+            "src.services.research.agents.sales.composition.lanes.create_plan_react_agent"
         ) as mock_factory,
         patch(
-            "src.services.research.graph.sales.build.lanes.SequentialAgent"
+            "src.services.research.agents.sales.composition.lanes.SequentialAgent"
         ) as mock_sequential,
     ):
 
@@ -79,7 +79,7 @@ def test_no_bullet_points_instruction_in_guidelines():
     Test Case: No bullet points in narrative sections
     Objective: Verify that the global research guidelines forbid generic statements and prioritize specific formatting
     """
-    from src.services.research.graph.sales.prompts import RESEARCH_GUIDELINES
+    from src.services.research.agents.sales.prompts import RESEARCH_GUIDELINES
 
     # Although the 'no bullet points' is specifically a Compiler/Synthesis rule,
     # we verify that the agents are pushed towards specific, factual evidence over generic lists.
@@ -91,7 +91,7 @@ def test_report_compiler_enforces_no_bullets():
     Test Case: No bullet points in narrative sections
     Objective: Verify that the Report Compiler prompt explicitly forbids bullet points in Section 12
     """
-    from src.services.research.graph.sales.prompts import REPORT_COMPILER_PROMPT
+    from src.services.research.agents.sales.prompts import REPORT_COMPILER_PROMPT
 
     assert "no bullet points" in REPORT_COMPILER_PROMPT.lower()
     assert "dashes" in REPORT_COMPILER_PROMPT.lower()

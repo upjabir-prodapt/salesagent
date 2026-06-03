@@ -1,19 +1,19 @@
-from src.services.research.graph.sales.prompts import (
+from src.services.research.agents.sales.prompts import (
     ALIGNMENT_PROMPT,
     CAMPAIGN_SIGNALS_PROMPT,
     FIRMOGRAPHICS_PROMPT,
     REPORT_COMPILER_PROMPT,
 )
-from src.services.research.graph.sales.prompts.company_prompts import (
+from src.services.research.agents.sales.prompts.company_prompts import (
     FIRMOGRAPHICS_PROMPT as COMPANY_FIRMOGRAPHICS_PROMPT,
 )
-from src.services.research.graph.sales.prompts.signal_prompts import (
+from src.services.research.agents.sales.prompts.signal_prompts import (
     CAMPAIGN_SIGNALS_PROMPT as SIGNAL_CAMPAIGN_PROMPT,
 )
-from src.services.research.graph.sales.prompts.synthesis_alignment_prompts import (
+from src.services.research.agents.sales.prompts.synthesis_alignment_prompts import (
     ALIGNMENT_PROMPT as MOD_ALIGNMENT_PROMPT,
 )
-from src.services.research.graph.sales.prompts.synthesis_report_prompts import (
+from src.services.research.agents.sales.prompts.synthesis_report_prompts import (
     REPORT_COMPILER_PROMPT as MOD_REPORT_PROMPT,
 )
 

@@ -9,8 +9,8 @@ from opentelemetry.trace import Span
 from ....core.config import settings
 from ....core.logging_config import logger
 from ....utils.guardrails import GuardrailViolation
-from ..graph.sales.tools.evidence import aggregate_job_evidence
-from ..graph.sales.tools.report_validation import ensure_report_validated
+from ..agents.sales.tools.evidence import aggregate_job_evidence
+from ..agents.sales.tools.report_validation import ensure_report_validated
 from ..utils.metrics import calculate_metrics, reconcile_cost
 from ..utils.status import (
     build_completion_metadata,

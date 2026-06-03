@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from src.services.research.graph.adk.callbacks import before_model_callback
-from src.services.research.graph.sales.tools.evidence import (
+from src.services.research.agents.adk.callbacks import before_model_callback
+from src.services.research.agents.sales.tools.evidence import (
     aggregate_job_evidence,
     append_evidence,
 )

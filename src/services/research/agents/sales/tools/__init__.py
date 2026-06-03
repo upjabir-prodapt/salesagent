@@ -22,15 +22,15 @@ from .search import (
 
 
 def create_llm_agent(*args, **kwargs):
-    """Compatibility proxy — use graph.sales.build.leaf."""
-    from ..build.leaf import create_llm_agent as _create_llm_agent
+    """Compatibility proxy — use graph.sales.composition.leaf."""
+    from ..composition.leaf import create_llm_agent as _create_llm_agent
 
     return _create_llm_agent(*args, **kwargs)
 
 
 def create_plan_react_agent(*args, **kwargs):
-    """Compatibility proxy — use graph.sales.build.leaf."""
-    from ..build.leaf import create_plan_react_agent as _create_plan_react_agent
+    """Compatibility proxy — use graph.sales.composition.leaf."""
+    from ..composition.leaf import create_plan_react_agent as _create_plan_react_agent
 
     return _create_plan_react_agent(*args, **kwargs)
 

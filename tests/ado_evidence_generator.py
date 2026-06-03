@@ -1,7 +1,7 @@
 import csv
 
 from src.core import config
-from src.services.research.graph.sales import prompts
+from src.services.research.agents.sales import prompts
 
 # --- Config & Setup ---
 TEST_CASES_CSV = "COLT_SRA_Test_Cases_ADO_Test (1).csv"

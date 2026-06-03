@@ -4,7 +4,7 @@ from pathlib import Path
 def test_plan_react_callback_order_source_contract():
     path = (
         Path(__file__).resolve().parents[2]
-        / "src/services/research/graph/sales/build/leaf.py"
+        / "src/services/research/agents/sales/composition/leaf.py"
     )
     source = path.read_text(encoding="utf-8")
 

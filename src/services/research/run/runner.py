@@ -48,7 +48,7 @@ class ResearchRunnerService:
 
         span = trace.get_current_span()
         span.set_attribute("research.session_id", runner_session_id(job_id, attempt))
-        from ..graph import create_sales_agent_app
+        from ..agents import create_sales_agent_app
 
         app = create_sales_agent_app()
         session_service = build_session_service()

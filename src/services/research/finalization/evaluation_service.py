@@ -13,12 +13,12 @@ from ....core.config import settings
 from ....core.logging_config import logger
 from ....dependencies.service_dependencies import get_genai_client
 from ...catalog.search import colt_product_search
-from ..graph.sales.tools.evidence import (
+from ..agents.sales.tools.evidence import (
     aggregate_job_evidence,
     evidence_to_block,
     format_agent_outputs_for_judge,
 )
-from ..graph.sales.tools.verification import compute_semantic_groundedness
+from ..agents.sales.tools.verification import compute_semantic_groundedness
 from .evaluation_config import DIMENSION_CONFIG, RESEARCH_AGENT_OUTPUT_KEYS
 from .evaluation_section_a import empty_section_a, parse_and_score_section_a
 from .evaluation_section_b import (
