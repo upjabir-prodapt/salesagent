@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from src.services.research.utils import model_pricing
+from src.services.research.utils.model_pricing import SEARCH_AGENT_NAME
 
 
 @pytest.fixture(autouse=True)
@@ -96,3 +99,60 @@ def test_resolve_model_used_for_delta() -> None:
         model_pricing.resolve_model_used_for_delta({}, mixed_current, "StrategyAgent")
         == "mixed"
     )
+
+
+def test_calculate_total_cost_empty_map() -> None:
+    assert model_pricing.calculate_total_cost({}) == 0.0
+
+
+def test_resolve_agent_model_search_agent(mock_settings) -> None:
+    assert (
+        model_pricing.resolve_agent_model(SEARCH_AGENT_NAME)
+        == mock_settings.SEARCH_AGENT_MODEL
+    )
+    assert model_pricing.resolve_agent_model("OtherAgent") == mock_settings.GEMINI_MODEL
+
+
+def test_resolve_model_used_for_delta_falls_back_to_agent_model() -> None:
+    assert model_pricing.resolve_model_used_for_delta(
+        {}, {}, "StrategyAgent"
+    ) == model_pricing.resolve_agent_model("StrategyAgent")
+
+
+def test_extract_usage_counts_handles_none_and_objects() -> None:
+    assert model_pricing.extract_usage_counts(None) == (0, 0)
+
+    usage = SimpleNamespace(
+        prompt_token_count=10,
+        candidates_token_count=5,
+    )
+    assert model_pricing.extract_usage_counts(usage) == (10, 5)
+
+    alt_usage = SimpleNamespace(input_token_count=3, output_token_count=2)
+    assert model_pricing.extract_usage_counts(alt_usage) == (3, 2)
+
+
+def test_record_token_usage_skips_zero_counts() -> None:
+    state: dict = {"mc_input_tokens": 5, "mc_output_tokens": 2}
+    model_pricing.record_token_usage(state, "gemini-2.5-pro", 0, 0)
+    assert state["mc_input_tokens"] == 5
+    assert state["mc_output_tokens"] == 2
+
+
+def test_record_genai_response_usage() -> None:
+    state: dict = {}
+    response = SimpleNamespace(
+        usage_metadata=SimpleNamespace(prompt_token_count=20, candidates_token_count=8)
+    )
+    model_pricing.record_genai_response_usage(state, "gemini-2.5-pro", response)
+    assert state["mc_input_tokens"] == 20
+    assert state["mc_output_tokens"] == 8
+
+    model_pricing.record_genai_response_usage(None, "gemini-2.5-pro", response)
+
+
+def test_invocation_model_store_and_pop() -> None:
+    state: dict = {}
+    model_pricing.store_invocation_model(state, "inv-1", "models/gemini-2.5-flash")
+    assert model_pricing.pop_invocation_model(state, "inv-1") == "gemini-2.5-flash"
+    assert model_pricing.pop_invocation_model(state, "missing") is None

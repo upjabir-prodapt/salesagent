@@ -54,3 +54,52 @@ def test_reconcile_cost_with_model_aware_telemetry() -> None:
     assert reconciliation["delta_cost_usd"] == pytest.approx(0.0, abs=1e-6)
     assert reconciliation["delta_input_tokens"] == 0
     assert reconciliation["delta_output_tokens"] == 0
+
+
+def test_calculate_metrics_legacy_session_fields() -> None:
+    session_state = {
+        "mc_input_tokens": 100,
+        "mc_output_tokens": 50,
+        "mc_temperature": 0.1,
+    }
+
+    metrics = calculate_metrics(session_state, latency=2.0)
+
+    assert metrics["input_tokens"] == 100
+    assert metrics["output_tokens"] == 50
+    assert metrics["total_tokens"] == 150
+    assert metrics["cost_usd"] is None
+
+
+def test_reconcile_cost_logs_ok_when_aligned(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session_state = {
+        "mc_input_tokens": 10,
+        "mc_output_tokens": 5,
+        "agent_telemetry_records": [
+            {"tokens_input": 10, "tokens_output": 5, "cost_usd": 0.01},
+        ],
+    }
+    metrics = calculate_metrics(session_state, latency=0.5)
+
+    reconcile_cost(session_state, metrics)
+
+    assert "[CostReconciliation] OK" in caplog.text
+
+
+def test_reconcile_cost_logs_warning_on_large_delta(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session_state = {
+        "mc_input_tokens": 10_000,
+        "mc_output_tokens": 10_000,
+        "agent_telemetry_records": [
+            {"tokens_input": 0, "tokens_output": 0, "cost_usd": 0.0},
+        ],
+    }
+    metrics = {"input_tokens": 10_000, "output_tokens": 10_000, "cost_usd": 5.0}
+
+    reconcile_cost(session_state, metrics)
+
+    assert "[CostReconciliation] Notable discrepancy" in caplog.text

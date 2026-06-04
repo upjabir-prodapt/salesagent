@@ -63,3 +63,50 @@ async def test_process_research_background_delegates():
     ) as run_background_job:
         await service.process_research_background("job_1", "Acme", metadata={"k": "v"})
     run_background_job.assert_called_once()
+
+
+def test_get_request_status_wraps_errors():
+    bq = MagicMock()
+    bq.get_status.side_effect = RuntimeError("db down")
+    service = ResearchService(bq, MagicMock())
+    with pytest.raises(ServiceError, match="Failed to get job status"):
+        service.get_request_status("job_1")
+
+
+def test_get_pdf_report_variants():
+    bq = MagicMock()
+    gcs = MagicMock()
+    service = ResearchService(bq, gcs)
+
+    bq.get_status.return_value = None
+    assert service.get_pdf_report("job_1") is None
+
+    bq.get_status.return_value = {"status": "PROCESSING"}
+    with pytest.raises(ServiceError, match="PDF not available"):
+        service.get_pdf_report("job_1")
+
+    bq.get_status.side_effect = RuntimeError("bq error")
+    with pytest.raises(ServiceError, match="Failed to fetch job status"):
+        service.get_pdf_report("job_1")
+
+    bq.get_status.side_effect = None
+    bq.get_status.return_value = {"status": "COMPLETED", "company_name": "Acme"}
+    gcs.download_pdf.side_effect = RuntimeError("gcs error")
+    with pytest.raises(ServiceError, match="Failed to download PDF"):
+        service.get_pdf_report("job_1")
+
+    gcs.download_pdf.side_effect = None
+    gcs.download_pdf.return_value = None
+    with pytest.raises(ServiceError, match="PDF file not found"):
+        service.get_pdf_report("job_1")
+
+
+def test_get_request_result_none_and_error():
+    bq = MagicMock()
+    bq.get_request_result.return_value = None
+    service = ResearchService(bq, MagicMock())
+    assert service.get_request_result("job_1") is None
+
+    bq.get_request_result.side_effect = RuntimeError("db down")
+    with pytest.raises(ServiceError, match="Failed to get job result"):
+        service.get_request_result("job_1")

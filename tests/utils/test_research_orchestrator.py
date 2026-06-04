@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from src.services.research.pipeline.orchestrator import ResearchJobOrchestrator
@@ -230,3 +232,113 @@ async def test_orchestrator_validation_gate_passes_when_agent_skipped_tool(
 
     assert status.calls[-1]["status"] == "COMPLETED"
     assert artifacts.upload_called is True
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_marks_failed_when_no_final_report() -> None:
+    status = _StatusRepoStub()
+    orchestrator = ResearchJobOrchestrator(
+        status_repository=status,
+        runner=_RunnerStub(final_report=""),
+        artifacts=_ArtifactStub(),
+        finalization=_FinalizationStub(),
+    )
+
+    await orchestrator.run("job-empty", "Acme")
+
+    assert status.calls[-1]["status"] == "FAILED"
+    assert "No final report" in status.calls[-1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_records_span_attributes_on_success() -> None:
+    span = MagicMock()
+    status = _StatusRepoStub()
+    orchestrator = ResearchJobOrchestrator(
+        status_repository=status,
+        runner=_RunnerStub(
+            state={
+                "report_validation_status": "PASSED",
+                "mc_tokens_by_model": {
+                    "gemini-2.5-pro": {"input": 100, "output": 10},
+                },
+            }
+        ),
+        artifacts=_ArtifactStub(),
+        finalization=_FinalizationStub(),
+    )
+
+    await orchestrator.run("job-span", "Acme", span=span)
+
+    span.set_attribute.assert_any_call("research.status", "completed")
+    span.set_attribute.assert_any_call(
+        "research.latency_seconds", pytest.approx(0, abs=5)
+    )
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_continues_when_agent_artifact_upload_fails() -> None:
+    class _FailingArtifactStub(_ArtifactStub):
+        async def upload_agent_artifacts(self, job_id: str, session_state: dict):
+            raise RuntimeError("upload agents failed")
+
+    status = _StatusRepoStub()
+    orchestrator = ResearchJobOrchestrator(
+        status_repository=status,
+        runner=_RunnerStub(state={"report_validation_status": "PASSED"}),
+        artifacts=_FailingArtifactStub(),
+        finalization=_FinalizationStub(),
+    )
+
+    await orchestrator.run("job-artifact-fail", "Acme")
+
+    assert status.calls[-1]["status"] == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_handle_validation_failure_marks_failed() -> None:
+    status = _StatusRepoStub()
+    orchestrator = ResearchJobOrchestrator(
+        status_repository=status,
+        runner=_RunnerStub(),
+        artifacts=_ArtifactStub(),
+        finalization=_FinalizationStub(),
+    )
+    session_state = {
+        "report_validation_violations": [
+            {"rule": "missing_source", "detail": "No URLs"},
+        ],
+        "mc_input_tokens": 50,
+        "mc_output_tokens": 10,
+    }
+
+    await orchestrator._handle_validation_failure(
+        "job-val-fail",
+        session_state,
+        validation_status="FAILED",
+        start_time=0.0,
+        span=None,
+    )
+
+    assert status.calls[-1]["status"] == "FAILED"
+    assert "Output blocked" in status.calls[-1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_failure_normalizes_generator_exit_message() -> None:
+    class _TaskGroupRunner:
+        async def run(self, job_id: str, company_name: str):
+            raise RuntimeError("TaskGroup sub-exception: GeneratorExit")
+
+    status = _StatusRepoStub()
+    orchestrator = ResearchJobOrchestrator(
+        status_repository=status,
+        runner=_TaskGroupRunner(),
+        artifacts=_ArtifactStub(),
+        finalization=_FinalizationStub(),
+    )
+
+    with pytest.raises(RuntimeError):
+        await orchestrator.run("job-taskgroup", "Acme")
+
+    assert "Parallel execution collapsed" in status.calls[-1]["error"]
