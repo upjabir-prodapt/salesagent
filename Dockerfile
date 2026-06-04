@@ -1,6 +1,13 @@
 # Stage 1: Builder - Install dependencies using uv
 FROM python:3.11-bookworm AS builder
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV http_proxy=${HTTP_PROXY} \
+    https_proxy=${HTTPS_PROXY} \
+    no_proxy=${NO_PROXY}
+
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list \
     && apt-get update -qq \
     && apt-get install -y -qq curl ca-certificates git \

@@ -18,8 +18,13 @@ from datetime import UTC, datetime
 
 from google.adk.agents.callback_context import CallbackContext
 
-from ....core.config import settings
 from ....core.logging_config import logger
+from ..utils.model_pricing import (
+    calculate_delta_cost,
+    resolve_model_used_for_delta,
+    snapshot_tokens_by_model,
+    total_tokens_from_by_model,
+)
 
 # ---------------------------------------------------------------------------
 # Agent classification maps
@@ -66,6 +71,7 @@ _AGENT_SECTIONS_MAP: dict[str, list[str]] = {
 _PFX_START = "at_start_"
 _PFX_SNAP_IN = "at_snap_in_"
 _PFX_SNAP_OUT = "at_snap_out_"
+_PFX_SNAP_TOKENS_BY_MODEL = "at_snap_tokens_by_model_"
 _PFX_SNAP_TOOLS = "at_snap_tools_"  # web tool call count snapshot
 
 # Key under which completed records are accumulated in session state
@@ -141,6 +147,7 @@ def track_agent_start(callback_context: CallbackContext) -> None:
     state[f"{_PFX_START}{agent_name}"] = time.monotonic()
     state[f"{_PFX_SNAP_IN}{agent_name}"] = state.get("mc_input_tokens") or 0
     state[f"{_PFX_SNAP_OUT}{agent_name}"] = state.get("mc_output_tokens") or 0
+    state[f"{_PFX_SNAP_TOKENS_BY_MODEL}{agent_name}"] = snapshot_tokens_by_model(state)
     state[f"{_PFX_SNAP_TOOLS}{agent_name}"] = state.get("mc_tool_call_count") or 0
 
 
@@ -172,10 +179,30 @@ def track_agent_end(
     # --- token deltas (per-agent tokens = current global minus snapshot at entry) ---
     snap_in = state.get(f"{_PFX_SNAP_IN}{agent_name}") or 0
     snap_out = state.get(f"{_PFX_SNAP_OUT}{agent_name}") or 0
+    snap_tokens_by_model = state.get(f"{_PFX_SNAP_TOKENS_BY_MODEL}{agent_name}") or {}
+    current_tokens_by_model = snapshot_tokens_by_model(state)
     current_in = state.get("mc_input_tokens") or 0
     current_out = state.get("mc_output_tokens") or 0
     delta_in = max(0, current_in - snap_in)
     delta_out = max(0, current_out - snap_out)
+    if current_tokens_by_model:
+        delta_in, delta_out = total_tokens_from_by_model(
+            {
+                model: {
+                    "input": max(
+                        0,
+                        int(current_tokens_by_model.get(model, {}).get("input") or 0)
+                        - int(snap_tokens_by_model.get(model, {}).get("input") or 0),
+                    ),
+                    "output": max(
+                        0,
+                        int(current_tokens_by_model.get(model, {}).get("output") or 0)
+                        - int(snap_tokens_by_model.get(model, {}).get("output") or 0),
+                    ),
+                }
+                for model in set(snap_tokens_by_model) | set(current_tokens_by_model)
+            }
+        )
 
     # --- sources crawled (google_search + read_url calls made by this agent) ---
     snap_tools = state.get(f"{_PFX_SNAP_TOOLS}{agent_name}") or 0
@@ -184,15 +211,12 @@ def track_agent_end(
 
     # --- cost ---
     cost_usd: float | None = None
-    if (
-        settings.GEMINI_COST_PER_1K_INPUT_TOKENS
-        or settings.GEMINI_COST_PER_1K_OUTPUT_TOKENS
-    ):
-        cost_usd = round(
-            (delta_in / 1000) * settings.GEMINI_COST_PER_1K_INPUT_TOKENS
-            + (delta_out / 1000) * settings.GEMINI_COST_PER_1K_OUTPUT_TOKENS,
-            6,
-        )
+    if current_tokens_by_model or snap_tokens_by_model:
+        cost_usd = calculate_delta_cost(snap_tokens_by_model, current_tokens_by_model)
+
+    model_used = resolve_model_used_for_delta(
+        snap_tokens_by_model, current_tokens_by_model, agent_name
+    )
 
     record = AgentTelemetryRecord(
         record_id=str(uuid.uuid4()),
@@ -204,7 +228,7 @@ def track_agent_end(
         tokens_output=delta_out or None,
         sections_produced=_AGENT_SECTIONS_MAP.get(agent_name, []),
         sources_crawled=sources_crawled or None,
-        model_used=settings.GEMINI_MODEL,
+        model_used=model_used,
         cost_usd=cost_usd,
         success=success,
         error_message=error_message,

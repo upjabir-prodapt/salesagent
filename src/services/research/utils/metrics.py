@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
-from ....core.config import settings
 from ....core.logging_config import logger
+from .model_pricing import (
+    calculate_total_cost,
+    total_tokens_from_by_model,
+)
 
 
 def calculate_metrics(session_state: dict, latency: float) -> dict:
     """Extract and calculate model card metrics from session state."""
-    input_tokens = session_state.get("mc_input_tokens") or 0
-    output_tokens = session_state.get("mc_output_tokens") or 0
-    total_tokens = input_tokens + output_tokens
+    tokens_by_model = session_state.get("mc_tokens_by_model") or {}
+    if tokens_by_model:
+        input_tokens, output_tokens = total_tokens_from_by_model(tokens_by_model)
+        cost_usd = calculate_total_cost(tokens_by_model)
+    else:
+        input_tokens = session_state.get("mc_input_tokens") or 0
+        output_tokens = session_state.get("mc_output_tokens") or 0
+        cost_usd = None
 
-    cost_usd = None
-    if (
-        settings.GEMINI_COST_PER_1K_INPUT_TOKENS
-        or settings.GEMINI_COST_PER_1K_OUTPUT_TOKENS
-    ):
-        cost_usd = round(
-            (input_tokens / 1000) * settings.GEMINI_COST_PER_1K_INPUT_TOKENS
-            + (output_tokens / 1000) * settings.GEMINI_COST_PER_1K_OUTPUT_TOKENS,
-            6,
-        )
+    total_tokens = input_tokens + output_tokens
 
     return {
         "input_tokens": input_tokens,

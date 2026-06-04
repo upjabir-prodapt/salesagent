@@ -19,6 +19,7 @@ from ..agents.sales.tools.evidence import (
     format_agent_outputs_for_judge,
 )
 from ..agents.sales.tools.verification import compute_semantic_groundedness
+from ..utils.model_pricing import record_genai_response_usage
 from .evaluation_config import DIMENSION_CONFIG, RESEARCH_AGENT_OUTPUT_KEYS
 from .evaluation_section_a import empty_section_a, parse_and_score_section_a
 from .evaluation_section_b import (
@@ -189,6 +190,7 @@ class EvaluationService:
                 temperature=0.0,
             ),
         )
+        record_genai_response_usage(session_state, settings.EVALUATOR_MODEL, response)
         raw_text = response.text.strip() if response.text else ""
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```(?:json)?\n?", "", raw_text)

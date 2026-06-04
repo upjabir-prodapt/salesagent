@@ -462,6 +462,7 @@ class OutputGuardrail:
         self,
         report: str,
         raw_search_cache: list[dict] | None = None,
+        session_state: dict | None = None,
     ) -> list[GuardrailViolation]:
         """
         Use a secondary Gemini Flash model to fact-check the full report against
@@ -480,18 +481,25 @@ class OutputGuardrail:
         use_cache = bool(raw_search_cache)
 
         if use_cache:
-            return await self._check_hallucinations_with_cache(report, raw_search_cache)  # type: ignore[arg-type]
+            return await self._check_hallucinations_with_cache(
+                report,
+                raw_search_cache,
+                session_state=session_state,  # type: ignore[arg-type]
+            )
         else:
             logger.debug(
                 "[OutputGuardrail] raw_search_cache empty — falling back to "
                 "Section 11 vs Section 12 hallucination check"
             )
-            return await self._check_hallucinations_legacy(report)
+            return await self._check_hallucinations_legacy(
+                report, session_state=session_state
+            )
 
     async def _check_hallucinations_with_cache(
         self,
         report: str,
         raw_search_cache: list[dict],
+        session_state: dict | None = None,
     ) -> list[GuardrailViolation]:
         """
         Primary hallucination check: verify report claims against raw search snippets.
@@ -571,6 +579,16 @@ class OutputGuardrail:
                     temperature=0.0,
                 ),
             )
+            if session_state is not None:
+                from src.services.research.utils.model_pricing import (
+                    record_genai_response_usage,
+                )
+
+                record_genai_response_usage(
+                    session_state,
+                    settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL,
+                    response,
+                )
 
             raw = response.text.strip() if response.text else ""
             if raw.startswith("```"):
@@ -606,7 +624,7 @@ class OutputGuardrail:
         return []
 
     async def _check_hallucinations_legacy(
-        self, report: str
+        self, report: str, session_state: dict | None = None
     ) -> list[GuardrailViolation]:
         """
         Fallback hallucination check (no cache): cross-references Section 11 claims
@@ -707,6 +725,16 @@ class OutputGuardrail:
                     temperature=0.0,
                 ),
             )
+            if session_state is not None:
+                from src.services.research.utils.model_pricing import (
+                    record_genai_response_usage,
+                )
+
+                record_genai_response_usage(
+                    session_state,
+                    settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL,
+                    response,
+                )
 
             raw = response.text.strip() if response.text else ""
             if raw.startswith("```"):

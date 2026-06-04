@@ -1,5 +1,6 @@
 """Configuration: all values come from environment / .env (see .env.example)."""
 
+import json
 import os
 from pathlib import Path
 from typing import Self
@@ -138,8 +139,7 @@ class Settings(BaseSettings):
     GEMINI_RETRY_EXP_BASE: int
     GEMINI_RETRY_JITTER: int
     GEMINI_RETRY_STATUS_CODES: list[int]
-    GEMINI_COST_PER_1K_INPUT_TOKENS: float
-    GEMINI_COST_PER_1K_OUTPUT_TOKENS: float
+    GEMINI_MODEL_PRICING_JSON: str
     EVALUATOR_MODEL: str
     AGENT_EVENTS_COMPACT_ENABLED: bool = True
     AGENT_EVENTS_COMPACT_TOKEN_THRESHOLD: int = 100_000
@@ -209,6 +209,40 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
+    @field_validator("GEMINI_MODEL_PRICING_JSON", mode="before")
+    @classmethod
+    def _validate_gemini_model_pricing_json(cls, value: object) -> str:
+        if value is None or (isinstance(value, str) and not str(value).strip()):
+            raise ValueError(
+                "GEMINI_MODEL_PRICING_JSON is required and must not be empty"
+            )
+        if isinstance(value, str):
+            data = json.loads(value)
+        elif isinstance(value, dict):
+            data = value
+        else:
+            raise ValueError("GEMINI_MODEL_PRICING_JSON must be a JSON object")
+
+        if not data:
+            raise ValueError(
+                "GEMINI_MODEL_PRICING_JSON must contain at least one model"
+            )
+
+        for model, rates in data.items():
+            if not isinstance(rates, dict):
+                raise ValueError(
+                    f"GEMINI_MODEL_PRICING_JSON entry for {model!r} must be an object"
+                )
+            for field in ("input_per_1m", "output_per_1m"):
+                if field not in rates:
+                    raise ValueError(
+                        f"GEMINI_MODEL_PRICING_JSON entry for {model!r} "
+                        f"missing required field {field!r}"
+                    )
+                float(rates[field])
+
+        return json.dumps(data) if isinstance(value, dict) else str(value)
 
     @field_validator(
         "LOG_FILE",

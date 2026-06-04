@@ -22,7 +22,28 @@ stages:
 - promote
 variables:
   IMAGE_TAG: "$CI_PIPELINE_IID"
-  DOCKER_TLS_CERTDIR: "/certs"
+  # Group CI/CD: HTTP_PROXY, HTTPS_PROXY (optional), NO_PROXY (recommended).
+  # NO_PROXY example: localhost,127.0.0.1,docker,amsgit02,.your.gitlab.host
+  # build-and-push: runner tag privilaged (Privileged Docker Runner), DinD + docker build.
+  # lint/test/deploy: runner tag docker1.
+".proxy":
+  before_script:
+  - |
+    if [ -n "${HTTP_PROXY:-}" ]; then
+      export http_proxy="$HTTP_PROXY"
+      export https_proxy="${HTTPS_PROXY:-$HTTP_PROXY}"
+      export HTTP_PROXY="$HTTP_PROXY"
+      export HTTPS_PROXY="${HTTPS_PROXY:-$HTTP_PROXY}"
+      export no_proxy="${NO_PROXY:-localhost,127.0.0.1,docker,${CI_SERVER_HOST}}"
+      export NO_PROXY="$no_proxy"
+      echo "Proxy enabled for job (HTTP_PROXY set)"
+      if [ -d /etc/apt/apt.conf.d ]; then
+        printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' \
+          "$http_proxy" "$https_proxy" > /etc/apt/apt.conf.d/99gitlab-proxy.conf
+      fi
+    else
+      echo "No HTTP_PROXY set — direct outbound (or runner-level proxy only)"
+    fi
 sast:
   stage: lint
 ".sast-analyzer":
@@ -39,12 +60,14 @@ sast:
   - container
   - codequality
 ".gcp_wif":
+  extends: ".proxy"
   environment:
     name: "$CI_COMMIT_BRANCH"
   id_tokens:
     WORKLOAD_IDENTITY_TOKEN:
       aud: https://iam.googleapis.com
   before_script:
+  - !reference [".proxy", before_script]
   - echo "$WORKLOAD_IDENTITY_TOKEN" > workload_identity.jwt
   - |
     printf '%s\n' "{
@@ -57,7 +80,18 @@ sast:
     }" > credentials.json
   - gcloud auth login --cred-file=credentials.json
   - gcloud config set project "$GCP_PROJECT_ID"
+".docker_dind":
+  services:
+  - name: docker:24-dind
+    alias: docker
+    variables:
+      HTTP_PROXY: "${HTTP_PROXY}"
+      HTTPS_PROXY: "${HTTPS_PROXY}"
+      NO_PROXY: "${NO_PROXY}"
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
 ".python_ci":
+  extends: ".proxy"
   image: python:3.11
   tags:
   - docker1
@@ -66,6 +100,7 @@ sast:
     paths:
     - ".venv/"
   before_script:
+  - !reference [".proxy", before_script]
   - python -m pip install --upgrade pip uv
   - uv sync --frozen
 pre-commit-lint:
@@ -78,10 +113,13 @@ pre-commit-lint:
   - if: $CI_COMMIT_BRANCH == "dev"
   - if: $CI_COMMIT_BRANCH == "prod"
 env-scope-check:
+  extends: ".proxy"
   stage: lint
   image: alpine:3.20
   tags:
   - docker1
+  before_script:
+  - !reference [".proxy", before_script]
   environment:
     name: "$CI_COMMIT_BRANCH"
   when: manual
@@ -93,9 +131,9 @@ env-scope-check:
 
     for var in $required_vars; do
       if [ -n "$(printenv "$var")" ]; then
-        echo "OK: $var is set"
+        echo "OK - $var is set"
       else
-        echo "MISSING: $var is not set for environment ${CI_COMMIT_BRANCH}"
+        echo "MISSING - $var is not set for environment ${CI_COMMIT_BRANCH}"
         missing=1
       fi
     done
@@ -139,19 +177,39 @@ unit-test:
   - if: $CI_COMMIT_BRANCH == "prod"
 build-and-push:
   stage: build
-  extends: ".gcp_wif"
+  extends:
+  - ".gcp_wif"
+  - ".docker_dind"
   image: google/cloud-sdk:slim
   tags:
-  - docker1
-  services:
-  - docker:24-dind
+  - privilaged
+  needs:
+  - unit-test
   script:
-  - apt-get update -qq && apt-get install -y -qq docker.io
-  - gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin
-    "https://${GCP_REGION}-docker.pkg.dev"
   - |
+    export DOCKER_HOST="tcp://docker:2376"
+    export DOCKER_TLS_VERIFY="1"
+    export DOCKER_CERT_PATH="${DOCKER_TLS_CERTDIR}/client"
+
+    apt-get update -qq
+    apt-get install -y -qq docker.io
+
+    if ! docker info >/dev/null 2>&1; then
+      echo "ERROR - cannot connect to DinD on privilaged runner"
+      exit 1
+    fi
+
     IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPO}/${IMAGE_NAME}:${IMAGE_TAG}"
-    docker build -t "$IMAGE_URI" .
+    gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin \
+      "https://${GCP_REGION}-docker.pkg.dev"
+
+    PROXY_ARGS=""
+    if [ -n "${HTTP_PROXY:-}" ]; then
+      PROXY_ARGS="--build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg HTTPS_PROXY=${HTTPS_PROXY:-$HTTP_PROXY} --build-arg NO_PROXY=${NO_PROXY:-}"
+    fi
+
+    # shellcheck disable=SC2086
+    docker build $PROXY_ARGS -t "$IMAGE_URI" .
     docker push "$IMAGE_URI"
   rules:
   - if: $CI_COMMIT_BRANCH == "sandbox"
@@ -192,12 +250,15 @@ deploy-cloud-run:
   - if: $CI_COMMIT_BRANCH == "dev"
   - if: $CI_COMMIT_BRANCH == "prod"
 promote-sandbox-to-dev:
+  extends: ".proxy"
   stage: promote
   image: alpine/git:2.47.2
   tags:
   - docker1
   variables:
     GIT_DEPTH: "0"
+  before_script:
+  - !reference [".proxy", before_script]
   script:
   - |
     : "${GITLAB_PUSH_TOKEN:?Set masked+protected variable GITLAB_PUSH_TOKEN (scope: write_repository)}"

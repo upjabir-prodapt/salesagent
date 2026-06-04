@@ -11,6 +11,13 @@ from ......core.logging_config import logger
 from ......utils.guardrails import InputGuardrail
 from ......utils.url_utils import is_authoritative
 from ....run.resilience.state import pop_retry_hint
+from ....utils.model_pricing import (
+    extract_usage_counts,
+    pop_invocation_model,
+    record_token_usage,
+    resolve_agent_model,
+    store_invocation_model,
+)
 from ...sales.tools.evidence import append_evidence, evidence_key
 from .common import record_callback_span_event
 
@@ -64,6 +71,14 @@ def before_model_callback(
         logger.debug(f"[Callback] Jailbreak scan in callback failed: {e}")
 
     _inject_retry_hint(callback_context, llm_request)
+
+    try:
+        model = getattr(llm_request, "model", None)
+        if model:
+            store_invocation_model(callback_context.state, invocation_id, str(model))
+    except Exception as e:  # pragma: no cover
+        logger.debug(f"[Callback] Could not capture model name: {e}")
+
     return None
 
 
@@ -79,20 +94,11 @@ def after_model_callback(
     try:
         usage = getattr(llm_response, "usage_metadata", None)
         if usage is not None:
-            input_t = (
-                getattr(usage, "prompt_token_count", None)
-                or getattr(usage, "input_token_count", None)
-                or 0
-            )
-            output_t = (
-                getattr(usage, "candidates_token_count", None)
-                or getattr(usage, "output_token_count", None)
-                or 0
-            )
-            prev_in = callback_context.state.get("mc_input_tokens") or 0
-            prev_out = callback_context.state.get("mc_output_tokens") or 0
-            callback_context.state["mc_input_tokens"] = prev_in + input_t
-            callback_context.state["mc_output_tokens"] = prev_out + output_t
+            input_t, output_t = extract_usage_counts(usage)
+            model = pop_invocation_model(callback_context.state, invocation_id)
+            if not model:
+                model = resolve_agent_model(agent_name)
+            record_token_usage(callback_context.state, model, input_t, output_t)
     except Exception as e:  # pragma: no cover
         logger.debug(f"[Callback] Could not accumulate token counts: {e}")
 
