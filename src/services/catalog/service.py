@@ -72,10 +72,18 @@ class CatalogService:
         except Exception as exc:
             logger.warning("Could not load catalog manifest: %s", exc)
 
+        index_vector_count: int | None = None
+        index_deployed = False
+        try:
+            index_vector_count = manager.vector_count()
+            index_deployed = manager.is_deployed()
+        except Exception as exc:
+            logger.warning("Could not read Vertex index status: %s", exc)
+
         return {
             "active_version": active_version,
-            "index_vector_count": manager.vector_count(),
-            "index_deployed": manager.is_deployed(),
+            "index_vector_count": index_vector_count,
+            "index_deployed": index_deployed,
             "manifest_updated_at": manifest_updated_at,
             "chunks_path": settings.vector_search_catalog_chunks_blob,
         }
