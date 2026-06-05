@@ -82,6 +82,16 @@ class BigQueryRepository:
                 logger.info(f"BigQuery table already exists: {table_ref}")
                 if table_ref == self.agent_telemetry_table_ref:
                     self._validate_agent_telemetry_schema(table)
+                elif table_ref == self.cost_attribution_table_ref:
+                    # Evolve schema if new columns are missing
+                    existing_fields = {field.name for field in table.schema}
+                    missing_fields = [f for f in schema if f.name not in existing_fields]
+                    if missing_fields:
+                        logger.info(f"[BQ] Evolving schema for {table_ref}. Adding fields: {[f.name for f in missing_fields]}")
+                        new_schema = list(table.schema) + missing_fields
+                        table.schema = new_schema
+                        self.client.update_table(table, ["schema"])
+                        logger.info(f"[BQ] Successfully updated schema for {table_ref}.")
                 return True
             except NotFound:
                 pass
@@ -135,6 +145,9 @@ class BigQueryRepository:
         """Ensure the cost attribution table exists"""
         schema = [
             bigquery.SchemaField("job_execution_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("username", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("email", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("business_unit", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("model_version", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("temperature", "FLOAT64", mode="NULLABLE"),
             bigquery.SchemaField("prompt_template_version", "STRING", mode="NULLABLE"),
@@ -153,6 +166,9 @@ class BigQueryRepository:
     def insert_cost_attribution(
         self,
         job_id: str,
+        username: str | None = None,
+        email: str | None = None,
+        business_unit: str | None = None,
         model_version: str | None = None,
         temperature: float | None = None,
         prompt_template_version: str | None = None,
@@ -169,12 +185,12 @@ class BigQueryRepository:
         now = datetime.now(UTC)
         query = f"""
         INSERT INTO `{self.cost_attribution_table_ref}` (
-            job_execution_id, model_version, temperature, prompt_template_version,
+            job_execution_id, username, email, business_unit, model_version, temperature, prompt_template_version,
             input_tokens, output_tokens, total_tokens, latency_seconds,
             source_domains, cost_usd, created_at
         )
         VALUES (
-            @job_execution_id, @model_version, @temperature, @prompt_template_version,
+            @job_execution_id, @username, @email, @business_unit, @model_version, @temperature, @prompt_template_version,
             @input_tokens, @output_tokens, @total_tokens, @latency_seconds,
             @source_domains, @cost_usd, @created_at
         )
@@ -182,6 +198,9 @@ class BigQueryRepository:
 
         query_parameters = [
             bigquery.ScalarQueryParameter("job_execution_id", "STRING", job_id),
+            bigquery.ScalarQueryParameter("username", "STRING", username),
+            bigquery.ScalarQueryParameter("email", "STRING", email),
+            bigquery.ScalarQueryParameter("business_unit", "STRING", business_unit),
             bigquery.ScalarQueryParameter("model_version", "STRING", model_version),
             bigquery.ScalarQueryParameter("temperature", "FLOAT64", temperature),
             bigquery.ScalarQueryParameter(

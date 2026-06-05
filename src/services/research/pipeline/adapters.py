@@ -81,9 +81,10 @@ class FinalizationAdapter:
         final_report: str,
         session_state: dict,
         metrics: dict,
+        metadata: dict | None = None,
     ) -> tuple[dict, bool]:
         return await self._finalization_service.finalize(
-            job_id, final_report, session_state, metrics
+            job_id, final_report, session_state, metrics, metadata=metadata
         )
 
     async def export_failure_telemetry(

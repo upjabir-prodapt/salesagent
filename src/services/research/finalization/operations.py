@@ -60,12 +60,17 @@ async def run_cost_attribution_op(
     job_id: str,
     session_state: dict,
     metrics: dict,
+    metadata: dict | None = None,
     insert_cost_attribution: Callable[..., Any],
 ) -> None:
     reconcile_cost(session_state, metrics)
+    metadata = metadata or {}
     await with_retry_sync(
         lambda: insert_cost_attribution(
             job_id=job_id,
+            username=metadata.get("username"),
+            email=metadata.get("user_id"),
+            business_unit=metadata.get("business_unit"),
             model_version=settings.GEMINI_MODEL,
             temperature=metrics["temperature"],
             prompt_template_version=settings.PROMPT_TEMPLATE_VERSION,

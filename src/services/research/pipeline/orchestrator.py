@@ -16,6 +16,7 @@ from ..utils.status import (
     build_completion_metadata,
     build_failure_summary,
 )
+from ..utils.formatting import clean_markdown_report
 from .ports import (
     AgentRunnerPort,
     ArtifactPort,
@@ -41,7 +42,7 @@ class ResearchJobOrchestrator:
         self._finalization = finalization
 
     async def run(
-        self, job_id: str, company_name: str, *, span: Span | None = None
+        self, job_id: str, company_name: str, metadata: dict | None = None, *, span: Span | None = None
     ) -> None:
         """Execute the full background pipeline from run to completion state."""
         logger.info(
@@ -77,6 +78,8 @@ class ResearchJobOrchestrator:
                 )
                 return
 
+            final_report = clean_markdown_report(final_report)
+
             latency = round(time.monotonic() - start_time, 2)
             metrics = calculate_metrics(session_state, latency)
             if span is not None:
@@ -102,7 +105,7 @@ class ResearchJobOrchestrator:
                 )
 
             side_op_failures, pdf_available = await self._finalization.finalize(
-                job_id, final_report, session_state, metrics
+                job_id, final_report, session_state, metrics, metadata=metadata
             )
 
             logger.info(

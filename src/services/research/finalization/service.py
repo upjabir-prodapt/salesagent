@@ -18,14 +18,20 @@ from .operations import (
 
 # PyMuPDF Story supports th/td CSS only (not tr-level styling).
 _REPORT_PDF_CSS = """
+* {
+    background-color: transparent !important;
+    background: transparent !important;
+}
 body {
     font-family: Helvetica, Arial, sans-serif;
     line-height: 1.4;
-    background-color: transparent;
 }
 @page {
     margin: 1in;
     background-color: white;
+}
+hr {
+    display: none;
 }
 table {
     width: 100%;
@@ -43,8 +49,23 @@ th, td {
     background-color: transparent;
 }
 th {
-    background-color: #f2f2f2;
+    background-color: #f2f2f2 !important;
     font-weight: bold;
+}
+code, pre {
+    background-color: transparent !important;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+}
+blockquote {
+    background-color: transparent !important;
+    border-left: none;
+    margin: 0;
+    padding: 0;
+}
+mark {
+    background-color: transparent !important;
 }
 """
 
@@ -65,13 +86,22 @@ class ResearchFinalizationService:
     @staticmethod
     def generate_pdf(final_report: str) -> bytes:
         """Synchronous helper for PDF generation (CPU-bound)."""
-        from markdown_pdf import MarkdownPdf, Section
+        import markdown
+        from weasyprint import HTML, CSS
 
-        pdf = MarkdownPdf(toc_level=0)
-        pdf.add_section(Section(final_report), user_css=_REPORT_PDF_CSS)
-        pdf_buffer = io.BytesIO()
-        pdf.save(pdf_buffer)
-        return pdf_buffer.getvalue()
+        html_body = markdown.markdown(
+            final_report,
+            extensions=["tables", "fenced_code", "nl2br"],
+        )
+        full_html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>{html_body}</body>
+</html>"""
+
+        return HTML(string=full_html).write_pdf(
+            stylesheets=[CSS(string=_REPORT_PDF_CSS)]
+        )
 
     @traced("research.finalize", attributes=job_attrs)
     async def finalize(
@@ -80,6 +110,7 @@ class ResearchFinalizationService:
         final_report: str,
         session_state: dict,
         metrics: dict,
+        metadata: dict | None = None,
     ) -> tuple[dict, bool]:
         """Run PDF, evaluation, cost attribution, and telemetry side operations."""
         side_op_failures: dict[str, str] = {}
@@ -114,6 +145,7 @@ class ResearchFinalizationService:
                 job_id=job_id,
                 session_state=session_state,
                 metrics=metrics,
+                metadata=metadata,
                 insert_cost_attribution=self._bigquery_repo.insert_cost_attribution,
             )
         except Exception as e:

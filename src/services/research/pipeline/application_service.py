@@ -20,5 +20,6 @@ class ResearchApplicationService:
         await self._orchestrator.run(
             command.job_id,
             command.company_name,
+            metadata=command.metadata,
             span=span,
         )

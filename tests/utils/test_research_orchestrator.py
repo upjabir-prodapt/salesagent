@@ -51,7 +51,7 @@ class _FinalizationStub:
         self.fail_failure_export = fail_failure_export
 
     async def finalize(
-        self, job_id: str, final_report: str, session_state: dict, metrics: dict
+        self, job_id: str, final_report: str, session_state: dict, metrics: dict, metadata: dict | None = None
     ):
         return {}, True
 

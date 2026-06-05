@@ -40,6 +40,7 @@ class FinalizationPort(Protocol):
         final_report: str,
         session_state: dict,
         metrics: dict,
+        metadata: dict | None = None,
     ) -> tuple[dict, bool]: ...
 
     async def export_failure_telemetry(
