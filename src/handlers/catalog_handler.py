@@ -26,6 +26,18 @@ from ..services.catalog import CatalogService
 _PDF_REQUIRED_OPERATIONS = frozenset({"prepare", "rebuild"})
 
 
+def _parse_job_options(options_json: str | None) -> CatalogJobOptions:
+    if options_json is None or not options_json.strip():
+        return CatalogJobOptions()
+    return CatalogJobOptions(**json.loads(options_json))
+
+
+def _parse_rebuild_options(options_json: str | None) -> CatalogRebuildOptions:
+    if options_json is None or not options_json.strip():
+        return CatalogRebuildOptions()
+    return CatalogRebuildOptions(**json.loads(options_json))
+
+
 class CatalogHandler:
     """Maps catalog HTTP operations to CatalogService."""
 
@@ -63,9 +75,7 @@ class CatalogHandler:
         options_json: str | None,
         pdf: UploadFile | None,
     ) -> CatalogJobResponse:
-        opts = CatalogJobOptions()
-        if options_json:
-            opts = CatalogJobOptions(**json.loads(options_json))
+        opts = _parse_job_options(options_json)
 
         pdf_path = await self._save_uploaded_pdf(pdf)
         if operation in _PDF_REQUIRED_OPERATIONS and pdf_path is None:
@@ -100,9 +110,7 @@ class CatalogHandler:
         pdf: UploadFile,
         options_json: str | None,
     ) -> CatalogJobResponse:
-        opts = CatalogRebuildOptions()
-        if options_json:
-            opts = CatalogRebuildOptions(**json.loads(options_json))
+        opts = _parse_rebuild_options(options_json)
 
         pdf_path = await self._save_uploaded_pdf(pdf)
         if pdf_path is None:
