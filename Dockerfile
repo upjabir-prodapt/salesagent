@@ -1,6 +1,7 @@
 # Stage 1: Builder - Install dependencies using uv
-FROM python:3.11-bookworm AS builder
+FROM python:3.11-slim AS builder
 
+# CI passes --build-arg from HTTP_PROXY/HTTPS_PROXY; needed for apt + uv inside the build container
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
@@ -8,10 +9,20 @@ ENV http_proxy=${HTTP_PROXY} \
     https_proxy=${HTTPS_PROXY} \
     no_proxy=${NO_PROXY}
 
-RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list \
-    && apt-get update -qq \
-    && apt-get install -y -qq curl ca-certificates git \
-    && rm -rf /var/lib/apt/lists/*
+# Host is RHEL 8 (ShellR2); this stage is Debian from python:3.11-slim (apt uses debian.sources).
+# Corporate network blocks http to deb.debian.org — rewrite apt URIs to https before apt-get.
+RUN set -e; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list.d/*.list; do \
+      if [ -f "$f" ]; then \
+        sed -i \
+          -e 's|http://deb.debian.org|https://deb.debian.org|g' \
+          -e 's|http://security.debian.org|https://security.debian.org|g' \
+          "$f"; \
+      fi; \
+    done; \
+    apt-get update -qq; \
+    apt-get install -y -qq --no-install-recommends curl ca-certificates git; \
+    rm -rf /var/lib/apt/lists/*
 
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
