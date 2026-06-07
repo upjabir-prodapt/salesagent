@@ -30,7 +30,6 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "markdown>=3.10.2",
     "weasyprint>=69.0",
-    "pre-commit>=4.6.0",
 ]
 
 [dependency-groups]
