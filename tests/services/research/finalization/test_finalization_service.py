@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -101,16 +102,19 @@ async def test_export_failure_telemetry() -> None:
 def test_generate_pdf_returns_bytes() -> None:
     mock_html = MagicMock()
     mock_html.write_pdf.return_value = b"%PDF-1.4"
+    mock_markdown = MagicMock()
+    mock_markdown.markdown.return_value = "<h1>Title</h1><p>Body</p>"
+    mock_weasyprint = MagicMock()
+    mock_weasyprint.HTML.return_value = mock_html
+    mock_weasyprint.CSS.return_value = MagicMock()
 
-    with (
-        patch(
-            "markdown.markdown",
-            return_value="<h1>Title</h1><p>Body</p>",
-        ),
-        patch("weasyprint.HTML", return_value=mock_html),
-        patch("weasyprint.CSS", return_value=MagicMock()),
+    with patch.dict(
+        sys.modules,
+        {"markdown": mock_markdown, "weasyprint": mock_weasyprint},
     ):
         result = ResearchFinalizationService.generate_pdf("# Title\n\nBody")
 
     assert result == b"%PDF-1.4"
+    mock_markdown.markdown.assert_called_once()
+    mock_weasyprint.HTML.assert_called_once()
     mock_html.write_pdf.assert_called_once()
