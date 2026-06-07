@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import io
-
 from ....core.logging_config import logger
 from ....repositories.bigquery_repository import BigQueryRepository
 from ....repositories.gcs_repository import GCSRepository
@@ -87,7 +85,7 @@ class ResearchFinalizationService:
     def generate_pdf(final_report: str) -> bytes:
         """Synchronous helper for PDF generation (CPU-bound)."""
         import markdown
-        from weasyprint import HTML, CSS
+        from weasyprint import CSS, HTML
 
         html_body = markdown.markdown(
             final_report,

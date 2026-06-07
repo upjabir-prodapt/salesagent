@@ -23,46 +23,52 @@ def clean_markdown_report(report: str) -> str:
         report = report.replace(old, new)
 
     # 2. Extract Tables from Bullet Lists
-    table_titles = [
-        "Use Case Recommendations",
-        "Operational Location Breakdown"
-    ]
+    table_titles = ["Use Case Recommendations", "Operational Location Breakdown"]
     for title in table_titles:
-        pattern = re.compile(rf'^[ \t]*-\s*(\*?.*?(?:{title})\s*Table.*?\*?:?)\s*$', re.MULTILINE)
-        report = pattern.sub(r'\n\1\n', report)
+        pattern = re.compile(
+            rf"^[ \t]*-\s*(\*?.*?(?:{title})\s*Table.*?\*?:?)\s*$", re.MULTILINE
+        )
+        report = pattern.sub(r"\n\1\n", report)
 
     # 3. URL Extraction and Clean Source Summary
-    
+
     # Step A: Global Extraction
-    url_pattern = re.compile(r'https?://[^\s\)<>\]]+')
+    url_pattern = re.compile(r"https?://[^\s\)<>\]]+")
     all_urls = url_pattern.findall(report)
-    
+
     # Deduplicate while preserving order
     urls = []
     seen = set()
     for url in all_urls:
-        clean_url = url.rstrip('.,;:!?')
+        clean_url = url.rstrip(".,;:!?")
         if clean_url not in seen:
             seen.add(clean_url)
             urls.append(clean_url)
 
     # Step B: Truncate
-    parts = re.split(r'\n##\s*(?:13\.?\s*)?Source\s+Summary', report, maxsplit=1, flags=re.IGNORECASE)
+    parts = re.split(
+        r"\n##\s*(?:13\.?\s*)?Source\s+Summary", report, maxsplit=1, flags=re.IGNORECASE
+    )
     main_content = parts[0]
 
     # Step C: Strip Inline URLs
     # 1. Markdown Links: Replace [text](url) with text
-    main_content = re.sub(r'\[([^\]]+)\]\((?:https?://[^\s\)]+)\)', r'\1', main_content)
-    
+    main_content = re.sub(r"\[([^\]]+)\]\((?:https?://[^\s\)]+)\)", r"\1", main_content)
+
     # 2. Source Tags: Remove entirely
-    main_content = re.sub(r'(?:\[|\()?\s*(?:Source|Sources):\s*https?://[^\s<>)"\]]+[\]\)]?', '', main_content, flags=re.IGNORECASE)
-    
+    main_content = re.sub(
+        r'(?:\[|\()?\s*(?:Source|Sources):\s*https?://[^\s<>)"\]]+[\]\)]?',
+        "",
+        main_content,
+        flags=re.IGNORECASE,
+    )
+
     # 3. Bare URLs: Remove any remaining bare URLs
-    main_content = re.sub(r'https?://[^\s<>)"\]]+', '', main_content)
+    main_content = re.sub(r'https?://[^\s<>)"\]]+', "", main_content)
 
     # Step D: Cleanup empty brackets/parentheses left behind
-    main_content = re.sub(r'\(\s*\)', '', main_content)
-    main_content = re.sub(r'\[\s*\]', '', main_content)
+    main_content = re.sub(r"\(\s*\)", "", main_content)
+    main_content = re.sub(r"\[\s*\]", "", main_content)
 
     # Step E: Rebuild
     summary_lines = ["\n\n## 13. Source Summary\n"]

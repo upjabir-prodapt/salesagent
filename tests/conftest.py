@@ -44,7 +44,6 @@ def mock_settings(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
             "GOOGLE_CLOUD_LOCATION": "us-central1",
             "BIGQUERY_DATASET": "test_dataset",
             "BIGQUERY_TABLE": "test_table",
-            "BIGQUERY_USERS_TABLE": "test_users",
             "BIGQUERY_COST_ATTRIBUTION_TABLE": "test_cost_attribution",
             "BIGQUERY_AGENT_TELEMETRY_TABLE": "test_agent_telemetry",
             "GCS_BUCKET_NAME": "test-bucket",

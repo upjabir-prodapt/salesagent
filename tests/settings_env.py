@@ -26,7 +26,6 @@ TEST_SETTINGS_ENV: dict[str, str] = {
     "GOOGLE_CLOUD_QUOTA_PROJECT": "test-project",
     "BIGQUERY_DATASET": "test_dataset",
     "BIGQUERY_TABLE": "research_requests",
-    "BIGQUERY_USERS_TABLE": "users",
     "BIGQUERY_COST_ATTRIBUTION_TABLE": "cost_attribution",
     "BIGQUERY_AGENT_TELEMETRY_TABLE": "agent_telemetry",
     "BIGQUERY_CATALOG_JOBS_TABLE": "catalog_build_jobs",

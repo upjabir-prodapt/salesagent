@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from google.cloud import bigquery
-from google.cloud.exceptions import GoogleCloudError, NotFound
+from google.cloud.exceptions import GoogleCloudError
 
 from ..core.config import settings
 from ..core.exceptions import DatabaseError
@@ -28,28 +28,6 @@ class BigQueryRepository:
         self.cost_attribution_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.cost_attribution_table_id}"
         self.agent_telemetry_table_id = settings.BIGQUERY_AGENT_TELEMETRY_TABLE
         self.agent_telemetry_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.agent_telemetry_table_id}"
-        self.users_table_id = settings.BIGQUERY_USERS_TABLE
-        self.users_table_ref = (
-            f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.users_table_id}"
-        )
-
-    def _validate_agent_telemetry_schema(self, table: bigquery.Table) -> None:
-        """Log remediation guidance when live schema drifts from AgentTelemetryRecord."""
-        by_name = {field.name: field for field in table.schema}
-        sections = by_name.get("sections_produced")
-        if sections is None:
-            logger.warning(
-                f"[BQ] Table {table.table_id} missing sections_produced column; "
-                "migrate schema to JSON NULLABLE."
-            )
-            return
-        if sections.field_type != "JSON":
-            logger.warning(
-                f"[BQ] Table {table.table_id} sections_produced is {sections.field_type} "
-                f"mode={sections.mode}; expected JSON NULLABLE. "
-                "Alter table or recreate agent_telemetry to match "
-                "AgentTelemetryRecord.to_dict()."
-            )
 
     def _execute_query(
         self,
@@ -67,101 +45,6 @@ class BigQueryRepository:
         except Exception as e:
             logger.error(f"Unexpected error {operation_name}: {e}")
             raise DatabaseError(f"Unexpected error {operation_name}: {e}") from e
-
-    def _ensure_table_exists(
-        self,
-        table_ref: str,
-        schema: list[bigquery.SchemaField],
-        time_partitioning_field: str | None = None,
-    ) -> bool:
-        if self.client is None:
-            return True
-        try:
-            try:
-                table = self.client.get_table(table_ref)
-                logger.info(f"BigQuery table already exists: {table_ref}")
-                if table_ref == self.agent_telemetry_table_ref:
-                    self._validate_agent_telemetry_schema(table)
-                elif table_ref == self.cost_attribution_table_ref:
-                    # Evolve schema if new columns are missing
-                    existing_fields = {field.name for field in table.schema}
-                    missing_fields = [f for f in schema if f.name not in existing_fields]
-                    if missing_fields:
-                        logger.info(f"[BQ] Evolving schema for {table_ref}. Adding fields: {[f.name for f in missing_fields]}")
-                        new_schema = list(table.schema) + missing_fields
-                        table.schema = new_schema
-                        self.client.update_table(table, ["schema"])
-                        logger.info(f"[BQ] Successfully updated schema for {table_ref}.")
-                return True
-            except NotFound:
-                pass
-
-            dataset_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}"
-            try:
-                self.client.get_dataset(dataset_ref)
-            except NotFound:
-                logger.info(f"Creating BigQuery dataset: {dataset_ref}")
-                dataset = bigquery.Dataset(dataset_ref)
-                dataset.location = settings.GOOGLE_CLOUD_LOCATION
-                self.client.create_dataset(dataset, timeout=30)
-
-            table = bigquery.Table(table_ref, schema=schema)
-            if time_partitioning_field:
-                table.time_partitioning = bigquery.TimePartitioning(
-                    type_=bigquery.TimePartitioningType.DAY,
-                    field=time_partitioning_field,
-                )
-            self.client.create_table(table)
-            logger.info(f"Created BigQuery table: {table_ref}")
-            return True
-        except GoogleCloudError as e:
-            logger.error(f"Google Cloud error creating table {table_ref}: {e}")
-            raise DatabaseError(
-                f"Failed to create BigQuery table {table_ref}: {e}"
-            ) from e
-        except Exception as e:
-            logger.error(f"Unexpected error creating table {table_ref}: {e}")
-            raise DatabaseError(
-                f"Unexpected error creating table {table_ref}: {e}"
-            ) from e
-
-    def ensure_table_exists(self) -> bool:
-        """Ensure the main requests table exists in BigQuery"""
-        schema = [
-            bigquery.SchemaField("job_execution_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("company_name", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("status", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("updated_at", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("gcs_uri", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("error_message", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("metadata", "JSON", mode="NULLABLE"),
-            bigquery.SchemaField("progress", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("current_step", "STRING", mode="NULLABLE"),
-        ]
-        return self._ensure_table_exists(self.table_ref, schema, "created_at")
-
-    def ensure_cost_attribution_table_exists(self) -> bool:
-        """Ensure the cost attribution table exists"""
-        schema = [
-            bigquery.SchemaField("job_execution_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("username", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("email", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("business_unit", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("model_version", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("temperature", "FLOAT64", mode="NULLABLE"),
-            bigquery.SchemaField("prompt_template_version", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("input_tokens", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("output_tokens", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("total_tokens", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("latency_seconds", "FLOAT64", mode="NULLABLE"),
-            bigquery.SchemaField("source_domains", "JSON", mode="NULLABLE"),
-            bigquery.SchemaField("cost_usd", "FLOAT64", mode="NULLABLE"),
-            bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
-        ]
-        return self._ensure_table_exists(
-            self.cost_attribution_table_ref, schema, "created_at"
-        )
 
     def insert_cost_attribution(
         self,
@@ -510,28 +393,6 @@ class BigQueryRepository:
 
         return result
 
-    def ensure_agent_telemetry_table_exists(self) -> bool:
-        """Ensure the agent telemetry table exists"""
-        schema = [
-            bigquery.SchemaField("record_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("job_execution_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("agent_name", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("agent_type", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("latency_ms", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("tokens_input", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("tokens_output", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("sections_produced", "JSON", mode="NULLABLE"),
-            bigquery.SchemaField("sources_crawled", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("model_used", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("cost_usd", "FLOAT64", mode="NULLABLE"),
-            bigquery.SchemaField("success", "BOOL", mode="NULLABLE"),
-            bigquery.SchemaField("error_message", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
-        ]
-        return self._ensure_table_exists(
-            self.agent_telemetry_table_ref, schema, "created_at"
-        )
-
     def insert_agent_telemetry_batch(self, records: list[dict[str, Any]]) -> bool:
         """Insert telemetry records in batch"""
         if self.client is None:
@@ -608,87 +469,3 @@ class BigQueryRepository:
             )
 
         return results
-
-    def ensure_users_table_exists(self) -> bool:
-        """Ensure the users table exists in BigQuery"""
-        schema = [
-            bigquery.SchemaField("email", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("business_unit", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("organization", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
-        ]
-        return self._ensure_table_exists(self.users_table_ref, schema)
-
-    def verify_user(
-        self, email: str, business_unit: str, organization: str
-    ) -> dict[str, Any] | None:
-        """Verify user details against BigQuery"""
-        if self.client is None:
-            # Local bypass for testing
-            return {
-                "email": email,
-                "business_unit": business_unit,
-                "organization": organization,
-            }
-        query = f"""
-        SELECT email, business_unit, organization
-        FROM `{self.users_table_ref}`
-        WHERE email = @email 
-          AND business_unit = @business_unit 
-          AND organization = @organization
-        LIMIT 1
-        """
-        query_parameters = [
-            bigquery.ScalarQueryParameter("email", "STRING", email),
-            bigquery.ScalarQueryParameter("business_unit", "STRING", business_unit),
-            bigquery.ScalarQueryParameter("organization", "STRING", organization),
-        ]
-        results = list(self._execute_query(query, query_parameters, "verifying user"))
-
-        if not results:
-            return None
-
-        row = results[0]
-        return {
-            "email": row.email,
-            "business_unit": row.business_unit,
-            "organization": row.organization,
-        }
-        """Verify user details against BigQuery"""
-        if self.client is None:
-            # Local bypass for testing
-            return {
-                "email": email,
-                "business_unit": business_unit,
-                "organization": organization,
-            }
-        try:
-            query = f"""
-            SELECT email, business_unit, organization
-            FROM `{self.users_table_ref}`
-            WHERE email = @email 
-              AND business_unit = @business_unit 
-              AND organization = @organization
-            LIMIT 1
-            """
-            query_parameters = [
-                bigquery.ScalarQueryParameter("email", "STRING", email),
-                bigquery.ScalarQueryParameter("business_unit", "STRING", business_unit),
-                bigquery.ScalarQueryParameter("organization", "STRING", organization),
-            ]
-            results = list(
-                self._execute_query(query, query_parameters, "verifying user")
-            )
-
-            if not results:
-                return None
-
-            row = results[0]
-            return {
-                "email": row.email,
-                "business_unit": row.business_unit,
-                "organization": row.organization,
-            }
-        except Exception as e:
-            logger.error(f"Error verifying user {email}: {e}")
-            return None

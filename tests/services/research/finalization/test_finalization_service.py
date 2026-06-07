@@ -99,14 +99,18 @@ async def test_export_failure_telemetry() -> None:
 
 
 def test_generate_pdf_returns_bytes() -> None:
-    mock_pdf = MagicMock()
-    mock_pdf.save.side_effect = lambda buf: buf.write(b"%PDF-1.4")
+    mock_html = MagicMock()
+    mock_html.write_pdf.return_value = b"%PDF-1.4"
 
     with (
-        patch("markdown_pdf.MarkdownPdf", return_value=mock_pdf),
-        patch("markdown_pdf.Section", MagicMock()),
+        patch(
+            "markdown.markdown",
+            return_value="<h1>Title</h1><p>Body</p>",
+        ),
+        patch("weasyprint.HTML", return_value=mock_html),
+        patch("weasyprint.CSS", return_value=MagicMock()),
     ):
         result = ResearchFinalizationService.generate_pdf("# Title\n\nBody")
 
     assert result == b"%PDF-1.4"
-    mock_pdf.add_section.assert_called_once()
+    mock_html.write_pdf.assert_called_once()

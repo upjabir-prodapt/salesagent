@@ -37,45 +37,6 @@ class CatalogJobRepository:
             logger.error("BigQuery %s failed: %s", operation, exc)
             raise DatabaseError(f"Failed to {operation}: {exc}") from exc
 
-    def ensure_table_exists(self) -> bool:
-        if self.client is None:
-            return True
-        schema = [
-            bigquery.SchemaField("job_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("operation", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("status", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("progress", "INT64", mode="NULLABLE"),
-            bigquery.SchemaField("current_step", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("version_id", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("error_message", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("user_email", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("updated_at", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("metadata", "JSON", mode="NULLABLE"),
-        ]
-        try:
-            self.client.get_table(self.table_ref)
-            return True
-        except Exception:
-            pass
-
-        dataset_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{settings.BIGQUERY_DATASET}"
-        try:
-            self.client.get_dataset(dataset_ref)
-        except Exception:
-            dataset = bigquery.Dataset(dataset_ref)
-            dataset.location = settings.GOOGLE_CLOUD_LOCATION
-            self.client.create_dataset(dataset, timeout=30)
-
-        table = bigquery.Table(self.table_ref, schema=schema)
-        table.time_partitioning = bigquery.TimePartitioning(
-            type_=bigquery.TimePartitioningType.DAY,
-            field="created_at",
-        )
-        self.client.create_table(table)
-        logger.info("Created BigQuery table %s", self.table_ref)
-        return True
-
     def create_job(
         self,
         job_id: str,

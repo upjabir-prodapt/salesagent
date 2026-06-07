@@ -16,11 +16,6 @@ def repo(mock_bq_client, mock_settings):
     return BigQueryRepository(client=mock_bq_client)
 
 
-def test_ensure_table_exists(repo, mock_bq_client):
-    repo.ensure_table_exists()
-    mock_bq_client.get_table.assert_called()
-
-
 def test_get_status_success(repo, mock_bq_client):
     mock_row = MagicMock()
     mock_row.status = "PENDING"

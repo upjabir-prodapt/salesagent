@@ -34,7 +34,6 @@ class CatalogService:
             settings,
             storage_client=storage.Client(project=settings.GOOGLE_CLOUD_PROJECT),
         )
-        self.job_repo.ensure_table_exists()
 
     def new_job_id(self) -> str:
         return f"{settings.CATALOG_JOB_ID_PREFIX}{uuid.uuid4()}"

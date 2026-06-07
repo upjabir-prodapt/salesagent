@@ -2,53 +2,14 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.cloud.exceptions import GoogleCloudError, NotFound
 
-from src.core.exceptions import DatabaseError
 from src.repositories.bigquery_repository import BigQueryRepository
 
 
 @pytest.fixture
 def bq_repo(mock_bq_client, mock_settings):
-    # Add missing settings to mock_settings
     mock_settings.BIGQUERY_COST_ATTRIBUTION_TABLE = "test_cost_attribution"
-    mock_settings.BIGQUERY_USERS_TABLE = "test_users"
     return BigQueryRepository(client=mock_bq_client)
-
-
-def test_ensure_table_exists_creation_flow(bq_repo, mock_bq_client):
-    # Table and dataset not found initially
-    mock_bq_client.get_table.side_effect = NotFound("Table not found")
-    mock_bq_client.get_dataset.side_effect = NotFound("Dataset not found")
-
-    assert bq_repo.ensure_table_exists() is True
-
-    # Verify dataset and table creation
-    assert mock_bq_client.create_dataset.called
-    assert mock_bq_client.create_table.called
-
-
-def test_ensure_table_exists_already_exists(bq_repo, mock_bq_client):
-    # Table already exists
-    mock_bq_client.get_table.return_value = MagicMock()
-
-    assert bq_repo.ensure_table_exists() is True
-    mock_bq_client.create_table.assert_not_called()
-
-
-def test_ensure_table_exists_google_cloud_error(bq_repo, mock_bq_client):
-    mock_bq_client.get_table.side_effect = GoogleCloudError("API Error")
-
-    with pytest.raises(DatabaseError) as excinfo:
-        bq_repo.ensure_table_exists()
-    assert "Failed to create BigQuery table" in str(excinfo.value)
-
-
-def test_ensure_cost_attribution_table_exists_creation(bq_repo, mock_bq_client):
-    mock_bq_client.get_table.side_effect = NotFound("Not found")
-
-    assert bq_repo.ensure_cost_attribution_table_exists() is True
-    mock_bq_client.create_table.assert_called()
 
 
 def test_insert_cost_attribution_success(bq_repo, mock_bq_client):
@@ -112,28 +73,3 @@ def test_get_request_result_completed_with_gcs(bq_repo, mock_bq_client):
         assert result["download_url"] == "http://signed-url"
         assert result["report_content"] == "# Report Content"
         assert result["metadata"] == {"test": "data"}
-
-
-def test_ensure_users_table_exists(bq_repo, mock_bq_client):
-    mock_bq_client.get_table.side_effect = NotFound("Not found")
-    assert bq_repo.ensure_users_table_exists() is True
-    mock_bq_client.create_table.assert_called()
-
-
-def test_verify_user_success(bq_repo, mock_bq_client):
-    mock_row = MagicMock()
-    mock_row.email = "test@example.com"
-    mock_row.business_unit = "Sales"
-    mock_row.organization = "Acme"
-
-    mock_bq_client.query.return_value.result.return_value = [mock_row]
-
-    result = bq_repo.verify_user("test@example.com", "Sales", "Acme")
-    assert result is not None
-    assert result["email"] == "test@example.com"
-
-
-def test_verify_user_not_found(bq_repo, mock_bq_client):
-    mock_bq_client.query.return_value.result.return_value = []
-    result = bq_repo.verify_user("missing@example.com", "BU", "Org")
-    assert result is None

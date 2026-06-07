@@ -11,12 +11,12 @@ from ....core.logging_config import logger
 from ....utils.guardrails import GuardrailViolation
 from ..agents.sales.tools.evidence import aggregate_job_evidence
 from ..agents.sales.tools.report_validation import ensure_report_validated
+from ..utils.formatting import clean_markdown_report
 from ..utils.metrics import calculate_metrics, reconcile_cost
 from ..utils.status import (
     build_completion_metadata,
     build_failure_summary,
 )
-from ..utils.formatting import clean_markdown_report
 from .ports import (
     AgentRunnerPort,
     ArtifactPort,
@@ -42,7 +42,12 @@ class ResearchJobOrchestrator:
         self._finalization = finalization
 
     async def run(
-        self, job_id: str, company_name: str, metadata: dict | None = None, *, span: Span | None = None
+        self,
+        job_id: str,
+        company_name: str,
+        metadata: dict | None = None,
+        *,
+        span: Span | None = None,
     ) -> None:
         """Execute the full background pipeline from run to completion state."""
         logger.info(
