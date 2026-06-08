@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Create BigQuery dataset and application tables for sandbox / dev / prod.
+# Creates dataset/tables when missing. When a table exists:
+#   - adds missing columns via `bq update`
+#   - if any shared column has a type/mode mismatch, or the live table has columns
+#     not present in the schema JSON, deletes the table and recreates it
+#     (destructive — all rows in that table are lost)
 #
 # Table names are identical in every project; only PROJECT (and derived dataset id) change.
 #
@@ -18,6 +22,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCHEMA_DIR="${SCRIPT_DIR}/bigquery_schemas"
+
 readonly LOCATION="${BQ_LOCATION:-europe-west1}"
 
 # Table names — same in every environment.
@@ -31,11 +38,11 @@ readonly PROJECT_SANDBOX="${BQ_PROJECT_SANDBOX:-aicoesandox}"
 readonly PROJECT_DEV="${BQ_PROJECT_DEV:-aicoedev}"
 readonly PROJECT_PROD="${BQ_PROJECT_PROD:-aicoeprod}"
 
-# BigQuery schemas (bq mk format: name:TYPE[:MODE]).
-readonly SCHEMA_RESEARCH_REQUESTS="job_execution_id:STRING:REQUIRED,company_name:STRING:REQUIRED,status:STRING:REQUIRED,created_at:TIMESTAMP:REQUIRED,updated_at:TIMESTAMP:REQUIRED,gcs_uri:STRING,error_message:STRING,metadata:JSON,progress:INT64,current_step:STRING"
-readonly SCHEMA_COST_ATTRIBUTION="job_execution_id:STRING:REQUIRED,username:STRING,email:STRING,business_unit:STRING,model_version:STRING,temperature:FLOAT64,prompt_template_version:STRING,input_tokens:INT64,output_tokens:INT64,total_tokens:INT64,latency_seconds:FLOAT64,source_domains:JSON,cost_usd:FLOAT64,created_at:TIMESTAMP:REQUIRED"
-readonly SCHEMA_AGENT_TELEMETRY="record_id:STRING:REQUIRED,job_execution_id:STRING:REQUIRED,agent_name:STRING:REQUIRED,agent_type:STRING,latency_ms:INT64,tokens_input:INT64,tokens_output:INT64,sections_produced:JSON,sources_crawled:INT64,model_used:STRING,cost_usd:FLOAT64,success:BOOL,error_message:STRING,created_at:TIMESTAMP:REQUIRED"
-readonly SCHEMA_CATALOG_JOBS="job_id:STRING:REQUIRED,operation:STRING:REQUIRED,status:STRING:REQUIRED,progress:INT64,current_step:STRING,version_id:STRING,error_message:STRING,user_email:STRING,created_at:TIMESTAMP:REQUIRED,updated_at:TIMESTAMP:REQUIRED,metadata:JSON"
+# JSON schemas (bq mk inline format does not support :REQUIRED).
+readonly SCHEMA_RESEARCH_REQUESTS="${SCHEMA_DIR}/research_requests.json"
+readonly SCHEMA_COST_ATTRIBUTION="${SCHEMA_DIR}/cost_attribution.json"
+readonly SCHEMA_AGENT_TELEMETRY="${SCHEMA_DIR}/agent_telemetry.json"
+readonly SCHEMA_CATALOG_JOBS="${SCHEMA_DIR}/catalog_build_jobs.json"
 
 DRY_RUN=0
 CUSTOM_PROJECT=""
@@ -67,6 +74,17 @@ require_tools() {
     echo "ERROR: bq not found on PATH (install Google Cloud SDK BigQuery component)" >&2
     exit 1
   }
+  local schema_file
+  for schema_file in \
+    "$SCHEMA_RESEARCH_REQUESTS" \
+    "$SCHEMA_COST_ATTRIBUTION" \
+    "$SCHEMA_AGENT_TELEMETRY" \
+    "$SCHEMA_CATALOG_JOBS"; do
+    [[ -f "$schema_file" ]] || {
+      echo "ERROR: Missing schema file: $schema_file" >&2
+      exit 1
+    }
+  done
 }
 
 dataset_for_project() {
@@ -104,8 +122,12 @@ ensure_dataset() {
   local project="$1" dataset="$2"
   local ref="${project}:${dataset}"
 
-  if [[ "$DRY_RUN" -eq 0 ]] && dataset_exists "$project" "$dataset"; then
-    log "Dataset already exists: ${ref}"
+  if dataset_exists "$project" "$dataset"; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      log "Dataset already exists: ${ref}"
+    else
+      log "Dataset already exists: ${ref}"
+    fi
     return 0
   fi
 
@@ -113,21 +135,128 @@ ensure_dataset() {
   run bq mk --location="$LOCATION" "$ref"
 }
 
-ensure_partitioned_table() {
-  local project="$1" dataset="$2" table="$3" schema="$4"
-  local ref="${project}:${dataset}.${table}"
-
-  if [[ "$DRY_RUN" -eq 0 ]] && table_exists "$project" "$dataset" "$table"; then
-    log "Table already exists: ${ref}"
-    return 0
-  fi
-
-  log "Creating table ${ref} (partitioned on created_at)"
+create_partitioned_table() {
+  local ref="$1" schema_file="$2"
+  log "Creating table ${ref} (partitioned on created_at, schema=${schema_file})"
   run bq mk --table \
     --time_partitioning_type=DAY \
     --time_partitioning_field=created_at \
     "$ref" \
-    "$schema"
+    "$schema_file"
+}
+
+# Compare live vs desired schema; add missing columns or recreate on drift/extra columns.
+sync_partitioned_table() {
+  local project="$1" dataset="$2" table="$3" schema_file="$4"
+  local ref="${project}:${dataset}.${table}"
+
+  if ! table_exists "$project" "$dataset" "$table"; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      log "Would create table ${ref} (partitioned on created_at, schema=${schema_file})"
+    else
+      create_partitioned_table "$ref" "$schema_file"
+    fi
+    return 0
+  fi
+
+  local tmp_missing tmp_drift
+  tmp_missing="$(mktemp)"
+  tmp_drift="$(mktemp)"
+
+  python3 - "$ref" "$schema_file" "$tmp_missing" "$tmp_drift" <<'PY'
+import json
+import subprocess
+import sys
+
+TYPE_ALIASES = {
+    "INTEGER": "INT64",
+    "INT64": "INT64",
+    "FLOAT": "FLOAT64",
+    "FLOAT64": "FLOAT64",
+    "BOOLEAN": "BOOL",
+    "BOOL": "BOOL",
+}
+
+
+def norm_type(value: str) -> str:
+    return TYPE_ALIASES.get(value, value)
+
+
+ref, schema_file, missing_path, drift_path = sys.argv[1:5]
+desired = json.load(open(schema_file, encoding="utf-8"))
+raw = subprocess.check_output(
+    ["bq", "show", "--format=prettyjson", ref],
+    text=True,
+)
+existing = json.loads(raw)["schema"]["fields"]
+by_name = {field["name"]: field for field in existing}
+
+missing = []
+drift = []
+desired_names = {field["name"] for field in desired}
+
+for field in desired:
+    name = field["name"]
+    current = by_name.get(name)
+    if current is None:
+        missing.append(field)
+        continue
+    same_type = norm_type(current.get("type", "")) == norm_type(field.get("type", ""))
+    same_mode = current.get("mode", "NULLABLE") == field.get("mode", "NULLABLE")
+    if not (same_type and same_mode):
+        drift.append(
+            f"{name}: live={current.get('type')}/{current.get('mode', 'NULLABLE')} "
+            f"desired={field.get('type')}/{field.get('mode', 'NULLABLE')}"
+        )
+
+for name, current in by_name.items():
+    if name not in desired_names:
+        drift.append(
+            f"{name}: extra column in live table "
+            f"(live={current.get('type')}/{current.get('mode', 'NULLABLE')}, not in schema)"
+        )
+
+json.dump(missing, open(missing_path, "w", encoding="utf-8"))
+open(drift_path, "w", encoding="utf-8").write("\n".join(drift))
+PY
+
+  local missing_count drift_count
+  missing_count="$(python3 -c "import json; print(len(json.load(open('$tmp_missing'))))")"
+  drift_count="$(grep -c . "$tmp_drift" 2>/dev/null || true)"
+  drift_count="${drift_count:-0}"
+
+  if [[ "$drift_count" -gt 0 ]]; then
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && echo "WARNING: Schema drift on ${ref}: ${line}" >&2
+    done < "$tmp_drift"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      log "Would delete and recreate ${ref} (all existing rows would be lost)"
+    else
+      log "Schema drift on ${ref} — deleting table and recreating (all rows will be lost)"
+      run bq rm -f -t "$ref"
+      create_partitioned_table "$ref" "$schema_file"
+    fi
+    rm -f "$tmp_missing" "$tmp_drift"
+    return 0
+  fi
+
+  if [[ "$missing_count" -eq 0 ]]; then
+    log "Schema up to date: ${ref}"
+    rm -f "$tmp_missing" "$tmp_drift"
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "Would update schema for ${ref} (add ${missing_count} column(s))"
+  else
+    log "Updating schema for ${ref} (adding ${missing_count} column(s))"
+    run bq update "$ref" "$tmp_missing"
+  fi
+  rm -f "$tmp_missing" "$tmp_drift"
+}
+
+ensure_partitioned_table() {
+  sync_partitioned_table "$@"
 }
 
 provision_project() {

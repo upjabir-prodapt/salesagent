@@ -20,7 +20,6 @@ def test_calculate_metrics_uses_per_model_pricing() -> None:
             "gemini-2.5-flash": {"input": 50_000, "output": 5_000},
         },
         "mc_temperature": 0.2,
-        "mc_source_domains": ["example.com"],
     }
 
     metrics = calculate_metrics(session_state, latency=12.5)

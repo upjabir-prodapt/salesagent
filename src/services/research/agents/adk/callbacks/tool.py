@@ -52,23 +52,6 @@ def after_tool_callback(
     logger.info(f"[Callback] AFTER TOOL '{tool_name}' returned: {tool_response}")
     record_callback_span_event("adk.after_tool", {"tool_name": tool_name})
 
-    web_tools = {"google_search", "google_search_agent", "read_url"}
-    try:
-        state = tool_context.callback_context.state
-        if tool_name in web_tools:
-            state["mc_tool_call_count"] = state.get("mc_tool_call_count", 0) + 1
-            if tool_name == "read_url" and "url" in args:
-                from urllib.parse import urlparse
-
-                domain = urlparse(args["url"]).netloc
-                if domain:
-                    domains = list(state.get("mc_source_domains") or [])
-                    if domain not in domains:
-                        domains.append(domain)
-                        state["mc_source_domains"] = domains
-    except Exception as e:  # pragma: no cover
-        logger.debug(f"[Callback] Could not increment tool call count: {e}")
-
     try:
         if tool_name in ("google_search", "google_search_agent"):
             agent_name = getattr(tool_context.callback_context, "agent_name", "unknown")
@@ -92,16 +75,6 @@ def after_tool_callback(
                         logger.warning(
                             f"[Callback] Non-authoritative source: {url} agent={agent_name}"
                         )
-
-                    if url:
-                        from urllib.parse import urlparse
-
-                        domain = urlparse(url).netloc
-                        if domain:
-                            domains = list(state.get("mc_source_domains") or [])
-                            if domain not in domains:
-                                domains.append(domain)
-                            state["mc_source_domains"] = domains
 
                 append_evidence(state, agent_name, entries)
                 EvidenceStore(state, agent_name=agent_name).ingest_grounding(

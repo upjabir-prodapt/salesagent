@@ -94,7 +94,6 @@ async def test_run_cost_attribution_op_success():
             "output_tokens": 5,
             "total_tokens": 15,
             "latency": 1.5,
-            "source_domains": ["reuters.com"],
             "cost_usd": 0.02,
         },
         insert_cost_attribution=insert_cost_attribution,

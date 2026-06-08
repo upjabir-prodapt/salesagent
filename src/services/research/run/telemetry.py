@@ -1,7 +1,7 @@
 """
 Agent Telemetry Module
 
-Tracks per-agent latency, token usage, cost, and sections produced.
+Tracks per-agent latency, token usage, and cost.
 Integrates with the ADK callback system by recording snapshots into session state
 on agent entry (track_agent_start) and computing deltas on agent exit (track_agent_end).
 
@@ -50,29 +50,11 @@ _AGENT_TYPE_MAP: dict[str, str] = {
     "ReportCompiler": "LlmAgent",
 }
 
-# Maps each tracked agent -> the report section(s) it produces.
-_AGENT_SECTIONS_MAP: dict[str, list[str]] = {
-    "FirmographicsAgent": ["firmographics"],
-    "GeographicAgent": ["geographic"],
-    "StrategyAgent": ["strategy"],
-    "ComplianceAgent": ["compliance"],
-    "MarketAgent": ["market"],
-    "EcosystemAgent": ["ecosystem"],
-    "TechStackAgent": ["tech_stack"],
-    "ProcurementAgent": ["procurement"],
-    "GrowthSignals": ["growth_signals"],
-    "RiskSignals": ["risk_signals"],
-    "CampaignSignals": ["campaign_signals"],
-    "AlignmentAnalyst": ["alignment_mappings", "strategic_opportunity"],
-    "ReportCompiler": ["final_report"],
-}
-
 # Session-state key prefix constants (keep consistent across start/end)
 _PFX_START = "at_start_"
 _PFX_SNAP_IN = "at_snap_in_"
 _PFX_SNAP_OUT = "at_snap_out_"
 _PFX_SNAP_TOKENS_BY_MODEL = "at_snap_tokens_by_model_"
-_PFX_SNAP_TOOLS = "at_snap_tools_"  # web tool call count snapshot
 
 # Key under which completed records are accumulated in session state
 TELEMETRY_RECORDS_KEY = "agent_telemetry_records"
@@ -96,8 +78,6 @@ class AgentTelemetryRecord:
     latency_ms: int | None
     tokens_input: int | None
     tokens_output: int | None
-    sections_produced: list[str] = field(default_factory=list)
-    sources_crawled: int | None = None
     model_used: str | None = None
     cost_usd: float | None = None
     success: bool = True
@@ -114,8 +94,6 @@ class AgentTelemetryRecord:
             "latency_ms": self.latency_ms,
             "tokens_input": self.tokens_input,
             "tokens_output": self.tokens_output,
-            "sections_produced": self.sections_produced,
-            "sources_crawled": self.sources_crawled,
             "model_used": self.model_used,
             "cost_usd": self.cost_usd,
             "success": self.success,
@@ -137,7 +115,6 @@ def track_agent_start(callback_context: CallbackContext) -> None:
     Stores:
       - monotonic start timestamp
       - snapshot of accumulated global token counts
-      - snapshot of unique domain count
     """
     agent_name = callback_context.agent_name
     if agent_name not in _AGENT_TYPE_MAP:
@@ -148,7 +125,6 @@ def track_agent_start(callback_context: CallbackContext) -> None:
     state[f"{_PFX_SNAP_IN}{agent_name}"] = state.get("mc_input_tokens") or 0
     state[f"{_PFX_SNAP_OUT}{agent_name}"] = state.get("mc_output_tokens") or 0
     state[f"{_PFX_SNAP_TOKENS_BY_MODEL}{agent_name}"] = snapshot_tokens_by_model(state)
-    state[f"{_PFX_SNAP_TOOLS}{agent_name}"] = state.get("mc_tool_call_count") or 0
 
 
 def track_agent_end(
@@ -204,11 +180,6 @@ def track_agent_end(
             }
         )
 
-    # --- sources crawled (google_search + read_url calls made by this agent) ---
-    snap_tools = state.get(f"{_PFX_SNAP_TOOLS}{agent_name}") or 0
-    current_tools = state.get("mc_tool_call_count") or 0
-    sources_crawled = max(0, current_tools - snap_tools)
-
     # --- cost ---
     cost_usd: float | None = None
     if current_tokens_by_model or snap_tokens_by_model:
@@ -226,8 +197,6 @@ def track_agent_end(
         latency_ms=latency_ms,
         tokens_input=delta_in or None,
         tokens_output=delta_out or None,
-        sections_produced=_AGENT_SECTIONS_MAP.get(agent_name, []),
-        sources_crawled=sources_crawled or None,
         model_used=model_used,
         cost_usd=cost_usd,
         success=success,
@@ -242,6 +211,5 @@ def track_agent_end(
 
     logger.debug(
         f"[Telemetry] {agent_name}: latency={latency_ms}ms "
-        f"tokens_in={delta_in} tokens_out={delta_out} "
-        f"sources={sources_crawled} cost={cost_usd}"
+        f"tokens_in={delta_in} tokens_out={delta_out} cost={cost_usd}"
     )

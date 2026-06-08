@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -59,7 +58,6 @@ class BigQueryRepository:
         output_tokens: int | None = None,
         total_tokens: int | None = None,
         latency_seconds: float | None = None,
-        source_domains: list[str] | None = None,
         cost_usd: float | None = None,
     ) -> bool:
         """Insert a cost attribution record"""
@@ -70,12 +68,12 @@ class BigQueryRepository:
         INSERT INTO `{self.cost_attribution_table_ref}` (
             job_execution_id, username, email, business_unit, model_version, temperature, prompt_template_version,
             input_tokens, output_tokens, total_tokens, latency_seconds,
-            source_domains, cost_usd, created_at
+            cost_usd, created_at
         )
         VALUES (
             @job_execution_id, @username, @email, @business_unit, @model_version, @temperature, @prompt_template_version,
             @input_tokens, @output_tokens, @total_tokens, @latency_seconds,
-            @source_domains, @cost_usd, @created_at
+            @cost_usd, @created_at
         )
         """
 
@@ -94,11 +92,6 @@ class BigQueryRepository:
             bigquery.ScalarQueryParameter("total_tokens", "INT64", total_tokens),
             bigquery.ScalarQueryParameter(
                 "latency_seconds", "FLOAT64", latency_seconds
-            ),
-            bigquery.ScalarQueryParameter(
-                "source_domains",
-                "JSON",
-                json.dumps(source_domains) if source_domains is not None else None,
             ),
             bigquery.ScalarQueryParameter("cost_usd", "FLOAT64", cost_usd),
             bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", now),
@@ -399,21 +392,14 @@ class BigQueryRepository:
             return True
         if not records:
             return True
-        rows = []
-        for record in records:
-            row = dict(record)
-            sections = row.get("sections_produced")
-            # JSON column: pass list/dict natively; only encode if already a string scalar.
-            if isinstance(sections, str):
-                with contextlib.suppress(json.JSONDecodeError):
-                    row["sections_produced"] = json.loads(sections)
-            rows.append(row)
         try:
-            errors = self.client.insert_rows_json(self.agent_telemetry_table_ref, rows)
+            errors = self.client.insert_rows_json(
+                self.agent_telemetry_table_ref, records
+            )
             if errors:
                 raise DatabaseError(f"Failed to insert telemetry rows: {errors}")
             logger.info(
-                f"Inserted {len(rows)} agent telemetry records into {self.agent_telemetry_table_ref}"
+                f"Inserted {len(records)} agent telemetry records into {self.agent_telemetry_table_ref}"
             )
             return True
         except GoogleCloudError as e:

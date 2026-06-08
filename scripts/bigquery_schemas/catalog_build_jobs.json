@@ -1,0 +1,13 @@
+[
+  {"name": "job_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "operation", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "status", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "progress", "type": "INT64", "mode": "NULLABLE"},
+  {"name": "current_step", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "version_id", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "error_message", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "user_email", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "created_at", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "updated_at", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "metadata", "type": "JSON", "mode": "NULLABLE"}
+]

@@ -78,7 +78,6 @@ async def run_cost_attribution_op(
             output_tokens=metrics["output_tokens"] or None,
             total_tokens=metrics["total_tokens"] or None,
             latency_seconds=metrics["latency"],
-            source_domains=metrics["source_domains"] or None,
             cost_usd=metrics["cost_usd"],
         )
     )

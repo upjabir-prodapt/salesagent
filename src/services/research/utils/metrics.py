@@ -29,7 +29,6 @@ def calculate_metrics(session_state: dict, latency: float) -> dict:
         "latency": latency,
         "cost_usd": cost_usd,
         "temperature": session_state.get("mc_temperature"),
-        "source_domains": session_state.get("mc_source_domains") or [],
     }
 
 

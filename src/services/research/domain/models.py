@@ -25,7 +25,6 @@ class ResearchMetrics:
     latency_seconds: float = 0.0
     cost_usd: float | None = None
     temperature: float | None = None
-    source_domains: list[str] = field(default_factory=list)
 
 
 @dataclass
