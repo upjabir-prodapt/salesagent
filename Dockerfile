@@ -38,15 +38,16 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Stage 2: Runtime - Lean production image
 FROM python:3.11-slim AS runtime
 
+# Proxy is needed ONLY for apt-get during build; it must NOT be persisted as ENV.
+# A baked-in http_proxy breaks google.auth.default() on Cloud Run (metadata
+# server requests get routed to the unreachable corporate proxy → "ADC not found").
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
-ENV http_proxy=${HTTP_PROXY} \
-    https_proxy=${HTTPS_PROXY} \
-    no_proxy=${NO_PROXY}
 
 # WeasyPrint (report PDF generation) needs Pango/HarfBuzz at runtime.
 RUN set -e; \
+    export http_proxy="${HTTP_PROXY}" https_proxy="${HTTPS_PROXY:-$HTTP_PROXY}" no_proxy="${NO_PROXY}"; \
     for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list.d/*.list; do \
       if [ -f "$f" ]; then \
         sed -i \
