@@ -38,6 +38,32 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Stage 2: Runtime - Lean production image
 FROM python:3.11-slim AS runtime
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV http_proxy=${HTTP_PROXY} \
+    https_proxy=${HTTPS_PROXY} \
+    no_proxy=${NO_PROXY}
+
+# WeasyPrint (report PDF generation) needs Pango/HarfBuzz at runtime.
+RUN set -e; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list.d/*.list; do \
+      if [ -f "$f" ]; then \
+        sed -i \
+          -e 's|http://deb.debian.org|https://deb.debian.org|g' \
+          -e 's|http://security.debian.org|https://security.debian.org|g' \
+          "$f"; \
+      fi; \
+    done; \
+    apt-get update -qq; \
+    apt-get install -y -qq --no-install-recommends \
+      libpango-1.0-0 \
+      libpangoft2-1.0-0 \
+      libharfbuzz-subset0 \
+      fonts-dejavu-core \
+      shared-mime-info; \
+    rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
