@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from fastapi import BackgroundTasks, HTTPException, UploadFile, status
 from opentelemetry import trace
@@ -24,18 +24,40 @@ from ..models.catalog_schemas import (
 from ..services.catalog import CatalogService
 
 _PDF_REQUIRED_OPERATIONS = frozenset({"prepare", "rebuild"})
+_EMPTY_OPTIONS_JSON = frozenset({"", "undefined", "null", "none"})
+_OptionsModel = TypeVar("_OptionsModel", CatalogJobOptions, CatalogRebuildOptions)
+
+
+def _parse_options_json(
+    options_json: str | None,
+    model_cls: type[_OptionsModel],
+) -> _OptionsModel:
+    if options_json is None:
+        return model_cls()
+    stripped = options_json.strip()
+    if not stripped or stripped.lower() in _EMPTY_OPTIONS_JSON:
+        return model_cls()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid options_json: must be a JSON object, got {options_json!r}",
+        ) from exc
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid options_json: expected a JSON object",
+        )
+    return model_cls(**data)
 
 
 def _parse_job_options(options_json: str | None) -> CatalogJobOptions:
-    if options_json is None or not options_json.strip():
-        return CatalogJobOptions()
-    return CatalogJobOptions(**json.loads(options_json))
+    return _parse_options_json(options_json, CatalogJobOptions)
 
 
 def _parse_rebuild_options(options_json: str | None) -> CatalogRebuildOptions:
-    if options_json is None or not options_json.strip():
-        return CatalogRebuildOptions()
-    return CatalogRebuildOptions(**json.loads(options_json))
+    return _parse_options_json(options_json, CatalogRebuildOptions)
 
 
 class CatalogHandler:

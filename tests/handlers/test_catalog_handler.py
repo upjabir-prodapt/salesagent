@@ -169,6 +169,40 @@ async def test_rebuild_accepts_empty_options_json(
 
 
 @pytest.mark.asyncio
+async def test_rebuild_accepts_undefined_options_json(
+    handler: CatalogHandler, user: dict
+) -> None:
+    pdf = UploadFile(filename="doc.pdf", file=BytesIO(b"%PDF"))
+
+    response = await handler.rebuild(
+        background_tasks=BackgroundTasks(),
+        current_user=user,
+        pdf=pdf,
+        options_json="undefined",
+    )
+
+    assert response.operation == "rebuild"
+    handler._service.create_job.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_rebuild_rejects_invalid_options_json(
+    handler: CatalogHandler, user: dict
+) -> None:
+    pdf = UploadFile(filename="doc.pdf", file=BytesIO(b"%PDF"))
+
+    with pytest.raises(HTTPException) as exc:
+        await handler.rebuild(
+            background_tasks=BackgroundTasks(),
+            current_user=user,
+            pdf=pdf,
+            options_json="not-json",
+        )
+
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_rebuild_starts_job(handler: CatalogHandler, user: dict) -> None:
     pdf = UploadFile(filename="doc.pdf", file=BytesIO(b"%PDF"))
 
