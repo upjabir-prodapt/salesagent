@@ -19,7 +19,6 @@ def test_initiate_research_success(client):
     payload = {
         "company_name": "Acme Corp",
         "account_id": "0011234567890123",
-        "user_id": "0051234567890123",
     }
 
     client.mock_service.create_research_request.return_value = True

@@ -38,6 +38,23 @@ def test_initiate_research_success(client, mock_user):
     client.mock_service.create_research_request.assert_called_once()
 
 
+def test_initiate_research_rejects_extra_fields(client, mock_user):
+    from src.dependencies.auth import get_current_user
+
+    client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    response = client.post(
+        f"{settings.API_PREFIX}/research/initiate",
+        json={
+            "company_name": "Acme Corp",
+            "account_id": "ACC123",
+            "user_id": "0051234567890123",
+        },
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
 def test_initiate_research_failure(client, mock_user):
     client.mock_service.create_research_request.return_value = False
     from src.dependencies.auth import get_current_user

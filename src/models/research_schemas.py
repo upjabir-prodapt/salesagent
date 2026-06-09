@@ -1,13 +1,17 @@
 """Research Schemas - Pydantic Models for Research Domain"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ResearchInitiateRequest(BaseModel):
     """Request model for initiating research"""
 
     account_id: str = Field(
-        ..., description="Account identifier", min_length=2, max_length=50
+        ...,
+        description="Account identifier",
+        min_length=2,
+        max_length=50,
+        pattern=r"^[a-zA-Z0-9\-_]+$",
     )
     company_name: str = Field(
         ...,
@@ -17,11 +21,12 @@ class ResearchInitiateRequest(BaseModel):
         pattern=r"^[a-zA-Z0-9\s\&\.\-\',]+$",
     )
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
             "example": {"account_id": "ACC-123", "company_name": "Microsoft"}
-        }
-    }
+        },
+    )
 
 
 class ResearchInitiateResponse(BaseModel):
