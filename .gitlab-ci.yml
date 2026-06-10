@@ -369,8 +369,17 @@ variables:
     export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${CI_PROJECT_DIR}/.cache/xdg}"
     export VIRTUALENV_OVERRIDE_APP_DATA="${VIRTUALENV_OVERRIDE_APP_DATA:-${CI_PROJECT_DIR}/.cache/virtualenv-app-data}"
     export TMPDIR="${CI_WORK_TMP:-${CI_PROJECT_DIR}/.ci-work}"
+    # pre-commit's db.db stores absolute repo paths, so a cache restored into a
+    # different runner concurrency slot (/builds/<token>/0 vs /1) is unusable and
+    # fails with InvalidManifestError. Wipe it unless it was built for this exact dir.
+    if [ -e "${PRE_COMMIT_HOME}/db.db" ] \
+        && [ "$(cat "${PRE_COMMIT_HOME}/.built-for" 2>/dev/null)" != "$CI_PROJECT_DIR" ]; then
+      echo "Stale pre-commit cache (built for '$(cat "${PRE_COMMIT_HOME}/.built-for" 2>/dev/null)', now '$CI_PROJECT_DIR'); wiping ${PRE_COMMIT_HOME}"
+      rm -rf "$PRE_COMMIT_HOME"
+    fi
     mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$PRE_COMMIT_HOME" "$PIP_CACHE_DIR" \
       "$XDG_CACHE_HOME" "$VIRTUALENV_OVERRIDE_APP_DATA" "$TMPDIR"
+    printf '%s' "$CI_PROJECT_DIR" > "${PRE_COMMIT_HOME}/.built-for"
     # pre-commit/ruff only — skip app deps (pymupdf, transformers, etc.)
     uv sync --frozen --no-default-groups --only-group dev --no-install-project
 
