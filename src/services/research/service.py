@@ -168,3 +168,14 @@ class ResearchService:
         except Exception as e:
             logger.error(f"Failed to get job result: {e}")
             raise ServiceError(f"Failed to get job result: {str(e)}") from e
+
+    def submit_feedback(self, job_id: str, feedback: str, user_email: str) -> bool:
+        """Submit feedback for a completed research job."""
+        try:
+            status_data = self.bigquery_repo.get_status(job_id)
+            if status_data is None:
+                return False
+            return self.bigquery_repo.insert_user_feedback(job_id, user_email, feedback)
+        except Exception as e:
+            logger.error(f"Failed to submit feedback for job {job_id}: {e}")
+            raise ServiceError(f"Failed to submit feedback: {str(e)}") from e
