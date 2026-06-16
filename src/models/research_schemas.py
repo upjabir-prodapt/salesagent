@@ -124,3 +124,39 @@ class ResearchResultResponse(BaseModel):
             }
         }
     }
+
+
+class ResearchFeedbackRequest(BaseModel):
+    """Request model for submitting user feedback"""
+
+    feedback: str = Field(
+        ...,
+        description="Feedback message",
+        min_length=1,
+        max_length=1000,
+    )
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {"feedback": "Great and highly detailed report!"}
+        },
+    )
+
+
+class ResearchFeedbackResponse(BaseModel):
+    """Response model for feedback submission"""
+
+    job_id: str = Field(..., description="Unique job ID")
+    status: str = Field(..., description="Status of the feedback submission")
+    message: str = Field(..., description="Success message")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "job_id": "job_123e4567-e89b-12d3-a456-426614174000",
+                "status": "SUCCESS",
+                "message": "Feedback submitted successfully",
+            }
+        }
+    }

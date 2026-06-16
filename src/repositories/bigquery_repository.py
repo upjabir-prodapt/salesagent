@@ -27,6 +27,8 @@ class BigQueryRepository:
         self.cost_attribution_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.cost_attribution_table_id}"
         self.agent_telemetry_table_id = settings.BIGQUERY_AGENT_TELEMETRY_TABLE
         self.agent_telemetry_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.agent_telemetry_table_id}"
+        self.user_feedback_table_id = settings.BIGQUERY_USER_FEEDBACK_TABLE
+        self.user_feedback_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.user_feedback_table_id}"
 
     def _execute_query(
         self,
@@ -99,6 +101,34 @@ class BigQueryRepository:
 
         self._execute_query(query, query_parameters, "inserting cost attribution")
         logger.info(f"Inserted cost attribution for job {job_id}")
+        return True
+
+    def insert_user_feedback(
+        self,
+        job_id: str,
+        user_email: str,
+        feedback: str | None = None,
+    ) -> bool:
+        """Insert user feedback into the user_feedback table"""
+        if self.client is None:
+            logger.info(f"Local Bypass: Inserted feedback for job {job_id} from {user_email}")
+            return True
+
+        query = f"""
+        INSERT INTO `{self.user_feedback_table_ref}` (job_id, user_email, feedback)
+        VALUES (@job_id, @user_email, @feedback)
+        """
+
+        query_parameters = [
+            bigquery.ScalarQueryParameter("job_id", "STRING", job_id),
+            bigquery.ScalarQueryParameter("user_email", "STRING", user_email),
+            bigquery.ScalarQueryParameter("feedback", "STRING", feedback),
+        ]
+
+        self._execute_query(
+            query, query_parameters, "inserting user feedback"
+        )
+        logger.info(f"Inserted user feedback for job {job_id}")
         return True
 
     def create_request(

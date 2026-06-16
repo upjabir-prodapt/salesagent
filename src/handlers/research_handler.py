@@ -16,6 +16,8 @@ from ..core.exceptions import ResourceNotFoundError, ServiceError
 from ..core.logging_config import contextualize, logger
 from ..models.research_schemas import (
     ModelCard,
+    ResearchFeedbackRequest,
+    ResearchFeedbackResponse,
     ResearchInitiateRequest,
     ResearchInitiateResponse,
     ResearchResultResponse,
@@ -141,6 +143,18 @@ class ResearchHandler:
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    async def submit_feedback(
+        self, job_id: str, request: ResearchFeedbackRequest, user_email: str
+    ) -> ResearchFeedbackResponse:
+        success = self._service.submit_feedback(job_id, request.feedback, user_email)
+        if not success:
+            raise ResourceNotFoundError(f"Job {job_id} not found")
+        return ResearchFeedbackResponse(
+            job_id=job_id,
+            status="SUCCESS",
+            message="Feedback submitted successfully",
         )
 
 

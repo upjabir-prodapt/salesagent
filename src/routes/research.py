@@ -9,6 +9,8 @@ from ..dependencies.auth import get_current_user
 from ..dependencies.handler_dependencies import get_research_handler
 from ..handlers.research_handler import ResearchHandler
 from ..models.research_schemas import (
+    ResearchFeedbackRequest,
+    ResearchFeedbackResponse,
     ResearchInitiateRequest,
     ResearchInitiateResponse,
     ResearchResultResponse,
@@ -58,3 +60,18 @@ async def get_research_result(job_id: str, handler: ResearchHandlerDep):
 async def download_pdf_report(job_id: str, handler: ResearchHandlerDep):
     """Download the final research report as a PDF file."""
     return handler.download_pdf_report(job_id)
+
+
+@router.post(
+    "/{job_id}/feedback",
+    response_model=ResearchFeedbackResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def submit_feedback(
+    job_id: str,
+    request: ResearchFeedbackRequest,
+    handler: ResearchHandlerDep,
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
+    """Submit feedback for a completed research job."""
+    return await handler.submit_feedback(job_id, request, user_email=current_user["email"])

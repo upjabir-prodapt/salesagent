@@ -99,6 +99,7 @@ class Settings(BaseSettings):
     BIGQUERY_COST_ATTRIBUTION_TABLE: str
     BIGQUERY_AGENT_TELEMETRY_TABLE: str
     BIGQUERY_CATALOG_JOBS_TABLE: str
+    BIGQUERY_USER_FEEDBACK_TABLE: str
 
     # Security
     SECRET_KEY: str

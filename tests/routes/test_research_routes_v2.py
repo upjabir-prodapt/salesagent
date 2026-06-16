@@ -116,3 +116,58 @@ def test_download_pdf_report_success(client):
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "application/pdf"
     assert "Research_Report_Acme_Corp.pdf" in response.headers["content-disposition"]
+
+
+def test_submit_feedback_success(client, mock_user):
+    client.mock_service.submit_feedback.return_value = True
+    from src.dependencies.auth import get_current_user
+    client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    response = client.post(
+        f"{settings.API_PREFIX}/research/job_123/feedback",
+        json={"feedback": "Great report!"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["job_id"] == "job_123"
+    assert data["status"] == "SUCCESS"
+    assert data["message"] == "Feedback submitted successfully"
+    client.mock_service.submit_feedback.assert_called_once_with("job_123", "Great report!", "test@example.com")
+
+
+def test_submit_feedback_not_found(client, mock_user):
+    client.mock_service.submit_feedback.return_value = False
+    from src.dependencies.auth import get_current_user
+    client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    response = client.post(
+        f"{settings.API_PREFIX}/research/job_none/feedback",
+        json={"feedback": "No job feedback"},
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_submit_feedback_rejects_extra_fields(client, mock_user):
+    from src.dependencies.auth import get_current_user
+    client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    response = client.post(
+        f"{settings.API_PREFIX}/research/job_123/feedback",
+        json={"feedback": "Great report!", "extra_field": "forbidden"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_submit_feedback_invalid_empty(client, mock_user):
+    from src.dependencies.auth import get_current_user
+    client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    response = client.post(
+        f"{settings.API_PREFIX}/research/job_123/feedback",
+        json={"feedback": ""},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

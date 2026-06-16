@@ -73,3 +73,19 @@ def test_get_request_result_completed_with_gcs(bq_repo, mock_bq_client):
         assert result["download_url"] == "http://signed-url"
         assert result["report_content"] == "# Report Content"
         assert result["metadata"] == {"test": "data"}
+
+
+def test_insert_user_feedback_success(bq_repo, mock_bq_client):
+    mock_query_job = MagicMock()
+    mock_bq_client.query.return_value = mock_query_job
+
+    result = bq_repo.insert_user_feedback(
+        job_id="job_123", user_email="test@example.com", feedback="Highly detailed report!"
+    )
+
+    assert result is True
+    mock_bq_client.query.assert_called()
+    mock_query_job.result.assert_called()
+    query = mock_bq_client.query.call_args[0][0]
+    assert "INSERT INTO" in query
+    assert "users_feedback" in query or "test_users_feedback" in query

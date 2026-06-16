@@ -46,6 +46,7 @@ def mock_settings(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
             "BIGQUERY_TABLE": "test_table",
             "BIGQUERY_COST_ATTRIBUTION_TABLE": "test_cost_attribution",
             "BIGQUERY_AGENT_TELEMETRY_TABLE": "test_agent_telemetry",
+            "BIGQUERY_USER_FEEDBACK_TABLE": "test_users_feedback",
             "GCS_BUCKET_NAME": "test-bucket",
             "GCS_PARENT_FOLDER": "research",
             "OTEL_ENABLED": False,
