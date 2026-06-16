@@ -121,6 +121,7 @@ def test_download_pdf_report_success(client):
 def test_submit_feedback_success(client, mock_user):
     client.mock_service.submit_feedback.return_value = True
     from src.dependencies.auth import get_current_user
+
     client.app.dependency_overrides[get_current_user] = lambda: mock_user
 
     response = client.post(
@@ -133,12 +134,15 @@ def test_submit_feedback_success(client, mock_user):
     assert data["job_id"] == "job_123"
     assert data["status"] == "SUCCESS"
     assert data["message"] == "Feedback submitted successfully"
-    client.mock_service.submit_feedback.assert_called_once_with("job_123", "Great report!", "test@example.com")
+    client.mock_service.submit_feedback.assert_called_once_with(
+        "job_123", "Great report!", "test@example.com"
+    )
 
 
 def test_submit_feedback_not_found(client, mock_user):
     client.mock_service.submit_feedback.return_value = False
     from src.dependencies.auth import get_current_user
+
     client.app.dependency_overrides[get_current_user] = lambda: mock_user
 
     response = client.post(
@@ -151,6 +155,7 @@ def test_submit_feedback_not_found(client, mock_user):
 
 def test_submit_feedback_rejects_extra_fields(client, mock_user):
     from src.dependencies.auth import get_current_user
+
     client.app.dependency_overrides[get_current_user] = lambda: mock_user
 
     response = client.post(
@@ -163,6 +168,7 @@ def test_submit_feedback_rejects_extra_fields(client, mock_user):
 
 def test_submit_feedback_invalid_empty(client, mock_user):
     from src.dependencies.auth import get_current_user
+
     client.app.dependency_overrides[get_current_user] = lambda: mock_user
 
     response = client.post(

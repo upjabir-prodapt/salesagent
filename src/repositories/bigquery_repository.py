@@ -111,7 +111,9 @@ class BigQueryRepository:
     ) -> bool:
         """Insert user feedback into the user_feedback table"""
         if self.client is None:
-            logger.info(f"Local Bypass: Inserted feedback for job {job_id} from {user_email}")
+            logger.info(
+                f"Local Bypass: Inserted feedback for job {job_id} from {user_email}"
+            )
             return True
 
         query = f"""
@@ -125,9 +127,7 @@ class BigQueryRepository:
             bigquery.ScalarQueryParameter("feedback", "STRING", feedback),
         ]
 
-        self._execute_query(
-            query, query_parameters, "inserting user feedback"
-        )
+        self._execute_query(query, query_parameters, "inserting user feedback")
         logger.info(f"Inserted user feedback for job {job_id}")
         return True
 

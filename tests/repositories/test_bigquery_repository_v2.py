@@ -80,7 +80,9 @@ def test_insert_user_feedback_success(bq_repo, mock_bq_client):
     mock_bq_client.query.return_value = mock_query_job
 
     result = bq_repo.insert_user_feedback(
-        job_id="job_123", user_email="test@example.com", feedback="Highly detailed report!"
+        job_id="job_123",
+        user_email="test@example.com",
+        feedback="Highly detailed report!",
     )
 
     assert result is True

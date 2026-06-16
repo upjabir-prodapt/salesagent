@@ -74,4 +74,6 @@ async def submit_feedback(
     current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """Submit feedback for a completed research job."""
-    return await handler.submit_feedback(job_id, request, user_email=current_user["email"])
+    return await handler.submit_feedback(
+        job_id, request, user_email=current_user["email"]
+    )
