@@ -4,6 +4,8 @@ from fastapi import status
 
 from src.core.config import settings
 
+DEV_IAP_HEADER = {"X-Dev-IAP-User-Email": "test@colt.net"}
+
 
 def test_auth_token_success(client):
     secret = "very-secret-key-that-is-at-least-32-chars-long"
@@ -13,14 +15,19 @@ def test_auth_token_success(client):
         mock_s.ALGORITHM = "HS256"
 
         payload = {
-            "email": "test@colt.net",
             "business_unit": "Sales",
             "organization": "Colt",
         }
-        response = client.post(f"{settings.API_PREFIX}/auth/token", json=payload)
+        response = client.post(
+            f"{settings.API_PREFIX}/auth/token",
+            headers=DEV_IAP_HEADER,
+            json=payload,
+        )
         assert response.status_code == status.HTTP_200_OK
-        assert "access_token" in response.json()
-        assert response.json()["token_type"] == "bearer"
+        body = response.json()
+        assert "access_token" in body
+        assert body["token_type"] == "bearer"
+        assert body["email"] == "test@colt.net"
 
 
 def test_auth_token_invalid_domain(client):
@@ -31,10 +38,21 @@ def test_auth_token_invalid_domain(client):
         mock_s.ALGORITHM = "HS256"
 
         payload = {
-            "email": "test@example.com",
             "business_unit": "Sales",
             "organization": "Colt",
         }
-        response = client.post(f"{settings.API_PREFIX}/auth/token", json=payload)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "Only @colt.net is allowed" in response.json()["detail"]
+        response = client.post(
+            f"{settings.API_PREFIX}/auth/token",
+            headers={"X-Dev-IAP-User-Email": "test@example.com"},
+            json=payload,
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_whoami_returns_verified_email(client):
+    response = client.get(
+        f"{settings.API_PREFIX}/auth/whoami",
+        headers=DEV_IAP_HEADER,
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"email": "test@colt.net"}

@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi import HTTPException
 
@@ -29,6 +31,8 @@ async def test_verify_token_and_user_context(mock_settings):
     user = await get_current_user(payload)
     assert user["email"] == "user@colt.net"
 
-    context = await get_current_user_context(payload)
+    request = MagicMock()
+    context = await get_current_user_context(request, payload)
     assert context.email == "user@colt.net"
     assert context.business_unit == "Sales"
+    assert request.state.user == context

@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    IAP_AUDIENCE: str = ""
     PROMPT_TEMPLATE_VERSION: str
 
     # GCS
@@ -262,6 +263,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _sync_sdk_environment(self) -> Self:
         """Push GenAI / OTEL SDK settings into os.environ (read by ADK and auto-instrumentation)."""
+        if not self.IS_LOCAL and not self.IAP_AUDIENCE:
+            raise ValueError("IAP_AUDIENCE is required when IS_LOCAL is false")
         os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = (
             "true" if self.GOOGLE_GENAI_USE_VERTEXAI else "false"
         )

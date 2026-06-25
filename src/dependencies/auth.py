@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, HTTPException, Request, Security, status
 
 from ..core.security import (
     AuthenticatedUser,
@@ -39,11 +39,14 @@ async def get_current_user(
 
 
 async def get_current_user_context(
+    request: Request,
     payload: Annotated[dict[str, Any], Depends(verify_token)],
 ) -> AuthenticatedUser:
     """FastAPI dependency to extract normalized user context from JWT."""
-    return AuthenticatedUser(
+    user = AuthenticatedUser(
         email=str(payload["sub"]),
         business_unit=str(payload["business_unit"]),
         organization=str(payload["organization"]),
     )
+    request.state.user = user
+    return user
