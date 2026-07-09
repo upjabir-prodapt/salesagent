@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     IAP_AUDIENCE: str = ""
+    HUB_IAP_AUDIENCE: str = ""
     PROMPT_TEMPLATE_VERSION: str
 
     # GCS
