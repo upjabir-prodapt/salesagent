@@ -390,13 +390,7 @@ class BigQueryRepository:
 
         row = results[0]
 
-        # Parse metadata JSON
-        metadata = {}
-        if row.metadata:
-            try:
-                metadata = json.loads(row.metadata)
-            except (json.JSONDecodeError, TypeError):
-                metadata = {}
+        metadata = self._parse_metadata_row(getattr(row, "metadata", None))
 
         result = {
             "request_id": job_id,
