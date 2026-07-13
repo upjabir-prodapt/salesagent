@@ -16,6 +16,7 @@ PLAN_REACT_ALIGNMENT_BLOCK = f"""
 - **Target account:** Use only prior research outputs **above** for {{company_name?}} facts. Do **not** use `{SEARCH_AGENT_NAME}` to research the target company.
 - **Colt (vendor):** Use `{SEARCH_AGENT_NAME}` with `request=<query>` for **Colt Technology Services** only (portfolio, SLAs, certifications, partnerships, differentiation). Run as many distinct Colt-focused searches as needed to evidence every planned alignment row.
 - Use `colt_product_search(query=...)` for Colt Product Catalog evidence. Run catalog searches for **each** target challenge you map — do not stop at a fixed count; cover every strong challenge from prior outputs.
+- **CRITICAL:** `colt_product_search` queries must be **short product/capability keywords only** (e.g. `SD-WAN`, `SASE`, `Cloud Connect`). Never pass markdown tables, full alignment drafts, or multi-sentence paragraphs as `query`.
 - Do not use unstated assumptions, prior training knowledge, or generic industry filler.
 - Target-company claims must trace to injected output keys **above**; Colt claims must trace to `{SEARCH_AGENT_NAME}` and `colt_product_search` snippets from this session.
 
@@ -98,7 +99,7 @@ Extract a mental model of: business/IT challenges, strategic priorities, tech co
 
 **Step A — `google_search_agent`:** Research **Colt Technology Services** (the vendor you sell), e.g. portfolio, NaaS/cloud connectivity, security/SASE, financial-services networking, certifications, cloud partnerships, SLAs, differentiation vs legacy telcos and unmanaged internet. Queries must be **about Colt**, not `{{company_name?}}`. Run additional searches until each planned mapping has concrete Colt evidence.
 
-**Step B — `colt_product_search`:** For **each** target challenge you plan to map, search the **Colt product catalog** for concrete product names/snippets that address that need.
+**Step B — `colt_product_search`:** For **each** target challenge you plan to map, search the **Colt product catalog** with one short keyword/phrase per call (product or capability name only — never paste tables or full paragraphs).
 
 Do not use training knowledge for Colt claims — use snippets from Steps A and B in this session.
 

@@ -25,9 +25,19 @@ def before_tool_callback(
     tool: BaseTool, args: dict[str, Any], tool_context: ToolContext
 ) -> dict[str, Any] | None:
     tool_name = tool.name
+    parent_agent = getattr(tool_context, "agent_name", None) or getattr(
+        getattr(tool_context, "callback_context", None), "agent_name", "unknown"
+    )
     logger.info(
         f"\n[Callback] BEFORE TOOL Calling '{tool_name}' with original args: {args}"
     )
+    if tool_name == "google_search_agent":
+        query = str(args.get("request") or args.get("query") or "")
+        truncated = query if len(query) <= 120 else f"{query[:117]}..."
+        logger.info(
+            f"[ToolRunner] starting nested runner tool={tool_name} "
+            f"parent_agent={parent_agent} query={truncated!r}"
+        )
     record_callback_span_event(
         "adk.before_tool",
         {"tool_name": tool_name, "has_args": bool(args)},
@@ -49,6 +59,14 @@ def after_tool_callback(
     tool_response: types.Content | types.GenerateContentResponse,
 ) -> dict[str, Any] | None:
     tool_name = tool.name
+    parent_agent = getattr(tool_context, "agent_name", None) or getattr(
+        getattr(tool_context, "callback_context", None), "agent_name", "unknown"
+    )
+    if tool_name == "google_search_agent":
+        logger.info(
+            f"[ToolRunner] nested runner finished tool={tool_name} "
+            f"parent_agent={parent_agent}"
+        )
     logger.info(f"[Callback] AFTER TOOL '{tool_name}' returned: {tool_response}")
     record_callback_span_event("adk.after_tool", {"tool_name": tool_name})
 

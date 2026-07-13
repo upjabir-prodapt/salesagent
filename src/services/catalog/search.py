@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import google.cloud.aiplatform as aiplatform
@@ -101,39 +102,75 @@ def _format_neighbor(neighbor: Any, index: int, chunks: dict[str, str]) -> str:
     return match_info
 
 
+def _is_transient_vector_error(exc: BaseException) -> bool:
+    """Return True for gRPC/network errors that may succeed on retry."""
+    text = f"{type(exc).__name__}: {exc}".upper()
+    markers = (
+        "UNAVAILABLE",
+        "DEADLINE_EXCEEDED",
+        "RESOURCE_EXHAUSTED",
+        "TCP HANDSHAKER",
+        "FAILED TO CONNECT",
+        "CONNECTION RESET",
+        "GOAWAY",
+    )
+    return any(marker in text for marker in markers)
+
+
 def colt_product_search(query: str) -> str:
     """Search the Colt Product Catalog using Vertex AI Vector Search."""
-    try:
-        query_vector = get_query_embedding(query)
-        index_endpoint = _get_index_endpoint()
+    max_attempts = 3
+    last_error: BaseException | None = None
 
-        response = index_endpoint.match(
-            deployed_index_id=settings.VECTOR_SEARCH_DEPLOYED_INDEX_ID,
-            queries=[query_vector],
-            num_neighbors=settings.VECTOR_SEARCH_NUM_NEIGHBORS,
-        )
+    for attempt in range(1, max_attempts + 1):
+        try:
+            query_vector = get_query_embedding(query)
+            index_endpoint = _get_index_endpoint()
 
-        chunks = _load_catalog_chunks()
-        results: list[str] = []
-        if response and len(response) > 0:
-            for i, neighbor in enumerate(response[0]):
-                results.append(_format_neighbor(neighbor, i, chunks))
-
-        if not results:
-            return (
-                f"No matching products found in the Colt Catalog for query: '{query}'. "
-                "This might indicate an empty index or strict search parameters."
+            response = index_endpoint.match(
+                deployed_index_id=settings.VECTOR_SEARCH_DEPLOYED_INDEX_ID,
+                queries=[query_vector],
+                num_neighbors=settings.VECTOR_SEARCH_NUM_NEIGHBORS,
             )
 
-        output = (
-            f"Top {len(results)} matches from the Colt Product Catalog for '{query}':\n"
-            + "\n".join(results)
-        )
-        output += (
-            "\n\nNote: Map these IDs to the COLT_DETAILS provided in your system "
-            "instructions to identify the specific product."
-        )
-        return output
-    except Exception as e:
-        logger.exception("colt_product_search failed for query=%r", query)
-        return f"Error performing product search: {str(e)}"
+            chunks = _load_catalog_chunks()
+            results: list[str] = []
+            if response and len(response) > 0:
+                for i, neighbor in enumerate(response[0]):
+                    results.append(_format_neighbor(neighbor, i, chunks))
+
+            if not results:
+                return (
+                    f"No matching products found in the Colt Catalog for query: '{query}'. "
+                    "This might indicate an empty index or strict search parameters."
+                )
+
+            output = (
+                f"Top {len(results)} matches from the Colt Product Catalog "
+                f"for '{query}':\n" + "\n".join(results)
+            )
+            output += (
+                "\n\nNote: Map these IDs to the COLT_DETAILS provided in your system "
+                "instructions to identify the specific product."
+            )
+            return output
+        except Exception as e:
+            last_error = e
+            if attempt < max_attempts and _is_transient_vector_error(e):
+                logger.warning(
+                    "colt_product_search transient failure attempt=%s/%s "
+                    "query=%r error=%s",
+                    attempt,
+                    max_attempts,
+                    query,
+                    e,
+                )
+                time.sleep(0.5 * attempt)
+                continue
+            logger.exception("colt_product_search failed for query=%r", query)
+            return f"Error performing product search: {str(e)}"
+
+    logger.exception(
+        "colt_product_search failed for query=%r", query, exc_info=last_error
+    )
+    return f"Error performing product search: {str(last_error)}"

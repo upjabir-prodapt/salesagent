@@ -399,6 +399,11 @@ def plan_after_tool(
             agent_name=agent_name,
         )
         n = len(tool_context.state.get(evidence_key(agent_name), []))
+        if tool.name == SEARCH_AGENT_NAME:
+            logger.info(
+                f"[ToolRunner] nested runner finished tool={tool.name} "
+                f"parent_agent={agent_name} evidence_items={n}"
+            )
         logger.info(f"{tool.name} done agent={agent_name} evidence_items={n}")
         if agent_name == "AlignmentAnalyst" and tool.name == COLT_PRODUCT_SEARCH_TOOL:
             tool_context.state[ALIGNMENT_CATALOG_SEARCH_COUNT_KEY] = (
