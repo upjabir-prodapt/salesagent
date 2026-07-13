@@ -62,6 +62,10 @@ class ResearchRunnerService:
         session = await self._get_or_create_runner_session(
             runner, app, job_id, company_name, attempt
         )
+        logger.info(
+            f"[PipelineRunner] starting main runner job_id={job_id} "
+            f"session_id={session.id} company={company_name!r}"
+        )
 
         try:
             await self.run_agents(runner, session, job_id, company_name, app)
