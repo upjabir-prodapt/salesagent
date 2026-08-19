@@ -111,7 +111,6 @@ class Settings(BaseSettings):
     SALES_REQUIRED_GROUP: str = ""
     PROMPT_TEMPLATE_VERSION: str
 
-
     # GCS
     GCS_BUCKET_NAME: str
     GCS_SIGNED_URL_EXPIRATION_HOURS: int
