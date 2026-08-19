@@ -107,7 +107,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     IAP_AUDIENCE: str = ""
     HUB_IAP_AUDIENCE: str = ""
+    # Entra security group required for Sales Agent entitlement (checked against IAP JWT `groups` claim).
+    SALES_REQUIRED_GROUP: str = ""
     PROMPT_TEMPLATE_VERSION: str
+
 
     # GCS
     GCS_BUCKET_NAME: str
