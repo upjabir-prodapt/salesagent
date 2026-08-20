@@ -466,9 +466,6 @@ sast:
 pre-commit-lint:
   stage: lint
   extends: ".python_ci_lint"
-  rules:
-  - when: never
-  # Temporarily disabled: only build+deploy needed for this rollout.
   variables:
     GIT_DEPTH: "0"
   script:
@@ -505,9 +502,8 @@ pre-commit-lint:
       run_pre_commit --all-files
     fi
   rules:
-  - if: $CI_COMMIT_BRANCH == "sandbox"
-  - if: $CI_COMMIT_BRANCH == "dev"
-  - if: $CI_COMMIT_BRANCH == "prod"
+  - when: never
+  # Temporarily disabled: only build+deploy needed for this rollout.
 
 env-scope-check:
   extends:
@@ -548,9 +544,6 @@ env-scope-check:
 unit-test:
   stage: test
   extends: ".python_ci_test"
-  rules:
-  - when: never
-  # Temporarily disabled: only build+deploy needed for this rollout.
   script:
   - |
     export PATH="${UV_INSTALL_DIR}:${UV_INSTALL_DIR}/bin:$PATH"
@@ -577,9 +570,8 @@ unit-test:
     - test-results.xml
     expire_in: 7 days
   rules:
-  - if: $CI_COMMIT_BRANCH == "sandbox"
-  - if: $CI_COMMIT_BRANCH == "dev"
-  - if: $CI_COMMIT_BRANCH == "prod"
+  - when: never
+  # Temporarily disabled: only build+deploy needed for this rollout.
 
 build-and-push:
   stage: build
