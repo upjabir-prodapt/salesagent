@@ -59,23 +59,27 @@ class BigQueryRepository:
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         total_tokens: int | None = None,
+        search_count: int | None = None,
+        search_cost_usd: float | None = None,
+        token_cost_usd: float | None = None,
+        total_cost_usd: float | None = None,
         latency_seconds: float | None = None,
         cost_usd: float | None = None,
     ) -> bool:
-        """Insert a cost attribution record"""
+        """Insert a cost attribution record with search cost breakdown"""
         if self.client is None:
             return True
         now = datetime.now(UTC)
         query = f"""
         INSERT INTO `{self.cost_attribution_table_ref}` (
             job_execution_id, username, email, business_unit, model_version, temperature, prompt_template_version,
-            input_tokens, output_tokens, total_tokens, latency_seconds,
-            cost_usd, created_at
+            input_tokens, output_tokens, total_tokens, search_count, search_cost_usd, token_cost_usd, total_cost_usd,
+            latency_seconds, cost_usd, created_at
         )
         VALUES (
             @job_execution_id, @username, @email, @business_unit, @model_version, @temperature, @prompt_template_version,
-            @input_tokens, @output_tokens, @total_tokens, @latency_seconds,
-            @cost_usd, @created_at
+            @input_tokens, @output_tokens, @total_tokens, @search_count, @search_cost_usd, @token_cost_usd, @total_cost_usd,
+            @latency_seconds, @cost_usd, @created_at
         )
         """
 
@@ -92,6 +96,10 @@ class BigQueryRepository:
             bigquery.ScalarQueryParameter("input_tokens", "INT64", input_tokens),
             bigquery.ScalarQueryParameter("output_tokens", "INT64", output_tokens),
             bigquery.ScalarQueryParameter("total_tokens", "INT64", total_tokens),
+            bigquery.ScalarQueryParameter("search_count", "INT64", search_count),
+            bigquery.ScalarQueryParameter("search_cost_usd", "FLOAT64", search_cost_usd),
+            bigquery.ScalarQueryParameter("token_cost_usd", "FLOAT64", token_cost_usd),
+            bigquery.ScalarQueryParameter("total_cost_usd", "FLOAT64", total_cost_usd),
             bigquery.ScalarQueryParameter(
                 "latency_seconds", "FLOAT64", latency_seconds
             ),
@@ -100,7 +108,7 @@ class BigQueryRepository:
         ]
 
         self._execute_query(query, query_parameters, "inserting cost attribution")
-        logger.info(f"Inserted cost attribution for job {job_id}")
+        logger.info(f"Inserted cost attribution for job {job_id} (searches: {search_count})")
         return True
 
     def insert_user_feedback(

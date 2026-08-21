@@ -205,6 +205,10 @@ class Settings(BaseSettings):
     VECTOR_SEARCH_INDEX_UPDATE_POLL_INTERVAL_SEC: int
     VECTOR_SEARCH_INDEX_UPDATE_TIMEOUT_SEC: int
 
+    # Search API pricing (USD per 1000 requests)
+    GOOGLE_SEARCH_PRICING_3X: str | None = "14.0"
+    GOOGLE_SEARCH_PRICING_2X: str | None = "35.0"
+
     model_config = SettingsConfigDict(
         env_file=_DOTENV_FILE,
         env_file_encoding="utf-8",

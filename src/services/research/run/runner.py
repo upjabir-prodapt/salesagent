@@ -50,7 +50,7 @@ class ResearchRunnerService:
         span.set_attribute("research.session_id", runner_session_id(job_id, attempt))
         from ..agents import create_sales_agent_app
 
-        app = create_sales_agent_app()
+        app = create_sales_agent_app(company_name)
         session_service = build_session_service()
         runner = Runner(
             app=app,

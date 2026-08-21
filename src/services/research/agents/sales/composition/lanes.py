@@ -1,69 +1,26 @@
-"""Factories for building sales research ADK agents from registry specs."""
+"""Factory for building synthesis agents (alignment analyst and report compiler).
+
+DEPRECATED: The 12 parallel research agents and 3 signal agents have been replaced
+by a unified QueryGeneratorAgent. Only synthesis agents (alignment + report) remain.
+See src/services/research/agents/sales/query_generator/ for the new architecture.
+"""
 
 from __future__ import annotations
 
-from google.adk.agents import ParallelAgent, SequentialAgent
-
-from ..registry import AgentRegistry, PlanAgentSpec
-from .leaf import create_plan_react_agent
 from .synthesis import create_synthesis_agents
 
 
 class PlanReActAgentFactory:
-    """Factory methods for PlanReAct leaf and composite agents."""
+    """Factory for synthesis agents (alignment analyst and report compiler)."""
 
     @staticmethod
-    def build_agents(specs: tuple[PlanAgentSpec, ...]) -> dict[str, object]:
-        return {
-            spec.name: create_plan_react_agent(spec.name, spec.prompt, spec.description)
-            for spec in specs
-        }
+    def build_synthesis_agents(company_name: str = "Unknown"):
+        """Create fresh synthesis agent instances for each run.
 
-    @classmethod
-    def build_research_lanes(
-        cls,
-    ) -> tuple[SequentialAgent, object, SequentialAgent, SequentialAgent, object]:
-        agents = cls.build_agents(AgentRegistry.research_specs())
+        Args:
+            company_name: Company name for context tool initialization
 
-        firmographics_geographic_agent = SequentialAgent(
-            name="FirmographicsGeographicAgent",
-            sub_agents=[agents["FirmographicsAgent"], agents["GeographicAgent"]],
-            description="Runs firmographics then geographic research.",
-        )
-        strategy_compliance_agent = SequentialAgent(
-            name="StrategyComplianceAgent",
-            sub_agents=[agents["StrategyAgent"], agents["ComplianceAgent"]],
-            description="Runs strategy then compliance research.",
-        )
-        market_ecosystem_agent = SequentialAgent(
-            name="MarketEcosystemAgent",
-            sub_agents=[
-                agents["MarketAgent"],
-                agents["EcosystemAgent"],
-                agents["ProcurementAgent"],
-            ],
-            description="Runs market, ecosystem, and procurement research.",
-        )
-        return (
-            firmographics_geographic_agent,
-            agents["ExecutiveAgent"],
-            strategy_compliance_agent,
-            market_ecosystem_agent,
-            agents["TechStackAgent"],
-        )
-
-    @classmethod
-    def build_signals_orchestrator(cls) -> ParallelAgent:
-        agents = cls.build_agents(AgentRegistry.signal_specs())
-        return ParallelAgent(
-            name="SignalsOrchestrator",
-            sub_agents=[
-                agents["GrowthSignals"],
-                agents["RiskSignals"],
-                agents["CampaignSignals"],
-            ],
-        )
-
-    @staticmethod
-    def build_synthesis_agents():
-        return create_synthesis_agents()
+        Returns:
+            Tuple of (AlignmentAnalyst, ReportCompiler) agents
+        """
+        return create_synthesis_agents(company_name)

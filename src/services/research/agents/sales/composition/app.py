@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from google.adk.agents import ParallelAgent, SequentialAgent
+from google.adk.agents import SequentialAgent
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.apps import App, ResumabilityConfig
 from google.adk.apps.app import EventsCompactionConfig
@@ -14,51 +14,32 @@ from ......core.config import settings
 from ......core.logging_config import logger
 from ......core.model import retry_config
 from .lanes import PlanReActAgentFactory
+from ..query_generator import QueryGeneratorFactory
 
 
 class SalesAgentAppFactory:
     """Build the full ADK application graph for a research job run."""
 
-    def create(self) -> App:
+    def create(self, company_name: str = "Unknown") -> App:
         logger.info("Building agent orchestration structure...")
 
-        (
-            firmographics_geographic_agent,
-            executive_agent,
-            strategy_compliance_agent,
-            market_ecosystem_agent,
-            tech_stack_agent,
-        ) = PlanReActAgentFactory.build_research_lanes()
-        signals_orchestrator = PlanReActAgentFactory.build_signals_orchestrator()
-        alignment_analyst, report_compiler = (
-            PlanReActAgentFactory.build_synthesis_agents()
-        )
+        # Create unified query generator agent
+        query_generator = QueryGeneratorFactory.create_query_generator_agent(company_name)
 
-        logger.info("Creating ResearchOrchestrator (6 parallel sub-agents)...")
-        research_orchestrator = ParallelAgent(
-            name="ResearchOrchestrator",
-            sub_agents=[
-                firmographics_geographic_agent,
-                executive_agent,
-                strategy_compliance_agent,
-                market_ecosystem_agent,
-                tech_stack_agent,
-                signals_orchestrator,
-            ],
-        )
-        logger.debug(
-            f"ResearchOrchestrator has {len(research_orchestrator.sub_agents)} sub-agents"
+        # Create synthesis agents (pass company_name for context tools)
+        alignment_analyst, report_compiler = (
+            PlanReActAgentFactory.build_synthesis_agents(company_name)
         )
 
         logger.info("Creating SalesResearchAgent (sequential pipeline)...")
         sales_research_agent = SequentialAgent(
             name="SalesResearchAgent",
             sub_agents=[
-                research_orchestrator,
+                query_generator,
                 alignment_analyst,
                 report_compiler,
             ],
-            description="An agent that performs deep sales research on a company and generates a strategic lead report.",
+            description="An agent that generates research queries, performs alignment analysis, and generates a strategic lead report.",
         )
         logger.debug(
             "SalesResearchAgent pipeline: ResearchOrchestrator -> AlignmentAnalyst -> ReportCompiler"

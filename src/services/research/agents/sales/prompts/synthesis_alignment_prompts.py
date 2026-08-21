@@ -14,11 +14,11 @@ PLAN_REACT_ALIGNMENT_BLOCK = f"""
 ## Tools and evidence
 
 - **Target account:** Use only prior research outputs **above** for {{company_name?}} facts. Do **not** use `{SEARCH_AGENT_NAME}` to research the target company.
-- **Colt (vendor):** Use `{SEARCH_AGENT_NAME}` with `request=<query>` for **Colt Technology Services** only (portfolio, SLAs, certifications, partnerships, differentiation). Run as many distinct Colt-focused searches as needed to evidence every planned alignment row.
-- Use `colt_product_search(query=...)` for Colt Product Catalog evidence. Run catalog searches for **each** target challenge you map — do not stop at a fixed count; cover every strong challenge from prior outputs.
+- **Colt context:** Use `retrieve_alignment_context()` to get Colt product catalog and capabilities from the provided PDF. This gives you comprehensive Colt portfolio context.
+- **Colt (vendor):** Use `colt_product_search(query=...)` for Colt Product Catalog evidence. Run catalog searches for **each** target challenge you map — do not stop at a fixed count; cover every strong challenge from prior outputs.
 - **CRITICAL:** `colt_product_search` queries must be **short product/capability keywords only** (e.g. `SD-WAN`, `SASE`, `Cloud Connect`). Never pass markdown tables, full alignment drafts, or multi-sentence paragraphs as `query`.
 - Do not use unstated assumptions, prior training knowledge, or generic industry filler.
-- Target-company claims must trace to injected output keys **above**; Colt claims must trace to `{SEARCH_AGENT_NAME}` and `colt_product_search` snippets from this session.
+- Target-company claims must trace to injected output keys **above**; Colt claims must trace to `retrieve_alignment_context()` and `colt_product_search` snippets from this session.
 
 ## Required workflow (aggregate → verify → finalise)
 
