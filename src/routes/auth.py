@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from ..core.config import settings
-from ..core.iap_auth import IapIdentity, require_group
+from ..core.iap_auth import IapIdentity, require_sales_agent_entitlement
 from ..core.logging_config import logger
 from ..core.security import create_access_token
 from ..models.auth_schemas import AuthRequest, Token, WhoamiResponse
@@ -15,7 +15,7 @@ router = APIRouter(
     tags=["auth"],
 )
 
-_require_sales_group = require_group(settings.SALES_REQUIRED_GROUP)
+_require_sales_group = require_sales_agent_entitlement()
 
 
 @router.get("/whoami", response_model=WhoamiResponse)
