@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from ...domain.models import RESEARCH_DOMAINS, SIGNAL_DOMAINS
 from .schemas import NormalizedQueryPlan, QueryWithMetadata
 
 

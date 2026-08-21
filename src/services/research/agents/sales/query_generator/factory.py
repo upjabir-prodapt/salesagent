@@ -11,9 +11,9 @@ from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
 from google.adk.tools.function_tool import FunctionTool
 
-from .....core.config import settings
-from .....core.logging_config import logger
-from .....core.model import retry_config
+from ......core.config import settings
+from ......core.logging_config import logger
+from ......core.model import retry_config
 from ...adk.retrying_llm_agent import RetryingLlmAgent
 from ...adk.safety import get_safety_config_for_agent
 from ...adk.callbacks import (

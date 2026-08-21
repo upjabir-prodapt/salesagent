@@ -10,10 +10,10 @@ from typing import Any
 from google.cloud import bigquery
 from google.cloud.exceptions import GoogleCloudError
 
-from ...core.config import settings
-from ...core.exceptions import DatabaseError
-from ...core.logging_config import logger
-from ...repositories.bigquery_repository import BigQueryRepository
+from src.core.config import settings
+from src.core.exceptions import DatabaseError
+from src.core.logging_config import logger
+from src.repositories.bigquery_repository import BigQueryRepository
 
 
 class SearchCacheService:

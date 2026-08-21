@@ -213,3 +213,6 @@ marimo/_lsp/
 __marimo__/
 
 credentials/
+
+# Local/manual end-to-end tests (not run in CI, requires real GCP credentials)
+test_query_generator_fully_real_e2e.py

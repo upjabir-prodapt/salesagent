@@ -7,9 +7,9 @@ from typing import Any
 from google.cloud import storage
 from google.cloud.exceptions import GoogleCloudError
 
-from ....core.config import settings
-from ....core.logging_config import logger
-from ....repositories.gcs_repository import GCSRepository
+from ......core.config import settings
+from ......core.logging_config import logger
+from ......repositories.gcs_repository import GCSRepository
 
 # Hardcoded Colt product catalog text from the provided PDF
 COLT_CATALOG_HARDCODED = """

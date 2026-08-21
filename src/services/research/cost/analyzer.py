@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, asdict
 
-from ...core.config import settings
-from ...core.logging_config import logger
+from src.core.config import settings
+from src.core.logging_config import logger
 
 
 @dataclass

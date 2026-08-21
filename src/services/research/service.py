@@ -7,12 +7,12 @@ from typing import Any
 
 from opentelemetry import trace
 
-from ...core.config import settings
-from ...core.exceptions import ServiceError
-from ...core.logging_config import contextualize, logger
-from ...repositories.bigquery_repository import BigQueryRepository
-from ...repositories.gcs_repository import GCSRepository
-from ...utils.tracing import job_attrs, traced_with_context
+from src.core.config import settings
+from src.core.exceptions import ServiceError
+from src.core.logging_config import contextualize, logger
+from src.repositories.bigquery_repository import BigQueryRepository
+from src.repositories.gcs_repository import GCSRepository
+from src.utils.tracing import job_attrs, traced_with_context
 from .artifacts.service import ResearchArtifactService
 from .finalization.evaluation_service import EvaluationService
 from .finalization.service import ResearchFinalizationService
