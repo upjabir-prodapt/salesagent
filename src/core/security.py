@@ -25,6 +25,12 @@ app_auth_scheme = APIKeyHeader(
     ),
 )
 
+# httpOnly session cookie name — preferred credential transport, mirroring
+# the Translation service. The `x-app-auth` header above is kept as a
+# fallback during the migration window; see dependencies/auth.py's
+# verify_token, which reads whichever of the two is present.
+SESSION_COOKIE_NAME = "colt_session"  # noqa: S105
+
 
 def extract_bearer_token(header_value: str | None) -> str | None:
     """Parse x-app-auth: raw JWT or ``Bearer <jwt>`` (case-insensitive)."""
