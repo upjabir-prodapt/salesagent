@@ -15,7 +15,7 @@ def test_agent_contract_registry_matches_legacy_output_keys() -> None:
 def test_research_session_state_exposes_tracked_outputs() -> None:
     raw_state = {
         "final_report": "# Final report",
-        "executiveagent_output": "Executive findings",
+        "query_generator_output": "Query generator findings",
         "empty_output": "",
     }
     state = ResearchSessionState(raw_state)
@@ -23,4 +23,4 @@ def test_research_session_state_exposes_tracked_outputs() -> None:
     tracked = state.tracked_outputs()
 
     assert tracked["ReportCompiler"] == "# Final report"
-    assert tracked["ExecutiveAgent"] == "Executive findings"
+    assert tracked["QueryGeneratorAgent"] == "Query generator findings"

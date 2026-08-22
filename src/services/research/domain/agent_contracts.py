@@ -18,18 +18,7 @@ class AgentContract:
 
 
 AGENT_CONTRACTS: Final[tuple[AgentContract, ...]] = (
-    AgentContract("FirmographicsAgent", "firmographicsagent_output"),
-    AgentContract("GeographicAgent", "geographicagent_output"),
-    AgentContract("ExecutiveAgent", "executiveagent_output"),
-    AgentContract("StrategyAgent", "strategyagent_output"),
-    AgentContract("ComplianceAgent", "complianceagent_output"),
-    AgentContract("MarketAgent", "marketagent_output"),
-    AgentContract("EcosystemAgent", "ecosystemagent_output"),
-    AgentContract("TechStackAgent", "techstackagent_output"),
-    AgentContract("ProcurementAgent", "procurementagent_output"),
-    AgentContract("GrowthSignals", "growthsignals_output"),
-    AgentContract("RiskSignals", "risksignals_output"),
-    AgentContract("CampaignSignals", "campaignsignals_output"),
+    AgentContract("QueryGeneratorAgent", "query_generator_output"),
     AgentContract("AlignmentAnalyst", "alignment_output"),
     AgentContract("ReportCompiler", "final_report"),
 )

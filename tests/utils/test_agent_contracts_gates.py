@@ -15,10 +15,13 @@ from src.services.research.run.resilience.errors import (
 
 
 def test_list_missing_research_outputs():
-    state = {"executiveagent_output": "ok"}
+    state = {"query_generator_output": "ok"}
     missing = list_missing_research_outputs(state)
-    assert "ExecutiveAgent" not in missing
-    assert "FirmographicsAgent" in missing
+    assert "QueryGeneratorAgent" not in missing
+
+    empty_state = {}
+    missing_empty = list_missing_research_outputs(empty_state)
+    assert "QueryGeneratorAgent" in missing_empty
 
 
 def test_validate_research_outputs_complete_raises():
@@ -29,7 +32,7 @@ def test_validate_research_outputs_complete_raises():
 
 
 def test_resolve_retry_agents_alignment_missing_research():
-    state = {"executiveagent_output": "ok"}
+    state = {}
     exc = AgentOutputError(
         "gate",
         agent_name="AlignmentAnalyst",
@@ -37,8 +40,7 @@ def test_resolve_retry_agents_alignment_missing_research():
         error_class="MISSING_OUTPUT",
     )
     agents = resolve_retry_agents(exc, state)
-    assert "ExecutiveAgent" not in agents
-    assert "FirmographicsAgent" in agents
+    assert "QueryGeneratorAgent" in agents
 
 
 def test_resolve_retry_agents_alignment_research_ok():

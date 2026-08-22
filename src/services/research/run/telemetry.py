@@ -33,7 +33,9 @@ from ..utils.model_pricing import (
 # LLM agents to track - leaf research agents + synthesis agents that make
 # substantive LLM calls and contribute to token cost.
 _AGENT_TYPE_MAP: dict[str, str] = {
-    # Research leaf agents
+    # Query generator agent
+    "QueryGeneratorAgent": "LlmAgent",
+    # Legacy research leaf agents
     "FirmographicsAgent": "LlmAgent",
     "GeographicAgent": "LlmAgent",
     "StrategyAgent": "LlmAgent",
