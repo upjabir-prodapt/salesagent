@@ -7,7 +7,15 @@
       "Bash(Select-Object FullName)",
       "Read(//c/Users/mrudulkilledar.m/Downloads/Sales-Agent/src/services/research/**)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(python -c \"import google.adk, os; print\\(os.path.dirname\\(google.adk.__file__\\)\\)\")",
+      "Read(//c//**)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/utils/test_agent_contracts_gates.py tests/functional_ado_tests.py -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -q --ignore=tests/functional_ado_tests.py)",
+      "Bash(.venv/Scripts/python.exe -m py_compile src/core/config.py src/services/research/agents/adk/callbacks/model.py src/services/research/agents/adk/callbacks/agent.py src/services/research/agents/adk/safety.py src/services/research/agents/sales/composition/leaf.py src/services/research/agents/sales/composition/research_synthesizer.py src/services/research/agents/sales/prompts/synthesis_research_prompts.py src/services/research/agents/sales/query_generator/factory.py src/services/research/domain/agent_contracts.py)",
+      "Bash(.venv/Scripts/python.exe -m py_compile src/services/research/agents/sales/composition/research_synthesizer.py)",
+      "Bash(.venv/Scripts/python.exe -m py_compile run_local_research_sephora.py src/core/config.py src/services/research/agents/adk/callbacks/agent.py src/services/research/domain/agent_contracts.py src/services/research/run/resilience/errors.py)"
     ]
   }
 }

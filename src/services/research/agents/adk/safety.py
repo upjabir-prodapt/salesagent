@@ -283,12 +283,18 @@ def create_safety_summary(safety_events: list[dict[str, Any]]) -> dict[str, Any]
     return summary
 
 
-def get_safety_config_for_agent(agent_name: str) -> types.GenerateContentConfig:
+def get_safety_config_for_agent(
+    agent_name: str, *, max_output_tokens: int | None = None
+) -> types.GenerateContentConfig:
     """
     Get GenerateContentConfig with safety settings for a specific agent.
 
     Args:
         agent_name: Name of the agent (for logging purposes)
+        max_output_tokens: Optional output cap. Agents that emit one large
+            structured payload (e.g. ResearchSynthesizer's 12-domain JSON, the
+            ReportCompiler's full markdown) need this raised well above the
+            model default or their final answer is truncated mid-JSON.
 
     Returns:
         GenerateContentConfig with appropriate safety settings
@@ -298,4 +304,5 @@ def get_safety_config_for_agent(agent_name: str) -> types.GenerateContentConfig:
 
     return types.GenerateContentConfig(
         safety_settings=safety_settings,
+        max_output_tokens=max_output_tokens,
     )

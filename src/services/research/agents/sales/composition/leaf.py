@@ -109,6 +109,9 @@ def create_plan_react_agent(
         tools=tools,
         output_key=output_key,
         description=description or f"Research agent for {name}",
+        generate_content_config=get_safety_config_for_agent(
+            name, max_output_tokens=settings.AGENT_MAX_OUTPUT_TOKENS
+        ),
         planner=PlanReActPlanner(),
         before_model_callback=[plan_before_model, before_model_callback],
         after_model_callback=[plan_after_model, after_model_callback],

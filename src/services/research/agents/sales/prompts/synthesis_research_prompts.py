@@ -7,27 +7,14 @@ from google.adk.planners.plan_re_act_planner import (
     REPLANNING_TAG,
 )
 
+from ....domain.agent_contracts import DOMAIN_OUTPUT_KEYS
 from ..tools.search import SEARCH_AGENT_NAME
 from .prompt_common import AGGREGATED_ANSWER_TAG
 
-# ---------------------------------------------------------------------------
-# Domain output keys the downstream agents (AlignmentAnalyst, ReportCompiler)
-# read via {{key?}} template injection.
-# ---------------------------------------------------------------------------
-DOMAIN_OUTPUT_KEYS = [
-    "firmographicsagent_output",
-    "geographicagent_output",
-    "executiveagent_output",
-    "strategyagent_output",
-    "complianceagent_output",
-    "marketagent_output",
-    "ecosystemagent_output",
-    "techstackagent_output",
-    "procurementagent_output",
-    "growthsignals_output",
-    "risksignals_output",
-    "campaignsignals_output",
-]
+# DOMAIN_OUTPUT_KEYS are the per-domain state keys the downstream agents
+# (AlignmentAnalyst, ReportCompiler) read via {key?} template injection. They
+# live in the domain layer so the gate in agent_contracts and the prompt below
+# cannot drift apart.
 
 RESEARCH_SYNTHESIZER_PROMPT = f"""
 You are the Research Synthesizer Agent. Your task is to conduct comprehensive web research

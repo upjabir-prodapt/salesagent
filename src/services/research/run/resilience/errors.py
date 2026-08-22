@@ -30,6 +30,9 @@ _ERROR_CLASS_TO_SCOPE = {
     "MALFORMED_FUNCTION_CALL": RETRY_SCOPE_LEAF_LOCAL,
     "CONNECT_ERROR": RETRY_SCOPE_LEAF_LOCAL,
     "REPORT_VALIDATION_FAILED": RETRY_SCOPE_NONE,
+    # The research phase produced no usable per-domain data. Retrying burns
+    # quota to regenerate the same empty report, so abort the job instead.
+    "RESEARCH_DATA_MISSING": RETRY_SCOPE_NONE,
     "RESOURCE_EXHAUSTED": RETRY_SCOPE_RUNNER_WARM,
     "AGENT_ERROR": RETRY_SCOPE_RUNNER_WARM,
     "MODEL_ERROR": RETRY_SCOPE_RUNNER_WARM,

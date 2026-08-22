@@ -31,26 +31,20 @@ from ..callbacks.plan_react import (
     plan_before_model,
     plan_before_tool,
 )
-from ..registry import AgentRegistry
 from .bm25_selector import Bm25QuerySelector
 from .prompt import build_query_generator_prompt
 from .schemas import CandidateQueries, NormalizedQueryPlan, QueryWithMetadata
 
 
 def _get_domain_list() -> list[str]:
-    """Get all domain names from registry."""
-    research_specs = AgentRegistry.research_specs()
-    signal_specs = AgentRegistry.signal_specs()
+    """Get all research domain names the query plan must cover.
 
-    research_domains = [
-        spec.name.replace("Agent", "").replace("Signals", "").lower()
-        for spec in research_specs
-    ]
-    signal_domains = [
-        spec.name.replace("Signals", "").lower() for spec in signal_specs
-    ]
-
-    return sorted(research_domains + signal_domains)
+    Sourced from the BM25 selector's per-domain budget, which is the only
+    place that defines the canonical domain slugs. (The former
+    AgentRegistry-derived list is deprecated and returns nothing, which left
+    the prompt's "RESEARCH DOMAINS" line blank.)
+    """
+    return sorted(Bm25QuerySelector.DOMAIN_LIMITS)
 
 
 def _parse_candidate_queries(output: str) -> CandidateQueries | None:

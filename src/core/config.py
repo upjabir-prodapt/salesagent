@@ -143,6 +143,17 @@ class Settings(BaseSettings):
     GEMINI_RETRY_STATUS_CODES: list[int]
     GEMINI_MODEL_PRICING_JSON: str
     EVALUATOR_MODEL: str
+    # Output cap for agents that emit one large structured payload
+    # (ResearchSynthesizer's 12-domain JSON, ReportCompiler's full report).
+    # Left unset the model default truncates these mid-payload.
+    AGENT_MAX_OUTPUT_TOKENS: int = 65_535
+    # Minimum per-domain research outputs (of 12) required before synthesis.
+    # Set to 12 to abort on any missing domain.
+    RESEARCH_MIN_DOMAIN_OUTPUTS: int = 6
+    # Abort the job outright when the research phase comes up short, instead
+    # of retrying. Retrying an empty research phase just reproduces the same
+    # "Data not available from research." report at full token cost.
+    RESEARCH_ABORT_ON_MISSING_DOMAINS: bool = True
     AGENT_EVENTS_COMPACT_ENABLED: bool = True
     AGENT_EVENTS_COMPACT_TOKEN_THRESHOLD: int = 100_000
     AGENT_EVENTS_COMPACT_RETENTION: int = 6

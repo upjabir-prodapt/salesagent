@@ -7,11 +7,15 @@ from contextlib import suppress
 from google.adk.agents.callback_context import CallbackContext
 from google.genai import types
 
+from ......core.config import settings
 from ......core.logging_config import logger
 from ....domain.agent_contracts import (
+    DOMAIN_OUTPUT_KEYS,
     get_output_key,
     is_tracked_agent,
+    list_missing_domain_outputs,
     list_missing_research_outputs,
+    validate_domain_outputs_present,
     validate_research_outputs_complete,
 )
 from ....domain.output_validation import validate_agent_output
@@ -21,6 +25,43 @@ from ...sales.tools.verification import Bm25Verifier
 from .common import record_callback_span_event
 
 __all__ = ["before_agent_callback", "after_agent_callback"]
+
+
+def _enforce_domain_outputs(state: dict, *, stage: str) -> None:
+    """Log every missing per-domain output, then apply the configured gate.
+
+    Runs as soon as ResearchSynthesizer finishes (and again before
+    AlignmentAnalyst as a backstop) so a research phase that produced nothing
+    stops the job here rather than burning the remaining agents to emit a
+    report of "Data not available from research.".
+    """
+    missing = list_missing_domain_outputs(state)
+    populated = len(DOMAIN_OUTPUT_KEYS) - len(missing)
+    if missing:
+        logger.warning(
+            f"[Gate] {stage}: {populated}/{len(DOMAIN_OUTPUT_KEYS)} domain outputs "
+            f"populated. Missing: {', '.join(missing)}"
+        )
+    else:
+        logger.info(
+            f"[Gate] {stage}: all {len(DOMAIN_OUTPUT_KEYS)} domain outputs populated"
+        )
+
+    if (
+        settings.RESEARCH_ABORT_ON_MISSING_DOMAINS
+        and populated < settings.RESEARCH_MIN_DOMAIN_OUTPUTS
+    ):
+        logger.error(
+            f"[Gate] Aborting job at {stage}: research phase produced "
+            f"{populated}/{len(DOMAIN_OUTPUT_KEYS)} domain outputs "
+            f"(minimum {settings.RESEARCH_MIN_DOMAIN_OUTPUTS}). "
+            "Not retrying -- see RESEARCH_ABORT_ON_MISSING_DOMAINS."
+        )
+    validate_domain_outputs_present(
+        state,
+        minimum=settings.RESEARCH_MIN_DOMAIN_OUTPUTS,
+        fail_fast=settings.RESEARCH_ABORT_ON_MISSING_DOMAINS,
+    )
 
 
 async def before_agent_callback(callback_context: CallbackContext) -> None:
@@ -82,6 +123,7 @@ async def before_agent_callback(callback_context: CallbackContext) -> None:
                 f"{', '.join(missing)}"
             )
         validate_research_outputs_complete(callback_context.state)
+        _enforce_domain_outputs(callback_context.state, stage="AlignmentAnalyst")
 
     if agent_name == "ReportCompiler":
         validate_agent_output(callback_context.state, "AlignmentAnalyst")
@@ -146,6 +188,12 @@ def after_agent_callback(callback_context: CallbackContext) -> types.Content | N
     if is_tracked_agent(agent_name):
         validate_agent_output(callback_context.state, agent_name)
         _record_bm25_telemetry(callback_context, agent_name)
+
+    # Earliest point at which an empty research phase is detectable. Raising
+    # here stops the run before AlignmentAnalyst and ReportCompiler spend
+    # tokens hallucinating around missing data.
+    if agent_name == "ResearchSynthesizer":
+        _enforce_domain_outputs(callback_context.state, stage="ResearchSynthesizer")
 
     return None
 

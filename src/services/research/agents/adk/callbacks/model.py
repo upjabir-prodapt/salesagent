@@ -155,7 +155,7 @@ def before_model_callback(
 
 def after_model_callback(
     callback_context: CallbackContext, llm_response: LlmResponse
-) -> LlmResponse:
+) -> LlmResponse | None:
     agent_name = callback_context.agent_name
     invocation_id = callback_context.invocation_id
     logger.info(
@@ -288,7 +288,11 @@ def after_model_callback(
     except Exception as e:  # pragma: no cover
         logger.debug(f"[Callback] Grounding metadata inspection failed: {e}")
 
-    return llm_response
+    # Must return None, not llm_response. ADK stops walking
+    # canonical_after_model_callbacks at the first truthy return, so returning
+    # the (unmodified) response here silently disables every callback
+    # registered after this one. This callback is observational only.
+    return None
 
 
 def _create_validation_error_response(error_message: str) -> LlmResponse:

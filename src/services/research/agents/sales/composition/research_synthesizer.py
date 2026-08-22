@@ -39,6 +39,50 @@ from ..tools.search import make_search_agent_tool, verify_draft_answer_tool
 from .leaf import create_plan_react_agent
 
 
+def _strip_code_fence(text: str) -> str:
+    """Return the contents of the first ``` fenced block, or *text* unchanged."""
+    if "```json" in text:
+        return text.split("```json", 1)[1].split("```", 1)[0]
+    if "```" in text:
+        parts = text.split("```")
+        if len(parts) >= 3:
+            return parts[1]
+    return text
+
+
+def _salvage_domain_values(json_text: str) -> dict[str, Any]:
+    """Recover individual domain payloads from malformed/truncated JSON.
+
+    The synthesizer emits one large object containing all 12 domains. A single
+    unbalanced brace (or a response truncated at the output-token cap) makes
+    ``json.loads`` fail for the *whole* object, which would otherwise discard
+    11 perfectly good domains. Scan for each key and brace-match its value so
+    every complete domain still survives.
+    """
+    salvaged: dict[str, Any] = {}
+    for key in DOMAIN_OUTPUT_KEYS:
+        marker = f'"{key}"'
+        idx = json_text.find(marker)
+        if idx < 0:
+            continue
+        colon = json_text.find(":", idx + len(marker))
+        if colon < 0:
+            continue
+        rest = json_text[colon + 1 :].lstrip()
+        if not rest:
+            continue
+        try:
+            # raw_decode reads exactly one JSON value (object, array, or
+            # scalar) starting at position 0 and ignores whatever follows,
+            # so a broken sibling domain cannot take this one down with it.
+            value, _ = json.JSONDecoder().raw_decode(rest)
+        except ValueError:
+            # Value itself is incomplete (truncated mid-domain) — skip it.
+            continue
+        salvaged[key] = value
+    return salvaged
+
+
 def _persist_domain_outputs_after_model(
     callback_context: CallbackContext, llm_response: LlmResponse
 ) -> LlmResponse | None:
@@ -61,43 +105,43 @@ def _persist_domain_outputs_after_model(
     # Extract JSON from after FINAL_ANSWER tag
     parts = text.lower().split(FINAL_ANSWER_TAG.lower(), 1)
     json_text = text[len(parts[0]) + len(FINAL_ANSWER_TAG) :].strip()
+    json_text = _strip_code_fence(json_text)
 
-    # Try to parse the JSON
-    parsed: dict[str, Any] | None = None
+    start = json_text.find("{")
+    end = json_text.rfind("}") + 1
+    body = json_text[start:end] if start >= 0 and end > start else json_text
+
+    parsed: dict[str, Any] = {}
     try:
-        # Handle ```json fenced blocks
-        if "```json" in json_text:
-            json_text = json_text.split("```json")[1].split("```")[0]
-        elif "```" in json_text:
-            json_text = json_text.split("```")[1].split("```")[0]
+        candidate = json.loads(body)
+        if isinstance(candidate, dict):
+            parsed = candidate
+        else:
+            logger.error("[ResearchSynthesizer] FINAL_ANSWER is not a JSON object")
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error(f"[ResearchSynthesizer] Failed to parse domain outputs JSON: {e}")
 
-        # Find first { and last }
-        start = json_text.find("{")
-        end = json_text.rfind("}") + 1
-        if start >= 0 and end > start:
-            json_text = json_text[start:end]
-
-        parsed = json.loads(json_text)
-    except (json.JSONDecodeError, IndexError, ValueError) as e:
-        logger.error(
-            f"[ResearchSynthesizer] Failed to parse domain outputs JSON: {e}"
-        )
-        return None
-
-    if not isinstance(parsed, dict):
-        logger.error(
-            "[ResearchSynthesizer] FINAL_ANSWER is not a JSON object"
-        )
-        return None
+    if not parsed:
+        parsed = _salvage_domain_values(json_text)
+        if parsed:
+            logger.warning(
+                f"[ResearchSynthesizer] Salvaged {len(parsed)} domain key(s) from "
+                "malformed FINAL_ANSWER JSON"
+            )
+        else:
+            logger.error(
+                "[ResearchSynthesizer] Could not recover any domain keys from "
+                f"FINAL_ANSWER ({len(json_text)} chars)"
+            )
+            return None
 
     # Persist each domain output key into session state
-    persisted_count = 0
+    persisted: list[str] = []
+    missing: list[str] = []
     for key in DOMAIN_OUTPUT_KEYS:
         value = parsed.get(key)
         if value is None:
-            logger.warning(
-                f"[ResearchSynthesizer] Missing domain key in output: {key}"
-            )
+            missing.append(key)
             continue
 
         # Convert dicts/lists to JSON strings for consistency with old agent outputs
@@ -106,16 +150,22 @@ def _persist_domain_outputs_after_model(
         else:
             state_value = str(value)
 
-        if state_value.strip():
-            callback_context.state[key] = state_value
-            persisted_count += 1
-            logger.info(
-                f"[ResearchSynthesizer] Persisted {key} "
-                f"({len(state_value)} chars)"
-            )
+        if not state_value.strip():
+            missing.append(key)
+            continue
 
+        callback_context.state[key] = state_value
+        persisted.append(key)
+        logger.info(
+            f"[ResearchSynthesizer] Persisted {key} ({len(state_value)} chars)"
+        )
+
+    if missing:
+        logger.warning(
+            f"[ResearchSynthesizer] Missing domain keys in output: {', '.join(missing)}"
+        )
     logger.info(
-        f"[ResearchSynthesizer] Persisted {persisted_count}/{len(DOMAIN_OUTPUT_KEYS)} "
+        f"[ResearchSynthesizer] Persisted {len(persisted)}/{len(DOMAIN_OUTPUT_KEYS)} "
         "domain output keys"
     )
     return None
@@ -141,17 +191,20 @@ def create_research_synthesizer(company_name: str = "Unknown"):
         model=settings.GEMINI_MODEL,
     )
 
-    # Layer the domain output persistence callback on top of existing callbacks.
-    # The agent's after_model_callback is currently a list from create_plan_react_agent.
+    # Domain-output persistence must run FIRST. ADK stops walking the
+    # after_model callback list at the first callback that returns a truthy
+    # value, so anything appended after an observational callback that returns
+    # the response is silently dead code.
     existing_after_model = agent.after_model_callback
     if isinstance(existing_after_model, list):
-        agent.after_model_callback = (
-            existing_after_model + [_persist_domain_outputs_after_model]
-        )
+        agent.after_model_callback = [
+            _persist_domain_outputs_after_model,
+            *existing_after_model,
+        ]
     elif existing_after_model is not None:
         agent.after_model_callback = [
-            existing_after_model,
             _persist_domain_outputs_after_model,
+            existing_after_model,
         ]
     else:
         agent.after_model_callback = _persist_domain_outputs_after_model
