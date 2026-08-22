@@ -6,8 +6,6 @@ from types import SimpleNamespace
 import pytest
 
 from src.services.research.agents.sales.callbacks.plan_react import (
-    ALIGNMENT_CATALOG_MISSING_FINAL_KEY,
-    ALIGNMENT_CATALOG_SEARCH_COUNT_KEY,
     REPORT_COMPILER_PHASE_ERROR_KEY,
     REPORT_VALIDATION_TOOL_CALL_COUNT_KEY,
     plan_after_model,
@@ -15,10 +13,8 @@ from src.services.research.agents.sales.callbacks.plan_react import (
     plan_before_model,
 )
 from src.services.research.agents.sales.tools import (
-    COLT_PRODUCT_SEARCH_TOOL,
     VALIDATE_FINAL_REPORT_TOOL,
 )
-from src.services.research.agents.sales.tools.evidence import verification_status_key
 
 
 @dataclass
@@ -63,35 +59,10 @@ def _response_with_text(text: str):
     return SimpleNamespace(content=SimpleNamespace(parts=[_Part(text)]))
 
 
-def test_alignment_before_model_injects_catalog_search_steering() -> None:
-    callback_context = _CallbackContextStub(agent_name="AlignmentAnalyst", state={})
-    llm_request = _LlmRequestStub()
-
-    result = plan_before_model(callback_context, llm_request)
-
-    assert result is None
-    assert any(
-        COLT_PRODUCT_SEARCH_TOOL in instruction
-        for instruction in llm_request.instructions
-    )
 
 
-def test_alignment_final_answer_without_catalog_search_sets_observability_flag(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "src.services.research.agents.sales.callbacks.plan_react.EvidenceStore.ingest_grounding",
-        lambda *args, **kwargs: None,
-    )
-    state = {verification_status_key("AlignmentAnalyst"): "PASSED"}
-    callback_context = _CallbackContextStub(agent_name="AlignmentAnalyst", state=state)
 
-    plan_after_model(
-        callback_context,
-        _response_with_text('/*FINAL_ANSWER*/\n{"alignment_mappings": []}'),
-    )
 
-    assert state.get(ALIGNMENT_CATALOG_MISSING_FINAL_KEY) is True
 
 
 def test_report_compiler_before_model_injects_strict_planreact_instruction() -> None:
@@ -195,21 +166,4 @@ def test_report_compiler_final_answer_without_passed_validation_fails(
     assert violations and violations[0]["rule"] == "output:validation_not_passed"
 
 
-def test_alignment_catalog_counter_updates_after_tool_call(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "src.services.research.agents.sales.callbacks.plan_react.EvidenceStore.append_search_response",
-        lambda *args, **kwargs: None,
-    )
-    state: dict = {}
-    tool_context = _ToolContextStub(agent_name="AlignmentAnalyst", state=state)
 
-    plan_after_tool(
-        _ToolStub(COLT_PRODUCT_SEARCH_TOOL),
-        args={"query": "secure connectivity"},
-        tool_context=tool_context,
-        tool_response={"items": []},
-    )
-
-    assert state.get(ALIGNMENT_CATALOG_SEARCH_COUNT_KEY) == 1

@@ -209,18 +209,7 @@ def plan_before_model(
             ]
         )
 
-    if agent_name == "AlignmentAnalyst":
-        catalog_calls = int(
-            callback_context.state.get(ALIGNMENT_CATALOG_SEARCH_COUNT_KEY) or 0
-        )
-        if catalog_calls <= 0:
-            llm_request.append_instructions(
-                [
-                    "Before finalizing AlignmentAnalyst output, call "
-                    f"{COLT_PRODUCT_SEARCH_TOOL}(query=...) for each mapped target "
-                    "challenge so Colt solution claims are grounded in catalog evidence."
-                ]
-            )
+
 
     if agent_name == "ReportCompiler":
         validation_status = str(
@@ -266,16 +255,7 @@ def plan_after_model(
                 text=raw_text,
             )
 
-        if agent_name == "AlignmentAnalyst" and has_final_answer_tag:
-            catalog_calls = int(
-                callback_context.state.get(ALIGNMENT_CATALOG_SEARCH_COUNT_KEY) or 0
-            )
-            if catalog_calls <= 0:
-                callback_context.state[ALIGNMENT_CATALOG_MISSING_FINAL_KEY] = True
-                logger.warning(
-                    f"[Validation] AlignmentAnalyst emitted FINAL_ANSWER without "
-                    f"{COLT_PRODUCT_SEARCH_TOOL} call"
-                )
+
 
         if agent_name == "ReportCompiler":
             phases = _record_report_compiler_phases(callback_context.state, raw_text)
@@ -405,10 +385,7 @@ def plan_after_tool(
                 f"parent_agent={agent_name} evidence_items={n}"
             )
         logger.info(f"{tool.name} done agent={agent_name} evidence_items={n}")
-        if agent_name == "AlignmentAnalyst" and tool.name == COLT_PRODUCT_SEARCH_TOOL:
-            tool_context.state[ALIGNMENT_CATALOG_SEARCH_COUNT_KEY] = (
-                int(tool_context.state.get(ALIGNMENT_CATALOG_SEARCH_COUNT_KEY) or 0) + 1
-            )
+
     elif tool.name == "verify_draft_answer":
         status = get_verification_status(tool_context.state, agent_name)
         logger.info(

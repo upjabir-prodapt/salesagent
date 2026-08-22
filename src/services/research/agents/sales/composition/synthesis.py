@@ -2,9 +2,9 @@
 
 from ......core.config import settings
 from ..prompts import ALIGNMENT_PROMPT, REPORT_COMPILER_PROMPT
-from ..tools import colt_product_search_tool, validate_final_report_tool
+from ..tools import validate_final_report_tool
 from ..tools.alignment_context import make_alignment_context_tool
-from .leaf import create_plan_react_agent
+from .leaf import create_llm_agent, create_plan_react_agent
 
 
 def create_synthesis_agents(company_name: str = "Unknown"):
@@ -12,13 +12,12 @@ def create_synthesis_agents(company_name: str = "Unknown"):
     # Create alignment context tool with company name
     alignment_context_tool = make_alignment_context_tool(company_name)
 
-    alignment_analyst = create_plan_react_agent(
+    alignment_analyst = create_llm_agent(
         name="AlignmentAnalyst",
         instruction=ALIGNMENT_PROMPT,
         output_key="alignment_output",
         description="Maps company challenges to Colt solutions using PDF context.",
-        extra_tools=[colt_product_search_tool, alignment_context_tool],
-        model=settings.GEMINI_MODEL,
+        tools=[alignment_context_tool],
     )
 
     report_compiler = create_plan_react_agent(
