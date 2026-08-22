@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from google.adk.agents.context import Context
+
 from src.services.research.agents.adk.callbacks.tool import after_tool_callback
 from src.services.research.run.search_log import (
     SEARCH_QUERY_RECORDS_KEY,
@@ -12,10 +14,17 @@ from src.services.research.run.search_log import (
 
 
 def _tool_context(state: dict) -> SimpleNamespace:
-    return SimpleNamespace(
-        agent_name="market_analyst",
-        callback_context=SimpleNamespace(agent_name="market_analyst", state=state),
-    )
+    """Mirrors the attributes ADK's ToolContext actually exposes.
+
+    ``ToolContext`` is ``google.adk.agents.context.Context``: ``state`` and
+    ``agent_name`` live on it directly, and there is no ``callback_context``.
+    """
+    return SimpleNamespace(agent_name="market_analyst", state=state)
+
+
+def test_tool_context_has_no_callback_context_attribute() -> None:
+    """Guards the fixture above against drifting back to a shape ADK never passes."""
+    assert not hasattr(Context, "callback_context")
 
 
 def test_search_agent_call_increments_search_count() -> None:

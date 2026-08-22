@@ -26,9 +26,7 @@ def before_tool_callback(
     tool: BaseTool, args: dict[str, Any], tool_context: ToolContext
 ) -> dict[str, Any] | None:
     tool_name = tool.name
-    parent_agent = getattr(tool_context, "agent_name", None) or getattr(
-        getattr(tool_context, "callback_context", None), "agent_name", "unknown"
-    )
+    parent_agent = getattr(tool_context, "agent_name", None) or "unknown"
     logger.info(
         f"\n[Callback] BEFORE TOOL Calling '{tool_name}' with original args: {args}"
     )
@@ -60,9 +58,7 @@ def after_tool_callback(
     tool_response: types.Content | types.GenerateContentResponse,
 ) -> dict[str, Any] | None:
     tool_name = tool.name
-    parent_agent = getattr(tool_context, "agent_name", None) or getattr(
-        getattr(tool_context, "callback_context", None), "agent_name", "unknown"
-    )
+    parent_agent = getattr(tool_context, "agent_name", None) or "unknown"
     if tool_name == "google_search_agent":
         logger.info(
             f"[ToolRunner] nested runner finished tool={tool_name} "
@@ -73,10 +69,10 @@ def after_tool_callback(
 
     try:
         if tool_name in ("google_search", "google_search_agent"):
-            agent_name = getattr(tool_context.callback_context, "agent_name", "unknown")
+            agent_name = parent_agent
             query = args.get("query", "") or args.get("request", "")
             entries = _extract_search_entries(tool_response, query, agent_name)
-            state = tool_context.callback_context.state
+            state = tool_context.state
             record_search_query(
                 state,
                 query=query,
@@ -111,7 +107,8 @@ def after_tool_callback(
                 )
     except Exception as e:  # pragma: no cover
         logger.warning(
-            f"[Callback] Could not record search results tool={tool_name}: {e}"
+            f"[Callback] Could not record search results tool={tool_name}: {e!r}",
+            exc_info=True,
         )
 
     return None
