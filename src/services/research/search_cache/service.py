@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from google.cloud import bigquery
 from google.cloud.exceptions import GoogleCloudError
 
 from src.core.config import settings
-from src.core.exceptions import DatabaseError
 from src.core.logging_config import logger
 from src.repositories.bigquery_repository import BigQueryRepository
 
@@ -23,7 +22,7 @@ class SearchCacheService:
         self.bq_repo = bq_repo or BigQueryRepository()
         self.client = self.bq_repo.client
         self.dataset_id = settings.BIGQUERY_DATASET
-        self.cache_table_id = "search_cache"
+        self.cache_table_id = settings.BIGQUERY_SEARCH_CACHE_TABLE
         self.cache_table_ref = (
             f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.cache_table_id}"
         )

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from collections.abc import Callable
 from typing import Any
 
 from ....core.config import settings
 from ....core.logging_config import logger
+from ..cost import CostAnalyzer
+from ..run.search_log import get_search_count, get_search_query_records
 from ..run.telemetry import TELEMETRY_RECORDS_KEY
 from ..utils.async_retry import with_retry, with_retry_sync
 from ..utils.metrics import reconcile_cost
@@ -65,6 +68,18 @@ async def run_cost_attribution_op(
 ) -> None:
     reconcile_cost(session_state, metrics)
     metadata = metadata or {}
+
+    search_count = get_search_count(session_state)
+    search_cost = CostAnalyzer().calculate_search_cost(search_count)
+    token_cost_usd = metrics["cost_usd"]
+    total_cost_usd = (token_cost_usd or 0.0) + search_cost.total_cost_usd
+
+    logger.info(
+        f"[Cost] job_id={job_id} searches={search_count} "
+        f"search_cost=${search_cost.total_cost_usd:.6f} "
+        f"token_cost=${token_cost_usd or 0.0:.6f} total=${total_cost_usd:.6f}"
+    )
+
     await with_retry_sync(
         lambda: insert_cost_attribution(
             job_id=job_id,
@@ -77,10 +92,42 @@ async def run_cost_attribution_op(
             input_tokens=metrics["input_tokens"] or None,
             output_tokens=metrics["output_tokens"] or None,
             total_tokens=metrics["total_tokens"] or None,
+            search_count=search_count,
+            search_cost_usd=search_cost.total_cost_usd,
+            token_cost_usd=token_cost_usd,
+            total_cost_usd=round(total_cost_usd, 6),
             latency_seconds=metrics["latency"],
             cost_usd=metrics["cost_usd"],
         )
     )
+
+
+async def run_search_log_op(
+    *,
+    job_id: str,
+    session_state: dict,
+    insert_search_query_batch: Callable[[list[dict]], Any],
+) -> None:
+    """Flush executed search queries to the search_cache table."""
+    records = get_search_query_records(session_state)
+    if not records:
+        logger.info(f"[SearchLog] No search queries recorded job_id={job_id}")
+        return
+
+    company_name = session_state.get("company_name") or "unknown"
+    rows = [
+        {
+            "company_name": company_name,
+            "query": r["query"],
+            "query_hash": r["query_hash"],
+            "search_results": json.dumps(r.get("entries") or []),
+            "domain": r.get("domain"),
+            "search_date": r["searched_at"],
+        }
+        for r in records
+    ]
+
+    await with_retry_sync(lambda: insert_search_query_batch(rows))
 
 
 async def run_telemetry_flush_op(

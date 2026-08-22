@@ -33,6 +33,7 @@ readonly TABLE_COST_ATTRIBUTION="cost_attribution"
 readonly TABLE_AGENT_TELEMETRY="agent_telemetry"
 readonly TABLE_CATALOG_JOBS="catalog_build_jobs"
 readonly TABLE_USER_FEEDBACK="users_feedback"
+readonly TABLE_SEARCH_CACHE="search_cache"
 
 # Default GCP project per environment (override via env vars above).
 readonly PROJECT_SANDBOX="${BQ_PROJECT_SANDBOX:-aicoesandox}"
@@ -45,6 +46,7 @@ readonly SCHEMA_COST_ATTRIBUTION="${SCHEMA_DIR}/cost_attribution.json"
 readonly SCHEMA_AGENT_TELEMETRY="${SCHEMA_DIR}/agent_telemetry.json"
 readonly SCHEMA_CATALOG_JOBS="${SCHEMA_DIR}/catalog_build_jobs.json"
 readonly SCHEMA_USER_FEEDBACK="${SCHEMA_DIR}/users_feedback.json"
+readonly SCHEMA_SEARCH_CACHE="${SCHEMA_DIR}/search_cache.json"
 
 DRY_RUN=0
 CUSTOM_PROJECT=""
@@ -82,7 +84,8 @@ require_tools() {
     "$SCHEMA_COST_ATTRIBUTION" \
     "$SCHEMA_AGENT_TELEMETRY" \
     "$SCHEMA_CATALOG_JOBS" \
-    "$SCHEMA_USER_FEEDBACK"; do
+    "$SCHEMA_USER_FEEDBACK" \
+    "$SCHEMA_SEARCH_CACHE"; do
     [[ -f "$schema_file" ]] || {
       echo "ERROR: Missing schema file: $schema_file" >&2
       exit 1
@@ -151,13 +154,14 @@ create_partitioned_table() {
 # Compare live vs desired schema; add missing columns or recreate on drift/extra columns.
 sync_partitioned_table() {
   local project="$1" dataset="$2" table="$3" schema_file="$4"
+  local partition_field="${5:-created_at}"
   local ref="${project}:${dataset}.${table}"
 
   if ! table_exists "$project" "$dataset" "$table"; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
-      log "Would create table ${ref} (partitioned on created_at, schema=${schema_file})"
+      log "Would create table ${ref} (partitioned on ${partition_field}, schema=${schema_file})"
     else
-      create_partitioned_table "$ref" "$schema_file"
+      create_partitioned_table "$ref" "$schema_file" "$partition_field"
     fi
     return 0
   fi
@@ -237,7 +241,7 @@ PY
     else
       log "Schema drift on ${ref} — deleting table and recreating (all rows will be lost)"
       run bq rm -f -t "$ref"
-      create_partitioned_table "$ref" "$schema_file"
+      create_partitioned_table "$ref" "$schema_file" "$partition_field"
     fi
     rm -f "$tmp_missing" "$tmp_drift"
     return 0
@@ -397,6 +401,7 @@ provision_project() {
   ensure_partitioned_table "$project" "$dataset" "$TABLE_AGENT_TELEMETRY" "$SCHEMA_AGENT_TELEMETRY"
   ensure_partitioned_table "$project" "$dataset" "$TABLE_CATALOG_JOBS" "$SCHEMA_CATALOG_JOBS"
   ensure_standard_table "$project" "$dataset" "$TABLE_USER_FEEDBACK" "$SCHEMA_USER_FEEDBACK"
+  ensure_partitioned_table "$project" "$dataset" "$TABLE_SEARCH_CACHE" "$SCHEMA_SEARCH_CACHE" "search_date"
 
   log "Done: ${project}:${dataset}"
   echo "  - ${TABLE_RESEARCH_REQUESTS}"
@@ -404,6 +409,7 @@ provision_project() {
   echo "  - ${TABLE_AGENT_TELEMETRY}"
   echo "  - ${TABLE_CATALOG_JOBS}"
   echo "  - ${TABLE_USER_FEEDBACK}"
+  echo "  - ${TABLE_SEARCH_CACHE}"
 }
 
 main() {

@@ -11,6 +11,7 @@ from .operations import (
     run_cost_attribution_op,
     run_evaluation_op,
     run_pdf_op,
+    run_search_log_op,
     run_telemetry_flush_op,
 )
 
@@ -151,6 +152,16 @@ class ResearchFinalizationService:
             side_op_failures["cost_attribution"] = str(e)
 
         try:
+            await run_search_log_op(
+                job_id=job_id,
+                session_state=session_state,
+                insert_search_query_batch=self._bigquery_repo.insert_search_query_batch,
+            )
+        except Exception as e:
+            logger.warning(f"[Pipeline] Search log op failed job_id={job_id}: {e}")
+            side_op_failures["search_log"] = str(e)
+
+        try:
             await run_telemetry_flush_op(
                 job_id=job_id,
                 session_state=session_state,
@@ -184,6 +195,16 @@ class ResearchFinalizationService:
                 f"[Pipeline] Cost op failed on job failure job_id={job_id}: {e}"
             )
             side_op_failures["cost_attribution"] = str(e)
+
+        try:
+            await run_search_log_op(
+                job_id=job_id,
+                session_state=session_state,
+                insert_search_query_batch=self._bigquery_repo.insert_search_query_batch,
+            )
+        except Exception as e:
+            logger.warning(f"[Pipeline] Search log op failed job_id={job_id}: {e}")
+            side_op_failures["search_log"] = str(e)
 
         try:
             await run_telemetry_flush_op(

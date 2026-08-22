@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     BIGQUERY_AGENT_TELEMETRY_TABLE: str
     BIGQUERY_CATALOG_JOBS_TABLE: str
     BIGQUERY_USER_FEEDBACK_TABLE: str
+    BIGQUERY_SEARCH_CACHE_TABLE: str = "search_cache"
 
     # Security
     SECRET_KEY: str

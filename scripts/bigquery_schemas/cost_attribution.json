@@ -9,6 +9,10 @@
   {"name": "input_tokens", "type": "INT64", "mode": "NULLABLE"},
   {"name": "output_tokens", "type": "INT64", "mode": "NULLABLE"},
   {"name": "total_tokens", "type": "INT64", "mode": "NULLABLE"},
+  {"name": "search_count", "type": "INT64", "mode": "NULLABLE"},
+  {"name": "search_cost_usd", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "token_cost_usd", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "total_cost_usd", "type": "FLOAT64", "mode": "NULLABLE"},
   {"name": "latency_seconds", "type": "FLOAT64", "mode": "NULLABLE"},
   {"name": "cost_usd", "type": "FLOAT64", "mode": "NULLABLE"},
   {"name": "created_at", "type": "TIMESTAMP", "mode": "REQUIRED"}

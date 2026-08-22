@@ -30,6 +30,7 @@ TEST_SETTINGS_ENV: dict[str, str] = {
     "BIGQUERY_AGENT_TELEMETRY_TABLE": "agent_telemetry",
     "BIGQUERY_CATALOG_JOBS_TABLE": "catalog_build_jobs",
     "BIGQUERY_USER_FEEDBACK_TABLE": "users_feedback",
+    "BIGQUERY_SEARCH_CACHE_TABLE": "search_cache",
     "SECRET_KEY": "test-secret-key-for-unit-tests-only",
     "ALGORITHM": "HS256",
     "ACCESS_TOKEN_EXPIRE_MINUTES": "30",

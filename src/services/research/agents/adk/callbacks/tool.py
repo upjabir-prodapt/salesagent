@@ -10,6 +10,7 @@ from google.genai import types
 
 from ......core.logging_config import logger
 from ......utils.url_utils import is_authoritative
+from ....run.search_log import record_search_query
 from ...sales.tools.evidence import append_evidence, evidence_key
 from ...sales.tools.verification import EvidenceStore
 from .common import (
@@ -75,8 +76,14 @@ def after_tool_callback(
             agent_name = getattr(tool_context.callback_context, "agent_name", "unknown")
             query = args.get("query", "") or args.get("request", "")
             entries = _extract_search_entries(tool_response, query, agent_name)
+            state = tool_context.callback_context.state
+            record_search_query(
+                state,
+                query=query,
+                agent_name=agent_name,
+                entries=entries,
+            )
             if entries:
-                state = tool_context.callback_context.state
                 for entry in entries:
                     url = entry.get("url", "")
                     snippet = entry.get("snippet", "").lower()
@@ -103,7 +110,9 @@ def after_tool_callback(
                     f"agent={agent_name} query={query!r}"
                 )
     except Exception as e:  # pragma: no cover
-        logger.debug(f"[Callback] Could not cache search results: {e}")
+        logger.warning(
+            f"[Callback] Could not record search results tool={tool_name}: {e}"
+        )
 
     return None
 
