@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.models import LlmRequest, LlmResponse
 from google.genai import types
@@ -24,6 +27,66 @@ from .common import record_callback_span_event
 __all__ = ["before_model_callback", "after_model_callback"]
 
 
+def _render_report_prompt_template(prompt: str, session_state: dict) -> str:
+    """Substitute {{variable?}} placeholders with session state values for ReportCompiler."""
+    template_vars = [
+        "company_name",
+        "firmographicsagent_output",
+        "geographicagent_output",
+        "executiveagent_output",
+        "strategyagent_output",
+        "complianceagent_output",
+        "marketagent_output",
+        "ecosystemagent_output",
+        "techstackagent_output",
+        "procurementagent_output",
+        "growthsignals_output",
+        "risksignals_output",
+        "campaignsignals_output",
+        "alignment_output",
+    ]
+
+    rendered = prompt
+    for var in template_vars:
+        pattern = r"\{\{" + var + r"\?\}\}"
+        value = session_state.get(var, "")
+
+        if isinstance(value, (dict, list)):
+            try:
+                value = json.dumps(value, indent=2)
+            except (TypeError, ValueError):
+                value = str(value)
+        else:
+            value = str(value) if value else ""
+
+        rendered = re.sub(pattern, value, rendered)
+
+    return rendered
+
+
+def _inject_session_state_into_report_prompt(
+    llm_request: LlmRequest, session_state: dict
+) -> None:
+    """Inject session state values into ReportCompiler prompt by rendering template variables."""
+    if not llm_request.contents:
+        return
+
+    for content in llm_request.contents:
+        if getattr(content, "role", None) == "user" and content.parts:
+            for part in content.parts:
+                if getattr(part, "text", None):
+                    original_text = part.text
+                    rendered_text = _render_report_prompt_template(
+                        original_text, session_state
+                    )
+                    if rendered_text != original_text:
+                        part.text = rendered_text
+                        logger.info(
+                            "[Callback] Rendered ReportCompiler prompt template "
+                            f"({len(original_text)} -> {len(rendered_text)} chars)"
+                        )
+
+
 def before_model_callback(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> LlmResponse | None:
@@ -36,6 +99,14 @@ def before_model_callback(
         "adk.before_model",
         {"agent_name": agent_name, "invocation_id": invocation_id},
     )
+
+    try:
+        if agent_name == "ReportCompiler" and llm_request.contents:
+            _inject_session_state_into_report_prompt(
+                llm_request, callback_context.state
+            )
+    except Exception as e:  # pragma: no cover
+        logger.debug(f"[Callback] Failed to inject session state into ReportCompiler prompt: {e}")
 
     try:
         if "mc_temperature" not in callback_context.state:
