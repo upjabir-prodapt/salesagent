@@ -23,9 +23,9 @@ class _DummyRunner:
                 "parallel-failure",
                 [
                     AgentOutputError(
-                        "ExecutiveAgent output missing",
-                        agent_name="ExecutiveAgent",
-                        output_key="executiveagent_output",
+                        "AlignmentAnalyst output missing",
+                        agent_name="AlignmentAnalyst",
+                        output_key="alignment_output",
                         error_class="MISSING_OUTPUT",
                     )
                 ],
@@ -34,7 +34,7 @@ class _DummyRunner:
             invocation_id="inv-2",
             error_code=None,
             error_message=None,
-            author="ExecutiveAgent",
+            author="AlignmentAnalyst",
         )
 
 
@@ -73,11 +73,11 @@ async def test_run_runner_with_per_agent_retry_unwraps_exception_group():
     )
 
     assert len(runner.calls) == 2
-    assert retry_calls == [("ExecutiveAgent", 1)]
+    assert retry_calls == [("AlignmentAnalyst", 1)]
     assert len(processed_events) == 1
 
     second_call = runner.calls[1]
     assert "invocation_id" not in second_call
     continuation_message = second_call["new_message"].parts[0].text
-    assert "executiveagent_output" in continuation_message
+    assert "alignment_output" in continuation_message
     assert "completed without populating required output_key" in continuation_message

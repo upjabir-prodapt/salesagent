@@ -4,15 +4,18 @@ This agent bridges the gap between the unified QueryGeneratorAgent (which
 produces search queries and executes searches) and the downstream synthesis
 agents (AlignmentAnalyst, ReportCompiler) that expect structured per-domain
 output keys like ``firmographicsagent_output``, ``geographicagent_output``, etc.
+
+Persistence is deliberately layered (see tools/domain_outputs.py). The primary
+path is the ``save_domain_output`` tool, which writes one domain per call so a
+truncated or malformed final message can no longer cost the entire research
+phase. Parsing the final message and sweeping the session events remain as
+backstops.
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any
-
 from google.adk.agents.callback_context import CallbackContext
-from google.adk.models import LlmResponse
+from google.adk.models import LlmRequest, LlmResponse
 
 from ......core.config import settings
 from ......core.logging_config import logger
@@ -20,148 +23,140 @@ from ..prompts.synthesis_research_prompts import (
     DOMAIN_OUTPUT_KEYS,
     RESEARCH_SYNTHESIZER_PROMPT,
 )
+from ..tools.domain_outputs import (
+    SAVE_DOMAIN_OUTPUT_TOOL,
+    log_domain_progress,
+    missing_domain_keys,
+    recover_domain_outputs,
+    save_domain_output_tool,
+)
+from ..tools.output_persistence import collect_agent_visible_text
 from .leaf import create_plan_react_agent
 
-
-def _strip_code_fence(text: str) -> str:
-    """Return the contents of the first ``` fenced block, or *text* unchanged."""
-    if "```json" in text:
-        return text.split("```json", 1)[1].split("```", 1)[0]
-    if "```" in text:
-        parts = text.split("```")
-        if len(parts) >= 3:
-            return parts[1]
-    return text
+SYNTHESIZER_NAME = "ResearchSynthesizer"
 
 
-def _salvage_domain_values(json_text: str) -> dict[str, Any]:
-    """Recover individual domain payloads from malformed/truncated JSON.
-
-    The synthesizer emits one large object containing all 12 domains. A single
-    unbalanced brace (or a response truncated at the output-token cap) makes
-    ``json.loads`` fail for the *whole* object, which would otherwise discard
-    11 perfectly good domains. Scan for each key and brace-match its value so
-    every complete domain still survives.
-    """
-    salvaged: dict[str, Any] = {}
-    for key in DOMAIN_OUTPUT_KEYS:
-        marker = f'"{key}"'
-        idx = json_text.find(marker)
-        if idx < 0:
-            continue
-        colon = json_text.find(":", idx + len(marker))
-        if colon < 0:
-            continue
-        rest = json_text[colon + 1 :].lstrip()
-        if not rest:
-            continue
-        try:
-            # raw_decode reads exactly one JSON value (object, array, or
-            # scalar) starting at position 0 and ignores whatever follows,
-            # so a broken sibling domain cannot take this one down with it.
-            value, _ = json.JSONDecoder().raw_decode(rest)
-        except ValueError:
-            # Value itself is incomplete (truncated mid-domain) — skip it.
-            continue
-        salvaged[key] = value
-    return salvaged
-
-
-def _persist_domain_outputs_after_model(
-    callback_context: CallbackContext, llm_response: LlmResponse
-) -> LlmResponse | None:
-    """Extract domain-level JSON outputs from FINAL_ANSWER and persist each key."""
-    from google.adk.planners.plan_re_act_planner import FINAL_ANSWER_TAG
-
+def _visible_text(llm_response: LlmResponse) -> str:
     content = llm_response.content
     if not content or not content.parts:
-        return None
-
-    text = "\n".join(
+        return ""
+    return "\n".join(
         (p.text or "").strip()
         for p in content.parts
         if getattr(p, "text", None) and not getattr(p, "thought", False)
     ).strip()
 
-    if FINAL_ANSWER_TAG.lower() not in text.lower():
+
+def _inject_domain_progress_before_model(
+    callback_context: CallbackContext, llm_request: LlmRequest
+) -> LlmResponse | None:
+    """Tell the model which domains are already stored.
+
+    Domain state survives a retry of this agent, so a second attempt should
+    spend its budget on the gaps instead of re-researching what is already
+    saved.
+    """
+    missing = missing_domain_keys(callback_context.state)
+    if not missing or len(missing) == len(DOMAIN_OUTPUT_KEYS):
+        return None
+    try:
+        llm_request.append_instructions(
+            [
+                f"{len(DOMAIN_OUTPUT_KEYS) - len(missing)} of "
+                f"{len(DOMAIN_OUTPUT_KEYS)} domains are already saved. Research "
+                f"and save ONLY these remaining domains via "
+                f"{SAVE_DOMAIN_OUTPUT_TOOL}: {', '.join(missing)}."
+            ]
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug(f"[DomainOutput] Could not inject progress hint: {exc}")
+    return None
+
+
+def _persist_domain_outputs_after_model(
+    callback_context: CallbackContext, llm_response: LlmResponse
+) -> LlmResponse | None:
+    """Backstop: recover domain payloads from a JSON-bearing model message.
+
+    The tool path has usually stored the domains already; anything found here
+    only fills keys that are still empty.
+    """
+    if not missing_domain_keys(callback_context.state):
         return None
 
-    # Extract JSON from after FINAL_ANSWER tag
-    parts = text.lower().split(FINAL_ANSWER_TAG.lower(), 1)
-    json_text = text[len(parts[0]) + len(FINAL_ANSWER_TAG) :].strip()
-    json_text = _strip_code_fence(json_text)
+    text = _visible_text(llm_response)
+    if not text or "{" not in text:
+        return None
 
-    start = json_text.find("{")
-    end = json_text.rfind("}") + 1
-    body = json_text[start:end] if start >= 0 and end > start else json_text
-
-    parsed: dict[str, Any] = {}
-    try:
-        candidate = json.loads(body)
-        if isinstance(candidate, dict):
-            parsed = candidate
-        else:
-            logger.error("[ResearchSynthesizer] FINAL_ANSWER is not a JSON object")
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.error(f"[ResearchSynthesizer] Failed to parse domain outputs JSON: {e}")
-
-    if not parsed:
-        parsed = _salvage_domain_values(json_text)
-        if parsed:
-            logger.warning(
-                f"[ResearchSynthesizer] Salvaged {len(parsed)} domain key(s) from "
-                "malformed FINAL_ANSWER JSON"
-            )
-        else:
-            logger.error(
-                "[ResearchSynthesizer] Could not recover any domain keys from "
-                f"FINAL_ANSWER ({len(json_text)} chars)"
-            )
-            return None
-
-    # Persist each domain output key into session state
-    persisted: list[str] = []
-    missing: list[str] = []
-    for key in DOMAIN_OUTPUT_KEYS:
-        value = parsed.get(key)
-        if value is None:
-            missing.append(key)
-            continue
-
-        # Convert dicts/lists to JSON strings for consistency with old agent outputs
-        if isinstance(value, (dict, list)):
-            state_value = json.dumps(value, ensure_ascii=False)
-        else:
-            state_value = str(value)
-
-        if not state_value.strip():
-            missing.append(key)
-            continue
-
-        callback_context.state[key] = state_value
-        persisted.append(key)
-        logger.info(f"[ResearchSynthesizer] Persisted {key} ({len(state_value)} chars)")
-
-    if missing:
-        logger.warning(
-            f"[ResearchSynthesizer] Missing domain keys in output: {', '.join(missing)}"
-        )
-    logger.info(
-        f"[ResearchSynthesizer] Persisted {len(persisted)}/{len(DOMAIN_OUTPUT_KEYS)} "
-        "domain output keys"
-    )
+    recover_domain_outputs(callback_context.state, text, source="after_model")
     return None
+
+
+def _recover_domain_outputs_after_agent(
+    callback_context: CallbackContext,
+) -> None:
+    """Last-chance sweep over every message this agent produced.
+
+    Runs before the domain-output gate in the generic after_agent callback, so
+    anything recoverable is recovered before the job is allowed to abort.
+    """
+    state = callback_context.state
+    if not missing_domain_keys(state):
+        log_domain_progress(state, stage="after_agent")
+        return None
+
+    texts: list[str] = []
+    try:
+        texts.append(
+            collect_agent_visible_text(
+                callback_context.session.events,
+                agent_name=SYNTHESIZER_NAME,
+                invocation_id=callback_context.invocation_id,
+            )
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[DomainOutput] Could not read session events: {exc}")
+
+    output = state.get("research_synthesizer_output")
+    if output:
+        texts.append(str(output))
+
+    for index, text in enumerate(texts):
+        if not text or "{" not in text:
+            continue
+        recover_domain_outputs(state, text, source=f"after_agent[{index}]")
+        if not missing_domain_keys(state):
+            break
+
+    log_domain_progress(state, stage="after_agent")
+    return None
+
+
+def _prepend_callback(agent, attribute: str, callback) -> None:
+    """Put *callback* first in an ADK callback slot.
+
+    ADK stops walking a callback list at the first callback returning a truthy
+    value, so anything appended after an observational callback that returns
+    the response is silently dead code.
+    """
+    existing = getattr(agent, attribute, None)
+    if isinstance(existing, list):
+        setattr(agent, attribute, [callback, *existing])
+    elif existing is not None:
+        setattr(agent, attribute, [callback, existing])
+    else:
+        setattr(agent, attribute, callback)
 
 
 def create_research_synthesizer(company_name: str = "Unknown"):
     """Create the research synthesizer agent.
 
     This agent takes the query plan from QueryGeneratorAgent, executes web
-    searches, and synthesizes results into the 12 per-domain output keys
-    that AlignmentAnalyst and ReportCompiler expect.
+    searches, and saves the 12 per-domain output keys that AlignmentAnalyst
+    and ReportCompiler expect.
     """
     agent = create_plan_react_agent(
-        name="ResearchSynthesizer",
+        name=SYNTHESIZER_NAME,
         instruction=RESEARCH_SYNTHESIZER_PROMPT,
         output_key="research_synthesizer_output",
         description=(
@@ -170,26 +165,19 @@ def create_research_synthesizer(company_name: str = "Unknown"):
         ),
         include_web_search=True,
         include_bm25_verify=True,
+        extra_tools=[save_domain_output_tool],
         model=settings.GEMINI_MODEL,
     )
 
-    # Domain-output persistence must run FIRST. ADK stops walking the
-    # after_model callback list at the first callback that returns a truthy
-    # value, so anything appended after an observational callback that returns
-    # the response is silently dead code.
-    existing_after_model = agent.after_model_callback
-    if isinstance(existing_after_model, list):
-        agent.after_model_callback = [
-            _persist_domain_outputs_after_model,
-            *existing_after_model,
-        ]
-    elif existing_after_model is not None:
-        agent.after_model_callback = [
-            _persist_domain_outputs_after_model,
-            existing_after_model,
-        ]
-    else:
-        agent.after_model_callback = _persist_domain_outputs_after_model
+    _prepend_callback(
+        agent, "before_model_callback", _inject_domain_progress_before_model
+    )
+    _prepend_callback(
+        agent, "after_model_callback", _persist_domain_outputs_after_model
+    )
+    _prepend_callback(
+        agent, "after_agent_callback", _recover_domain_outputs_after_agent
+    )
 
     logger.info(
         f"Created ResearchSynthesizer for {company_name} "

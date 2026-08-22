@@ -8,6 +8,7 @@ from google.adk.planners.plan_re_act_planner import (
 )
 
 from ....domain.agent_contracts import DOMAIN_OUTPUT_KEYS
+from ..tools.domain_outputs import SAVE_DOMAIN_OUTPUT_TOOL
 from ..tools.search import SEARCH_AGENT_NAME
 from .prompt_common import AGGREGATED_ANSWER_TAG
 
@@ -109,40 +110,41 @@ targeted queries. Example searches:
 - "{{{{company_name}}}} cloud strategy technology stack"
 - "{{{{company_name}}}} office locations worldwide data centers"
 
-{AGGREGATED_ANSWER_TAG} — Compile ALL search results into a single JSON object with
-exactly these 12 keys. Each key's value should be a JSON string containing the
-structured research findings for that domain.
+{ACTION_TAG} — **Save each domain as soon as you have researched it** by calling
+`{SAVE_DOMAIN_OUTPUT_TOOL}(domain_key=..., content=...)`:
+- `domain_key` — exactly one of the 12 keys listed above, e.g. `firmographicsagent_output`.
+- `content` — that domain's findings as a JSON object serialized to a string,
+  including every field named in the domain description and the source URLs.
+
+Save the domains **incrementally**, one call per domain, as you finish each one.
+Do NOT wait until the end and do NOT batch all 12 domains into one message body:
+a single oversized message gets truncated and the research is lost. You may issue
+several `{SAVE_DOMAIN_OUTPUT_TOOL}` calls in the same turn.
+
+Each call replies with how many domains are stored and which are still missing.
+Keep researching and saving until it reports 0 remaining. **All 12 domains must be
+saved through this tool** — a domain you only mention in prose does not count and
+the job will abort.
+
+{AGGREGATED_ANSWER_TAG} — Write a concise digest (a few lines per domain) of the
+findings you saved, with the key facts and source URLs. This is the evidence check
+input, not the payload — the full data already lives in the saved domains.
 
 {ACTION_TAG} — Call `verify_draft_answer(draft=<full aggregated answer text>)`.
 
 If verification returns FAILED: {REPLANNING_TAG} — search for missing evidence,
-revise, and verify again.
+re-save the affected domains with `{SAVE_DOMAIN_OUTPUT_TOOL}`, revise the digest,
+and verify again.
 
-Only after PASSED: emit {FINAL_ANSWER_TAG} with the verified answer.
+Only after PASSED: emit {FINAL_ANSWER_TAG}.
 
 ## Output Format
 
-Your {FINAL_ANSWER_TAG} must be a valid JSON object with exactly these 12 keys:
-
-```json
-{{{{
-  "firmographicsagent_output": {{{{ ... firmographics data ... }}}},
-  "geographicagent_output": {{{{ ... geographic data ... }}}},
-  "executiveagent_output": {{{{ ... executive data ... }}}},
-  "strategyagent_output": {{{{ ... strategy data ... }}}},
-  "complianceagent_output": {{{{ ... compliance data ... }}}},
-  "marketagent_output": {{{{ ... market data ... }}}},
-  "ecosystemagent_output": {{{{ ... ecosystem data ... }}}},
-  "techstackagent_output": {{{{ ... technology data ... }}}},
-  "procurementagent_output": {{{{ ... procurement data ... }}}},
-  "growthsignals_output": {{{{ ... growth signals ... }}}},
-  "risksignals_output": {{{{ ... risk signals ... }}}},
-  "campaignsignals_output": {{{{ ... campaign signals ... }}}}
-}}}}
-```
-
-Each domain's value should be a comprehensive JSON object with all fields mentioned
-in the domain description above. Include source URLs from search results.
+Your {FINAL_ANSWER_TAG} is a short confirmation, NOT the research payload. State
+that all 12 domains were saved, list the 12 domain keys you saved, and give a
+two-or-three sentence summary of the company. Never paste the full domain data
+into {FINAL_ANSWER_TAG} — it is already persisted by the tool calls, and a long
+final message risks truncation.
 
 ## Anti-hallucination Rules
 

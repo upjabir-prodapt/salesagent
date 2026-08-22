@@ -37,7 +37,10 @@ def test_session_state_getters_setters_and_tracked_outputs() -> None:
 
     tracked = session.tracked_outputs()
     assert tracked["QueryGeneratorAgent"] == "query text"
-    assert "AlignmentAnalyst" not in tracked
+    # AlignmentAnalyst is a tracked contract agent, so the value just written
+    # above surfaces here; only agents with an empty output are omitted.
+    assert tracked["AlignmentAnalyst"] == "alignment text"
+    assert "ResearchSynthesizer" not in tracked
 
 
 def test_session_state_defaults_for_non_list_fields() -> None:

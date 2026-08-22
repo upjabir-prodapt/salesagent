@@ -56,11 +56,20 @@ def test_setup_logging_mirrors_to_file(mock_settings):
     with tempfile.TemporaryDirectory() as tmpdir:
         log_path = Path(tmpdir) / "app.log"
         mock_settings.LOG_FILE = str(log_path)
-        with patch("src.core.logging_config.settings", mock_settings):
-            mock_settings.app_log_path = log_path
-            setup_logging()
-            logging.getLogger("sales_agent").info("mirror me")
-            for handler in logging.getLogger().handlers:
-                handler.flush()
+        try:
+            with patch("src.core.logging_config.settings", mock_settings):
+                mock_settings.app_log_path = log_path
+                setup_logging()
+                logging.getLogger("sales_agent").info("mirror me")
+                for handler in logging.getLogger().handlers:
+                    handler.flush()
 
-        assert log_path.read_text(encoding="utf-8").strip().endswith("mirror me")
+            assert log_path.read_text(encoding="utf-8").strip().endswith("mirror me")
+        finally:
+            # setup_logging() only clears the root handler list, so the
+            # FileHandler keeps app.log open. Windows refuses to delete an
+            # open file, which would fail the TemporaryDirectory cleanup.
+            root = logging.getLogger()
+            for handler in list(root.handlers):
+                root.removeHandler(handler)
+                handler.close()

@@ -155,9 +155,11 @@ class Settings(BaseSettings):
     # Set to 12 to abort on any missing domain.
     RESEARCH_MIN_DOMAIN_OUTPUTS: int = 6
     # Abort the job outright when the research phase comes up short, instead
-    # of retrying. Retrying an empty research phase just reproduces the same
-    # "Data not available from research." report at full token cost.
-    RESEARCH_ABORT_ON_MISSING_DOMAINS: bool = True
+    # of retrying. Retrying is now productive: ResearchSynthesizer saves each
+    # domain through save_domain_output as it goes, so a re-run accumulates on
+    # top of the domains the previous attempt already stored rather than
+    # starting from nothing. Set True to go back to failing on the spot.
+    RESEARCH_ABORT_ON_MISSING_DOMAINS: bool = False
     AGENT_EVENTS_COMPACT_ENABLED: bool = True
     AGENT_EVENTS_COMPACT_TOKEN_THRESHOLD: int = 100_000
     AGENT_EVENTS_COMPACT_RETENTION: int = 6

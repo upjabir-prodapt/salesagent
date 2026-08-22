@@ -24,14 +24,16 @@ def test_resolve_dotenv_path_cloud_run():
         assert config.resolve_dotenv_path() == config.CLOUD_RUN_ENV_FILE
 
 
-def test_resolve_dotenv_path_custom():
-    custom = "/tmp/custom.env"
+def test_resolve_dotenv_path_custom(tmp_path: Path):
+    # Must be an OS-absolute path: resolve_dotenv_path() rebases relative
+    # values onto the repo root, and "/tmp/..." is not absolute on Windows.
+    custom = tmp_path / "custom.env"
     with patch.dict(
         os.environ,
-        {"DOTENV_PATH": custom, "DOTENV_DISABLE": ""},
+        {"DOTENV_PATH": str(custom), "DOTENV_DISABLE": ""},
         clear=False,
     ):
-        assert config.resolve_dotenv_path() == Path(custom)
+        assert config.resolve_dotenv_path() == custom
 
 
 def test_load_dotenv_file_missing_returns_none(tmp_path: Path):
