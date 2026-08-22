@@ -14,6 +14,7 @@ from ......core.config import settings
 from ......core.logging_config import logger
 from ......core.model import retry_config
 from .lanes import PlanReActAgentFactory
+from .research_synthesizer import create_research_synthesizer
 from ..query_generator import QueryGeneratorFactory
 
 
@@ -26,6 +27,9 @@ class SalesAgentAppFactory:
         # Create unified query generator agent
         query_generator = QueryGeneratorFactory.create_query_generator_agent(company_name)
 
+        # Create research synthesizer agent (bridges query plan → per-domain outputs)
+        research_synthesizer = create_research_synthesizer(company_name)
+
         # Create synthesis agents (pass company_name for context tools)
         alignment_analyst, report_compiler = (
             PlanReActAgentFactory.build_synthesis_agents(company_name)
@@ -36,10 +40,11 @@ class SalesAgentAppFactory:
             name="SalesResearchAgent",
             sub_agents=[
                 query_generator,
+                research_synthesizer,
                 alignment_analyst,
                 report_compiler,
             ],
-            description="An agent that generates research queries, performs alignment analysis, and generates a strategic lead report.",
+            description="An agent that generates research queries, conducts research, performs alignment analysis, and generates a strategic lead report.",
         )
         logger.debug(
             "SalesResearchAgent pipeline: ResearchOrchestrator -> AlignmentAnalyst -> ReportCompiler"

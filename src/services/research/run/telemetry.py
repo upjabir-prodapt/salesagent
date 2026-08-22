@@ -35,6 +35,8 @@ from ..utils.model_pricing import (
 _AGENT_TYPE_MAP: dict[str, str] = {
     # Query generator agent
     "QueryGeneratorAgent": "LlmAgent",
+    # Research synthesizer agent
+    "ResearchSynthesizer": "LlmAgent",
     # Legacy research leaf agents
     "FirmographicsAgent": "LlmAgent",
     "GeographicAgent": "LlmAgent",

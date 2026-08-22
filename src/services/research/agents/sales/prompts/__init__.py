@@ -6,6 +6,7 @@ from .prompt_common import (
     RESEARCH_GUIDELINES,
 )
 from .synthesis_prompts import ALIGNMENT_PROMPT, COLT_DETAILS, REPORT_COMPILER_PROMPT
+from .synthesis_research_prompts import RESEARCH_SYNTHESIZER_PROMPT
 
 __all__ = [
     "AGGREGATED_ANSWER_TAG",
@@ -14,4 +15,6 @@ __all__ = [
     "COLT_DETAILS",
     "ALIGNMENT_PROMPT",
     "REPORT_COMPILER_PROMPT",
+    "RESEARCH_SYNTHESIZER_PROMPT",
 ]
+

@@ -19,6 +19,7 @@ class AgentContract:
 
 AGENT_CONTRACTS: Final[tuple[AgentContract, ...]] = (
     AgentContract("QueryGeneratorAgent", "query_generator_output"),
+    AgentContract("ResearchSynthesizer", "research_synthesizer_output"),
     AgentContract("AlignmentAnalyst", "alignment_output"),
     AgentContract("ReportCompiler", "final_report"),
 )
