@@ -14,4 +14,3 @@ __all__ = [
     "create_research_synthesizer",
     "create_synthesis_agents",
 ]
-

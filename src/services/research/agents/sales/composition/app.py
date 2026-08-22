@@ -13,9 +13,9 @@ from google.adk.plugins import ReflectAndRetryToolPlugin
 from ......core.config import settings
 from ......core.logging_config import logger
 from ......core.model import retry_config
+from ..query_generator import QueryGeneratorFactory
 from .lanes import PlanReActAgentFactory
 from .research_synthesizer import create_research_synthesizer
-from ..query_generator import QueryGeneratorFactory
 
 
 class SalesAgentAppFactory:
@@ -25,7 +25,9 @@ class SalesAgentAppFactory:
         logger.info("Building agent orchestration structure...")
 
         # Create unified query generator agent
-        query_generator = QueryGeneratorFactory.create_query_generator_agent(company_name)
+        query_generator = QueryGeneratorFactory.create_query_generator_agent(
+            company_name
+        )
 
         # Create research synthesizer agent (bridges query plan → per-domain outputs)
         research_synthesizer = create_research_synthesizer(company_name)

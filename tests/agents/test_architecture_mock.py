@@ -15,7 +15,7 @@ Run with: pytest tests/agents/test_architecture_mock.py -v -s
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -31,7 +31,6 @@ from src.services.research.agents.sales.query_generator.schemas import (
 )
 from src.services.research.agents.sales.query_generator.search_orchestrator import (
     SearchExecution,
-    SearchOrchestrator,
 )
 from src.services.research.cost import CostAnalyzer
 from src.services.research.search_cache import SearchCacheService
@@ -79,14 +78,26 @@ class TestArchitectureMockFlow:
     def mock_selected_plan(self) -> NormalizedQueryPlan:
         """Generate mock BM25-selected query plan."""
         queries = [
-            QueryWithMetadata(query="Acme Corp revenue 2025", domain="firmographics", year=2025),
-            QueryWithMetadata(query="Acme Corp revenue 2024", domain="firmographics", year=2024),
-            QueryWithMetadata(query="Acme Corp employee count", domain="firmographics", year=None),
-            QueryWithMetadata(query="Acme Corp headquarters", domain="geographic", year=None),
+            QueryWithMetadata(
+                query="Acme Corp revenue 2025", domain="firmographics", year=2025
+            ),
+            QueryWithMetadata(
+                query="Acme Corp revenue 2024", domain="firmographics", year=2024
+            ),
+            QueryWithMetadata(
+                query="Acme Corp employee count", domain="firmographics", year=None
+            ),
+            QueryWithMetadata(
+                query="Acme Corp headquarters", domain="geographic", year=None
+            ),
             QueryWithMetadata(query="Acme Corp CEO", domain="executive", year=None),
             QueryWithMetadata(query="Acme Corp CTO", domain="executive", year=None),
-            QueryWithMetadata(query="Acme Corp strategy 2025", domain="strategy", year=2025),
-            QueryWithMetadata(query="Acme Corp competitors", domain="market", year=None),
+            QueryWithMetadata(
+                query="Acme Corp strategy 2025", domain="strategy", year=2025
+            ),
+            QueryWithMetadata(
+                query="Acme Corp competitors", domain="market", year=None
+            ),
         ]
 
         return NormalizedQueryPlan(
@@ -176,7 +187,9 @@ class TestArchitectureMockFlow:
         logger.info(f"  With years: {len(year_queries)} queries")
 
     def test_search_orchestration_mock(
-        self, mock_selected_plan: NormalizedQueryPlan, mock_search_results: list[SearchExecution]
+        self,
+        mock_selected_plan: NormalizedQueryPlan,
+        mock_search_results: list[SearchExecution],
     ):
         """Test search orchestration with mock results."""
         assert len(mock_search_results) == 2
@@ -230,14 +243,20 @@ class TestArchitectureMockFlow:
 
         assert token_portion > 0
         assert search_portion > 0
-        assert abs(total - (token_portion + search_portion)) < 0.01  # Floating point tolerance
+        assert (
+            abs(total - (token_portion + search_portion)) < 0.01
+        )  # Floating point tolerance
 
-        logger.info(f"✓ Cost analysis:")
-        logger.info(f"  Tokens (${token_portion:.6f}): {input_tokens} in + {output_tokens} out")
+        logger.info("✓ Cost analysis:")
+        logger.info(
+            f"  Tokens (${token_portion:.6f}): {input_tokens} in + {output_tokens} out"
+        )
         logger.info(f"  Searches (${search_portion:.6f}): {search_count} queries")
         logger.info(f"  Total: ${total:.6f}")
 
-    @patch("src.services.research.agents.sales.composition.app.SalesAgentAppFactory.create")
+    @patch(
+        "src.services.research.agents.sales.composition.app.SalesAgentAppFactory.create"
+    )
     def test_app_creation_with_mock(self, mock_create):
         """Test app creation with mocked factory."""
         mock_app = MagicMock()
@@ -255,12 +274,12 @@ class TestArchitectureMockFlow:
 
         logger.info("✓ App created with mocked factory")
 
-    @patch("src.services.research.search_cache.service.BigQueryRepository")
-    def test_search_cache_mock(self, mock_bq_repo):
+    @patch("src.services.research.search_cache.service.FirestoreSearchCacheRepository")
+    def test_search_cache_mock(self, mock_repo):
         """Test search cache with mock data."""
-        mock_bq_repo_instance = MagicMock()
-        mock_bq_repo.return_value = mock_bq_repo_instance
-        cache = SearchCacheService(bq_repo=mock_bq_repo_instance)
+        mock_repo_instance = MagicMock()
+        mock_repo.return_value = mock_repo_instance
+        SearchCacheService(repository=mock_repo_instance)
 
         mock_cached = {
             "Acme Corp revenue 2025": {
@@ -301,7 +320,9 @@ class TestMockEndToEndFlow:
                 "market": ["Acme Corp market position"],
             }
         )
-        logger.info(f"  ✓ Generated {sum(len(q) for q in candidates.domain_queries.values())} candidates")
+        logger.info(
+            f"  ✓ Generated {sum(len(q) for q in candidates.domain_queries.values())} candidates"
+        )
 
         # Step 2: BM25 Selection
         logger.info("\n[Step 2] BM25 Selection")
@@ -341,15 +362,9 @@ class TestMockEndToEndFlow:
             output_tokens=15000,
             search_count=len(search_results),
         )
-        logger.info(
-            f"  ✓ Token cost: ${analysis.token_cost.total_cost:.6f}"
-        )
-        logger.info(
-            f"  ✓ Search cost: ${analysis.search_cost.total_cost_usd:.6f}"
-        )
-        logger.info(
-            f"  ✓ Total cost: ${analysis.total_cost_usd:.6f}"
-        )
+        logger.info(f"  ✓ Token cost: ${analysis.token_cost.total_cost:.6f}")
+        logger.info(f"  ✓ Search cost: ${analysis.search_cost.total_cost_usd:.6f}")
+        logger.info(f"  ✓ Total cost: ${analysis.total_cost_usd:.6f}")
 
         # Step 6: Report Output
         logger.info("\n[Step 6] Report Generation (Mocked)")
@@ -388,7 +403,7 @@ Based on research and Colt capabilities, we recommend:
         second_run_executed = 10
         logger.info(
             f"  Executed {second_run_executed}/{second_run_queries} queries "
-            f"({second_run_cached} cached, {(second_run_cached/second_run_queries)*100:.0f}% hit)"
+            f"({second_run_cached} cached, {(second_run_cached / second_run_queries) * 100:.0f}% hit)"
         )
 
         # Cost comparison
@@ -399,7 +414,9 @@ Based on research and Colt capabilities, we recommend:
 
         logger.info(f"  Run 1 cost: ${first_run_cost:.6f}")
         logger.info(f"  Run 2 cost: ${second_run_cost:.6f}")
-        logger.info(f"  Savings: ${savings:.6f} ({(savings/first_run_cost)*100:.1f}%)")
+        logger.info(
+            f"  Savings: ${savings:.6f} ({(savings / first_run_cost) * 100:.1f}%)"
+        )
 
         logger.info("\n✅ CACHE BENEFITS VERIFIED")
 
@@ -416,19 +433,21 @@ Based on research and Colt capabilities, we recommend:
         selector = Bm25QuerySelector("TestCorp")
         expected_domains = set(selector.DOMAIN_LIMITS.keys())
 
-        logger.info(f"\n[Domain Configuration]")
+        logger.info("\n[Domain Configuration]")
         logger.info(f"  Total domains: {len(expected_domains)}")
         logger.info(f"  Total query budget: {selector.TOTAL_BUDGET}")
-        logger.info(f"  Avg queries per domain: {selector.TOTAL_BUDGET / len(expected_domains):.1f}")
+        logger.info(
+            f"  Avg queries per domain: {selector.TOTAL_BUDGET / len(expected_domains):.1f}"
+        )
 
-        logger.info(f"\n[Domain Limits]")
+        logger.info("\n[Domain Limits]")
         for domain, limit in sorted(selector.DOMAIN_LIMITS.items()):
             logger.info(f"  {domain:20s}: {limit:2d} queries")
 
         total_configured = sum(selector.DOMAIN_LIMITS.values())
         assert total_configured <= selector.TOTAL_BUDGET
         logger.info(f"\n  Total configured: {total_configured}/{selector.TOTAL_BUDGET}")
-        logger.info(f"\n✅ DOMAIN COVERAGE VERIFIED")
+        logger.info("\n✅ DOMAIN COVERAGE VERIFIED")
 
 
 if __name__ == "__main__":

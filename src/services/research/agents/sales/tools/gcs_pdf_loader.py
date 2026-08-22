@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from google.cloud import storage
-from google.cloud.exceptions import GoogleCloudError
-
 from ......core.config import settings
 from ......core.logging_config import logger
 from ......repositories.gcs_repository import GCSRepository
@@ -91,8 +86,7 @@ Subsea & Transatlantic Assets:
 def load_pdf_from_gcs(company_name: str) -> str | None:
     """Load PDF from GCS bucket for a specific company."""
     try:
-        gcs_repo = GCSRepository()
-        bucket_name = settings.GCS_BUCKET_NAME
+        GCSRepository()
 
         # Try to find company-specific PDF
         pdf_path = f"{settings.GCS_PARENT_FOLDER}/alignment_context/{company_name.lower()}_catalog.pdf"

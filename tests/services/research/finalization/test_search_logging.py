@@ -50,7 +50,7 @@ def test_get_search_count_zero_when_no_searches() -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_log_op_flushes_rows_to_bigquery() -> None:
+async def test_search_log_op_flushes_rows_to_firestore() -> None:
     state = _state_with_searches(2)
     insert = MagicMock(return_value=True)
 
@@ -66,9 +66,7 @@ async def test_search_log_op_flushes_rows_to_bigquery() -> None:
     assert {r["company_name"] for r in rows} == {"Acme Corp"}
     assert rows[0]["query"] == "acme revenue 0"
     assert rows[0]["query_hash"]
-    assert json.loads(rows[0]["search_results"])[0]["url"] == (
-        "https://acme.example/0"
-    )
+    assert json.loads(rows[0]["search_results"])[0]["url"] == ("https://acme.example/0")
     assert rows[0]["search_date"]
 
 

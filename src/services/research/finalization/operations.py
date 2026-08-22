@@ -108,7 +108,7 @@ async def run_search_log_op(
     session_state: dict,
     insert_search_query_batch: Callable[[list[dict]], Any],
 ) -> None:
-    """Flush executed search queries to the search_cache table."""
+    """Flush executed search queries to the Firestore search cache."""
     records = get_search_query_records(session_state)
     if not records:
         logger.info(f"[SearchLog] No search queries recorded job_id={job_id}")

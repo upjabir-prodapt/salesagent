@@ -44,6 +44,4 @@ class NormalizedQueryPlan(BaseModel):
     )
     total_candidates: int = Field(..., description="Total candidates generated")
     budget_used: int = Field(..., description="Queries selected (should be <= 40)")
-    per_domain_counts: dict[str, int] = Field(
-        ..., description="Query count per domain"
-    )
+    per_domain_counts: dict[str, int] = Field(..., description="Query count per domain")

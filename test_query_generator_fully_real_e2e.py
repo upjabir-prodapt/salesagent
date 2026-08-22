@@ -3,13 +3,13 @@
 This test runs the COMPLETE flow with:
 - Real LLM (Gemini) for query generation
 - Real GoogleSearchAgentTool for searches (actual API calls)
-- Real BigQuery write/read for search cache
+- Real Firestore write/read for search cache
 - Real GCS PDF loading for alignment context
 - Real cost tracking with actual token counts
 
 ⚠️  WARNING:
 - Requires valid Google Cloud credentials
-- Requires BigQuery dataset access
+- Requires BigQuery dataset and Firestore database access
 - Requires GCS bucket with PDF
 - Costs real money (Google Search API calls)
 - Takes 20-30 minutes to complete
@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from typing import Any
 
 import pytest
 
@@ -95,7 +94,7 @@ class TestFullyRealEndToEnd:
         assert "AlignmentAnalyst" in agent_names
         assert "ReportCompiler" in agent_names
 
-        logger.info(f"✅ App created with real components:")
+        logger.info("✅ App created with real components:")
         for i, agent in enumerate(sub_agents, 1):
             logger.info(f"  {i}. {agent.name} (real)")
 
@@ -116,9 +115,7 @@ class TestFullyRealEndToEnd:
                 query="RealCorp revenue 2024", domain="firmographics", year=2024
             ),
             QueryWithMetadata(query="RealCorp CEO", domain="executive", year=None),
-            QueryWithMetadata(
-                query="RealCorp CTO", domain="executive", year=None
-            ),
+            QueryWithMetadata(query="RealCorp CTO", domain="executive", year=None),
             QueryWithMetadata(
                 query="RealCorp market position", domain="market", year=None
             ),
@@ -144,21 +141,25 @@ class TestFullyRealEndToEnd:
         assert len(year_2025) > 0, "2025 queries should be kept"
         assert len(year_2024) > 0, "2024 queries should be kept"
 
-        logger.info(f"✅ BM25 Selection (REAL):")
+        logger.info("✅ BM25 Selection (REAL):")
         logger.info(f"  Selected {plan.budget_used} from {len(candidates)}")
         logger.info(f"  2025 queries: {len(year_2025)}")
         logger.info(f"  2024 queries: {len(year_2024)}")
 
-    def test_real_search_cache_bigquery(self, company_name: str, cache_service: SearchCacheService, bq_repo: BigQueryRepository):
-        """Real BigQuery cache operations."""
+    def test_real_search_cache_firestore(
+        self,
+        company_name: str,
+        cache_service: SearchCacheService,
+    ):
+        """Real Firestore cache operations."""
         logger.info("\n" + "=" * 70)
-        logger.info("[REAL TEST 3] Real BigQuery Cache")
+        logger.info("[REAL TEST 3] Real Firestore Cache")
         logger.info("=" * 70)
 
-        # Store mock search results in REAL BigQuery
+        # Store mock search results in REAL Firestore
         test_query = f"Test query for {company_name}"
         test_results = {
-            "snippets": ["This is a real BigQuery cached result"],
+            "snippets": ["This is a real Firestore cached result"],
             "sources": ["https://example.com"],
             "timestamp": datetime.now().isoformat(),
         }
@@ -170,18 +171,18 @@ class TestFullyRealEndToEnd:
             domain="firmographics",
         )
 
-        assert success, "Failed to cache results in BigQuery"
-        logger.info(f"✅ Cached to BigQuery: {test_query}")
+        assert success, "Failed to cache results in Firestore"
+        logger.info(f"✅ Cached to Firestore: {test_query}")
 
-        # Retrieve from REAL BigQuery
+        # Retrieve from REAL Firestore
         cached = cache_service.get_cached_searches(company_name)
 
         if cached is None:
-            logger.warning("  ⚠️  Cache lookup returned None (BigQuery delay possible)")
+            logger.warning("  ⚠️  Cache lookup returned None (Firestore delay possible)")
         else:
-            assert test_query in cached, f"Query not found in cache"
+            assert test_query in cached, "Query not found in cache"
             assert cached[test_query]["domain"] == "firmographics"
-            logger.info(f"✅ Retrieved from BigQuery: {len(cached)} cached searches")
+            logger.info(f"✅ Retrieved from Firestore: {len(cached)} cached searches")
 
     def test_real_gcs_pdf_context(self, company_name: str):
         """Real GCS PDF loading (fallback to hardcoded if not found)."""
@@ -227,15 +228,19 @@ class TestFullyRealEndToEnd:
         assert analysis.search_cost.search_count == search_count
         assert analysis.total_cost_usd > 0
 
-        logger.info(f"✅ Cost Analysis (REAL PRICING):")
+        logger.info("✅ Cost Analysis (REAL PRICING):")
         logger.info(f"  Model: {model}")
         logger.info(f"  Tokens: {input_tokens} in + {output_tokens} out")
         logger.info(f"    Token cost: ${analysis.token_cost.total_cost:.6f}")
-        logger.info(f"  Searches: {search_count} × ${analysis.search_cost.cost_per_1k}/1000")
+        logger.info(
+            f"  Searches: {search_count} × ${analysis.search_cost.cost_per_1k}/1000"
+        )
         logger.info(f"    Search cost: ${analysis.search_cost.total_cost_usd:.6f}")
         logger.info(f"  TOTAL: ${analysis.total_cost_usd:.6f}")
 
-    def test_real_cache_hit_rate(self, company_name: str, cache_service: SearchCacheService):
+    def test_real_cache_hit_rate(
+        self, company_name: str, cache_service: SearchCacheService
+    ):
         """Real cache hit rate with repeated queries."""
         logger.info("\n" + "=" * 70)
         logger.info("[REAL TEST 6] Real Cache Hit Rate")
@@ -259,20 +264,22 @@ class TestFullyRealEndToEnd:
 
         # Check cache count
         first_count = cache_service.get_search_count(company_name)
-        logger.info(f"  ✓ Cached {first_count} queries in BigQuery")
+        logger.info(f"  ✓ Cached {first_count} queries in Firestore")
 
         # Second batch: some new, some repeat
         second_queries = [
             "First query 1",  # Repeat (cached)
             "First query 2",  # Repeat (cached)
-            "New query 1",    # New
-            "New query 2",    # New
+            "New query 1",  # New
+            "New query 2",  # New
         ]
 
         uncached = cache_service.get_uncached_queries(company_name, second_queries)
         logger.info(f"\n[Run 2] Checking cache for {len(second_queries)} queries...")
         logger.info(f"  ✓ Uncached: {len(uncached)}")
-        logger.info(f"  ✓ Cache hit rate: {((len(second_queries) - len(uncached)) / len(second_queries) * 100):.0f}%")
+        logger.info(
+            f"  ✓ Cache hit rate: {((len(second_queries) - len(uncached)) / len(second_queries) * 100):.0f}%"
+        )
 
     def test_real_full_flow(self, company_name: str, analyzer: CostAnalyzer):
         """Complete real flow: generation → selection → cache → context → cost."""
@@ -293,14 +300,16 @@ class TestFullyRealEndToEnd:
         logger.info("\n[Step 2/5] Query Generation & BM25 Selection (Real)")
         selector = Bm25QuerySelector(company_name)
         candidates = [
-            QueryWithMetadata(query=f"{company_name} query {i}", domain="firmographics", year=None)
+            QueryWithMetadata(
+                query=f"{company_name} query {i}", domain="firmographics", year=None
+            )
             for i in range(20)
         ]
         plan = selector.select(candidates)
         logger.info(f"  ✓ Selected {plan.budget_used} queries")
 
         # Step 3: Real cache operations
-        logger.info("\n[Step 3/5] Cache Operations (Real BigQuery)")
+        logger.info("\n[Step 3/5] Cache Operations (Real Firestore)")
         cache = SearchCacheService()
         for query in plan.queries[:3]:  # Cache first 3
             cache.cache_search_results(

@@ -17,4 +17,3 @@ __all__ = [
     "REPORT_COMPILER_PROMPT",
     "RESEARCH_SYNTHESIZER_PROMPT",
 ]
-

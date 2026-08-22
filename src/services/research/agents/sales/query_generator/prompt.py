@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-from .schemas import CandidateQueries
-
 
 def build_query_generator_prompt(
     company_name: str, domains: list[str], current_year: int | None = None

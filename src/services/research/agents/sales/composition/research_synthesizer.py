@@ -16,26 +16,10 @@ from google.adk.models import LlmResponse
 
 from ......core.config import settings
 from ......core.logging_config import logger
-from ...adk.callbacks import (
-    after_agent_callback,
-    after_model_callback,
-    after_tool_callback,
-    before_agent_callback,
-    before_model_callback,
-    before_tool_callback,
-)
-from ..callbacks.plan_react import (
-    plan_after_agent,
-    plan_after_model,
-    plan_after_tool,
-    plan_before_model,
-    plan_before_tool,
-)
 from ..prompts.synthesis_research_prompts import (
     DOMAIN_OUTPUT_KEYS,
     RESEARCH_SYNTHESIZER_PROMPT,
 )
-from ..tools.search import make_search_agent_tool, verify_draft_answer_tool
 from .leaf import create_plan_react_agent
 
 
@@ -156,9 +140,7 @@ def _persist_domain_outputs_after_model(
 
         callback_context.state[key] = state_value
         persisted.append(key)
-        logger.info(
-            f"[ResearchSynthesizer] Persisted {key} ({len(state_value)} chars)"
-        )
+        logger.info(f"[ResearchSynthesizer] Persisted {key} ({len(state_value)} chars)")
 
     if missing:
         logger.warning(

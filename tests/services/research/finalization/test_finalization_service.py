@@ -12,7 +12,7 @@ from src.services.research.finalization.service import ResearchFinalizationServi
 async def test_finalize_runs_all_ops_successfully() -> None:
     bq = MagicMock()
     gcs = MagicMock()
-    service = ResearchFinalizationService(bq, gcs)
+    service = ResearchFinalizationService(bq, gcs, search_cache_repository=MagicMock())
 
     with (
         patch(
@@ -43,7 +43,9 @@ async def test_finalize_runs_all_ops_successfully() -> None:
 
 @pytest.mark.asyncio
 async def test_finalize_records_side_op_failures() -> None:
-    service = ResearchFinalizationService(MagicMock(), MagicMock())
+    service = ResearchFinalizationService(
+        MagicMock(), MagicMock(), search_cache_repository=MagicMock()
+    )
 
     with (
         patch(
@@ -80,7 +82,9 @@ async def test_finalize_records_side_op_failures() -> None:
 
 @pytest.mark.asyncio
 async def test_export_failure_telemetry() -> None:
-    service = ResearchFinalizationService(MagicMock(), MagicMock())
+    service = ResearchFinalizationService(
+        MagicMock(), MagicMock(), search_cache_repository=MagicMock()
+    )
 
     with (
         patch(

@@ -100,7 +100,10 @@ class Settings(BaseSettings):
     BIGQUERY_AGENT_TELEMETRY_TABLE: str
     BIGQUERY_CATALOG_JOBS_TABLE: str
     BIGQUERY_USER_FEEDBACK_TABLE: str
-    BIGQUERY_SEARCH_CACHE_TABLE: str = "search_cache"
+
+    # Firestore (search query cache)
+    FIRESTORE_DATABASE: str = "(default)"
+    FIRESTORE_SEARCH_CACHE_COLLECTION: str = "search_cache"
 
     # Security
     SECRET_KEY: str

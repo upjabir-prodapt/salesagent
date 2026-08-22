@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ....core.logging_config import logger
 from ....repositories.bigquery_repository import BigQueryRepository
+from ....repositories.firestore_repository import FirestoreSearchCacheRepository
 from ....repositories.gcs_repository import GCSRepository
 from ....utils.tracing import job_attrs, traced
 from .evaluation_service import EvaluationService
@@ -77,10 +78,19 @@ class ResearchFinalizationService:
         bigquery_repository: BigQueryRepository,
         gcs_repository: GCSRepository,
         evaluation_service: EvaluationService | None = None,
+        search_cache_repository: FirestoreSearchCacheRepository | None = None,
     ) -> None:
         self._bigquery_repo = bigquery_repository
         self._gcs_repo = gcs_repository
         self._evaluation_service = evaluation_service or EvaluationService()
+        self._search_cache_repo = search_cache_repository
+
+    @property
+    def search_cache_repo(self) -> FirestoreSearchCacheRepository:
+        """Firestore search cache repository, built on first use."""
+        if self._search_cache_repo is None:
+            self._search_cache_repo = FirestoreSearchCacheRepository()
+        return self._search_cache_repo
 
     @staticmethod
     def generate_pdf(final_report: str) -> bytes:
@@ -155,7 +165,7 @@ class ResearchFinalizationService:
             await run_search_log_op(
                 job_id=job_id,
                 session_state=session_state,
-                insert_search_query_batch=self._bigquery_repo.insert_search_query_batch,
+                insert_search_query_batch=self.search_cache_repo.insert_search_query_batch,
             )
         except Exception as e:
             logger.warning(f"[Pipeline] Search log op failed job_id={job_id}: {e}")
@@ -200,7 +210,7 @@ class ResearchFinalizationService:
             await run_search_log_op(
                 job_id=job_id,
                 session_state=session_state,
-                insert_search_query_batch=self._bigquery_repo.insert_search_query_batch,
+                insert_search_query_batch=self.search_cache_repo.insert_search_query_batch,
             )
         except Exception as e:
             logger.warning(f"[Pipeline] Search log op failed job_id={job_id}: {e}")

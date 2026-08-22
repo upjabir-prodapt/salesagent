@@ -1,8 +1,8 @@
-"""Search query accounting for cost attribution and the search_cache table.
+"""Search query accounting for cost attribution and the search cache.
 
 Every live web search issued by the agents is recorded into session state here.
-The finalization pipeline flushes the accumulated rows to BigQuery's
-``search_cache`` table and derives ``search_count`` for cost attribution.
+The finalization pipeline flushes the accumulated rows to the Firestore
+``search_cache`` collection and derives ``search_count`` for cost attribution.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ __all__ = [
 
 
 def query_hash(query: str) -> str:
-    """Stable short hash used for query deduplication in search_cache."""
+    """Stable short hash used for query deduplication in the search cache."""
     return hashlib.sha256(query.lower().encode()).hexdigest()[:16]
 
 

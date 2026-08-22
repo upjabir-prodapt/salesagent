@@ -209,8 +209,6 @@ def plan_before_model(
             ]
         )
 
-
-
     if agent_name == "ReportCompiler":
         validation_status = str(
             callback_context.state.get("report_validation_status") or ""
@@ -254,8 +252,6 @@ def plan_after_model(
                 output_key=output_key,
                 text=raw_text,
             )
-
-
 
         if agent_name == "ReportCompiler":
             phases = _record_report_compiler_phases(callback_context.state, raw_text)

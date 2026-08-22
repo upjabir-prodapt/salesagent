@@ -59,12 +59,6 @@ def _response_with_text(text: str):
     return SimpleNamespace(content=SimpleNamespace(parts=[_Part(text)]))
 
 
-
-
-
-
-
-
 def test_report_compiler_before_model_injects_strict_planreact_instruction() -> None:
     callback_context = _CallbackContextStub(agent_name="ReportCompiler", state={})
     llm_request = _LlmRequestStub()
@@ -164,6 +158,3 @@ def test_report_compiler_final_answer_without_passed_validation_fails(
     assert state.get("report_validation_status") == "FAILED"
     violations = state.get("report_validation_violations") or []
     assert violations and violations[0]["rule"] == "output:validation_not_passed"
-
-
-

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
 from ......core.logging_config import logger
-from ....search_cache import SearchCacheService
 from ....cost import CostAnalyzer
+from ....search_cache import SearchCacheService
 
 
 @dataclass
@@ -49,13 +48,12 @@ class SearchOrchestrator:
         logger.info(f"Starting search orchestration for {self.company_name}")
 
         # Extract just query strings
-        query_strings = [q.get("query", "") for q in queries if q.get("query")]
+        [q.get("query", "") for q in queries if q.get("query")]
 
         # Check cache for existing queries
         cached_searches = self.cache_service.get_cached_searches(self.company_name)
 
         # Determine which queries need execution
-        uncached_queries = []
         cached_query_map = {}
 
         if cached_searches:

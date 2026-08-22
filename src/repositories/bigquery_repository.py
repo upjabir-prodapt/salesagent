@@ -29,8 +29,6 @@ class BigQueryRepository:
         self.agent_telemetry_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.agent_telemetry_table_id}"
         self.user_feedback_table_id = settings.BIGQUERY_USER_FEEDBACK_TABLE
         self.user_feedback_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.user_feedback_table_id}"
-        self.search_cache_table_id = settings.BIGQUERY_SEARCH_CACHE_TABLE
-        self.search_cache_table_ref = f"{settings.GOOGLE_CLOUD_PROJECT}.{self.dataset_id}.{self.search_cache_table_id}"
 
     def _execute_query(
         self,
@@ -99,7 +97,9 @@ class BigQueryRepository:
             bigquery.ScalarQueryParameter("output_tokens", "INT64", output_tokens),
             bigquery.ScalarQueryParameter("total_tokens", "INT64", total_tokens),
             bigquery.ScalarQueryParameter("search_count", "INT64", search_count),
-            bigquery.ScalarQueryParameter("search_cost_usd", "FLOAT64", search_cost_usd),
+            bigquery.ScalarQueryParameter(
+                "search_cost_usd", "FLOAT64", search_cost_usd
+            ),
             bigquery.ScalarQueryParameter("token_cost_usd", "FLOAT64", token_cost_usd),
             bigquery.ScalarQueryParameter("total_cost_usd", "FLOAT64", total_cost_usd),
             bigquery.ScalarQueryParameter(
@@ -110,7 +110,9 @@ class BigQueryRepository:
         ]
 
         self._execute_query(query, query_parameters, "inserting cost attribution")
-        logger.info(f"Inserted cost attribution for job {job_id} (searches: {search_count})")
+        logger.info(
+            f"Inserted cost attribution for job {job_id} (searches: {search_count})"
+        )
         return True
 
     def insert_user_feedback(
@@ -445,32 +447,6 @@ class BigQueryRepository:
                 raise
             raise DatabaseError(
                 f"Unexpected error inserting agent telemetry batch: {e}"
-            ) from e
-
-    def insert_search_query_batch(self, records: list[dict[str, Any]]) -> bool:
-        """Insert executed search queries into the search_cache table in batch."""
-        if self.client is None:
-            return True
-        if not records:
-            return True
-        try:
-            errors = self.client.insert_rows_json(self.search_cache_table_ref, records)
-            if errors:
-                raise DatabaseError(f"Failed to insert search query rows: {errors}")
-            logger.info(
-                f"Inserted {len(records)} search query records into "
-                f"{self.search_cache_table_ref}"
-            )
-            return True
-        except GoogleCloudError as e:
-            logger.error(f"Google Cloud error inserting search query batch: {e}")
-            raise DatabaseError(f"Failed to insert search query batch: {e}") from e
-        except Exception as e:
-            logger.error(f"Unexpected error inserting search query batch: {e}")
-            if isinstance(e, DatabaseError):
-                raise
-            raise DatabaseError(
-                f"Unexpected error inserting search query batch: {e}"
             ) from e
 
     def get_requests_by_status(

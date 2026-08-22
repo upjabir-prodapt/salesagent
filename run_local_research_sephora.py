@@ -1,13 +1,13 @@
 """Script to run local research for Sephora programmatically without upping the FastAPI server."""
 
 import asyncio
-import sys
 import os
+import sys
 
 # Add the Sales-Agent directory to path so imports work correctly
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.core.logging_config import setup_logging, logger
+from src.core.logging_config import logger, setup_logging
 from src.dependencies.service_dependencies import get_research_service
 
 # Sections the ReportCompiler fills with this exact string when its injected

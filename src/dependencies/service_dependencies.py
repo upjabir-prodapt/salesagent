@@ -3,11 +3,12 @@
 import threading
 
 from google import genai
-from google.cloud import bigquery, storage  # type: ignore
+from google.cloud import bigquery, firestore, storage  # type: ignore
 
 from ..core.config import settings
 
 _bq_client: bigquery.Client | None = None
+_firestore_client: firestore.Client | None = None
 _storage_client: storage.Client | None = None
 _genai_client: genai.Client | None = None
 _lock = threading.Lock()
@@ -20,6 +21,18 @@ def get_bigquery_client() -> bigquery.Client:
         if _bq_client is None:
             _bq_client = bigquery.Client(project=settings.GOOGLE_CLOUD_PROJECT)
     return _bq_client
+
+
+def get_firestore_client() -> firestore.Client:
+    """Get shared Firestore client singleton."""
+    global _firestore_client
+    with _lock:
+        if _firestore_client is None:
+            _firestore_client = firestore.Client(
+                project=settings.GOOGLE_CLOUD_PROJECT,
+                database=settings.FIRESTORE_DATABASE,
+            )
+    return _firestore_client
 
 
 def get_storage_client() -> storage.Client:
@@ -45,6 +58,13 @@ def get_bigquery_repository():
     from ..repositories.bigquery_repository import BigQueryRepository
 
     return BigQueryRepository(client=get_bigquery_client())
+
+
+def get_search_cache_repository():
+    """Get Firestore search cache repository instance."""
+    from ..repositories.firestore_repository import FirestoreSearchCacheRepository
+
+    return FirestoreSearchCacheRepository(client=get_firestore_client())
 
 
 def get_gcs_repository():

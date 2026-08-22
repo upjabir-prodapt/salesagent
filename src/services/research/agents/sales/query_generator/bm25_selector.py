@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from typing import Any
-
 from .schemas import NormalizedQueryPlan, QueryWithMetadata
 
 
@@ -108,7 +105,9 @@ class Bm25QuerySelector:
         return kept
 
     def select(
-        self, candidates: list[QueryWithMetadata], per_domain_limits: dict[str, int] | None = None
+        self,
+        candidates: list[QueryWithMetadata],
+        per_domain_limits: dict[str, int] | None = None,
     ) -> NormalizedQueryPlan:
         """Select top queries respecting per-domain limits."""
         limits = per_domain_limits or self.DOMAIN_LIMITS
@@ -145,7 +144,7 @@ class Bm25QuerySelector:
 
             # Take top N for this domain
             limit = limits[domain]
-            for score, q in scored[:limit]:
+            for _score, q in scored[:limit]:
                 selected.append(q)
                 per_domain_counts[domain] = per_domain_counts.get(domain, 0) + 1
 

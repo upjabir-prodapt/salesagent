@@ -106,7 +106,9 @@ def before_model_callback(
                 llm_request, callback_context.state
             )
     except Exception as e:  # pragma: no cover
-        logger.debug(f"[Callback] Failed to inject session state into ReportCompiler prompt: {e}")
+        logger.debug(
+            f"[Callback] Failed to inject session state into ReportCompiler prompt: {e}"
+        )
 
     try:
         if "mc_temperature" not in callback_context.state:

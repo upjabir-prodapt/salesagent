@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
-
-import json
 
 from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
@@ -14,8 +13,6 @@ from google.adk.tools.function_tool import FunctionTool
 from ......core.config import settings
 from ......core.logging_config import logger
 from ......core.model import retry_config
-from ...adk.retrying_llm_agent import RetryingLlmAgent
-from ...adk.safety import get_safety_config_for_agent
 from ...adk.callbacks import (
     after_agent_callback,
     after_model_callback,
@@ -24,16 +21,11 @@ from ...adk.callbacks import (
     before_model_callback,
     before_tool_callback,
 )
-from ..callbacks.plan_react import (
-    plan_after_agent,
-    plan_after_model,
-    plan_after_tool,
-    plan_before_model,
-    plan_before_tool,
-)
+from ...adk.retrying_llm_agent import RetryingLlmAgent
+from ...adk.safety import get_safety_config_for_agent
 from .bm25_selector import Bm25QuerySelector
 from .prompt import build_query_generator_prompt
-from .schemas import CandidateQueries, NormalizedQueryPlan, QueryWithMetadata
+from .schemas import CandidateQueries, NormalizedQueryPlan
 
 
 def _get_domain_list() -> list[str]:
@@ -89,9 +81,7 @@ def apply_bm25_selection(
 def make_query_generator_tool() -> FunctionTool:
     """Create tool for post-processing queries (parsing + BM25 selection)."""
 
-    def process_queries(
-        agent_output: str, company_name: str
-    ) -> dict[str, Any]:
+    def process_queries(agent_output: str, company_name: str) -> dict[str, Any]:
         """Process raw agent output into final query plan."""
         candidates = _parse_candidate_queries(agent_output)
         if not candidates:

@@ -1,9 +1,9 @@
 """Alignment synthesis prompts."""
 
-ALIGNMENT_PROMPT_BLOCK = f"""
+ALIGNMENT_PROMPT_BLOCK = """
 ## Tools and evidence
 
-- **Target account:** Use only prior research outputs **above** for {{company_name?}} facts. Do **not** run search queries to research the target company.
+- **Target account:** Use only prior research outputs **above** for {company_name?} facts. Do **not** run search queries to research the target company.
 - **Colt context:** Use `retrieve_alignment_context()` tool to load the Colt product catalog and capabilities. This gives you the comprehensive Colt portfolio context to perform the mapping.
 - Target-company claims must trace to injected output keys **above**; Colt claims must trace to the data retrieved via `retrieve_alignment_context()`.
 - Do not use unstated assumptions, prior training knowledge, or generic industry filler.
@@ -123,4 +123,3 @@ Mapping item schema: {{ColtAlignmentMapping.model_json_schema()}}
 
 Strategic opportunity schema: {{StrategicOpportunitySummary.model_json_schema()}}
 """
-
