@@ -17,9 +17,15 @@ import random
 import time
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
+
+from google.adk.agents import LlmAgent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types as genai_types
 
 from src.shared.logging_config import logger
+from src.worker.runtime.pricing import extract_usage_counts
 
 if TYPE_CHECKING:
     from .observers import Observer
@@ -242,6 +248,77 @@ class Agent(ABC, Generic[TIn, TOut]):
         trigger another attempt of this same step.
         """
         return
+
+
+class AdkAgentStep(Agent[TIn, TOut]):
+    """An Agent step whose execute() drives exactly one ADK LlmAgent.
+
+    Each attempt gets a brand new InMemorySessionService and a single-agent
+    Runner -- proven (see IMPLEMENTATION_PLAN.md) to retry cleanly with no
+    invocation-resume machinery: a failed attempt simply discards its
+    session and the next attempt starts fresh. No state is shared between
+    attempts, and no state is shared between different AdkAgentStep
+    instances (i.e. between pipeline steps).
+    """
+
+    _USER_ID = "worker"
+
+    @abstractmethod
+    def build_agent(self) -> LlmAgent:
+        """Construct the (stateless-safe) ADK LlmAgent for one attempt."""
+
+    @abstractmethod
+    def to_input(self, request: TIn) -> str:
+        """Render the typed request into the single user message text."""
+
+    @abstractmethod
+    def to_output(self, raw: Any, usage: tuple[int, int]) -> TOut:
+        """Convert the agent's raw output_key value into a typed result.
+
+        *usage* is (input_tokens, output_tokens) captured from the last
+        model response seen in this attempt's session.
+        """
+
+    async def execute(self, request: TIn) -> TOut:
+        agent = self.build_agent()
+        session_service = InMemorySessionService()
+        session_id = f"{self.name}-{id(request)}-{time.monotonic_ns()}"
+        runner = Runner(
+            app_name=self.name, agent=agent, session_service=session_service
+        )
+        await session_service.create_session(
+            app_name=self.name, user_id=self._USER_ID, session_id=session_id
+        )
+
+        message = genai_types.UserContent(
+            parts=[genai_types.Part(text=self.to_input(request))]
+        )
+
+        input_tokens = 0
+        output_tokens = 0
+        async for event in runner.run_async(
+            user_id=self._USER_ID,
+            session_id=session_id,
+            new_message=message,
+        ):
+            usage_metadata = getattr(event, "usage_metadata", None)
+            if usage_metadata is not None:
+                delta_in, delta_out = extract_usage_counts(usage_metadata)
+                input_tokens += delta_in
+                output_tokens += delta_out
+
+        session = await session_service.get_session(
+            app_name=self.name, user_id=self._USER_ID, session_id=session_id
+        )
+        state = session.state if session is not None else {}
+        output_key = agent.output_key or f"{self.name.lower()}_output"
+        raw = state.get(output_key)
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            raise InvalidOutputError(
+                f"{self.name} completed without populating output_key={output_key!r}",
+                agent_name=self.name,
+            )
+        return self.to_output(raw, (input_tokens, output_tokens))
 
 
 __all__ = [
