@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.services.research import ResearchService
+from src.worker.services.pipeline_service import ResearchPipelineService
 
 
 @pytest.mark.asyncio
@@ -13,7 +13,7 @@ async def test_research_service_delegates_background_processing_to_application_l
 ):
     bigquery_repo = MagicMock()
     gcs_repo = MagicMock()
-    service = ResearchService(
+    service = ResearchPipelineService(
         bigquery_repository=bigquery_repo, gcs_repository=gcs_repo
     )
 

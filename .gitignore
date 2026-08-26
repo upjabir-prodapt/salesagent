@@ -214,5 +214,7 @@ __marimo__/
 
 credentials/
 .claude
+.clinerules
+memory-bank
 
 # Local/manual end-to-end tests (not run in CI, requires real GCP credentials)

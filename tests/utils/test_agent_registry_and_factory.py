@@ -1,12 +1,4 @@
-from src.services.research.agents import create_sales_agent_app
-from src.services.research.agents.sales.registry import AgentRegistry
-
-
-def test_agent_registry_is_deprecated_and_empty() -> None:
-    # The 12 research/signal leaf agents were consolidated into the unified
-    # QueryGeneratorAgent; AgentRegistry survives only for import compatibility.
-    assert AgentRegistry.research_specs() == ()
-    assert AgentRegistry.signal_specs() == ()
+from src.worker.agents import create_sales_agent_app
 
 
 def test_sales_agent_app_factory_builds_expected_root_agent() -> None:
@@ -14,3 +6,4 @@ def test_sales_agent_app_factory_builds_expected_root_agent() -> None:
 
     assert app.name == "sales_research_app"
     assert app.root_agent.name == "SalesResearchAgent"
+    assert len(app.root_agent.sub_agents) == 4

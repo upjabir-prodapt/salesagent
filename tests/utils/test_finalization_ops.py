@@ -1,6 +1,6 @@
 import pytest
 
-from src.services.research.finalization.operations import run_telemetry_flush_op
+from src.worker.services.finalization_ops import run_telemetry_flush_op
 
 
 @pytest.mark.asyncio
@@ -33,7 +33,7 @@ async def test_telemetry_flush_deadletters_on_failure():
 
 @pytest.mark.asyncio
 async def test_run_pdf_op_success():
-    from src.services.research.finalization.operations import run_pdf_op
+    from src.worker.services.finalization_ops import run_pdf_op
 
     uploaded: list[tuple[str, bytes]] = []
 
@@ -56,7 +56,7 @@ async def test_run_pdf_op_success():
 
 @pytest.mark.asyncio
 async def test_run_evaluation_op_success():
-    from src.services.research.finalization.operations import run_evaluation_op
+    from src.worker.services.finalization_ops import run_evaluation_op
 
     calls: list[str] = []
 
@@ -78,7 +78,7 @@ async def test_run_evaluation_op_success():
 
 @pytest.mark.asyncio
 async def test_run_cost_attribution_op_success():
-    from src.services.research.finalization.operations import run_cost_attribution_op
+    from src.worker.services.finalization_ops import run_cost_attribution_op
 
     captured: dict = {}
 
@@ -105,7 +105,7 @@ async def test_run_cost_attribution_op_success():
 
 @pytest.mark.asyncio
 async def test_telemetry_flush_no_records_is_noop():
-    from src.services.research.finalization.operations import run_telemetry_flush_op
+    from src.worker.services.finalization_ops import run_telemetry_flush_op
 
     await run_telemetry_flush_op(
         job_id="job-empty",

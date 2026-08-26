@@ -5,7 +5,7 @@ description = "Colt-AI Data Ingestion and Crawling System"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "google-adk>=1.34.0",
+    "google-adk>=2.1.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.2.1",
     "requests>=2.32.5",
@@ -15,6 +15,8 @@ dependencies = [
     "google-cloud-bigquery>=3.25.0",
     "google-cloud-storage>=3.7.0",
     "google-cloud-firestore>=2.21.0",
+    "google-cloud-tasks>=2.23.0",
+    "redis>=5.0.0",
     "uvicorn>=0.32.1",
     "pypdf>=6.7.3",
     "onnxruntime>=1.19.0",
@@ -27,7 +29,6 @@ dependencies = [
     "opentelemetry-semantic-conventions>=0.62b1",
     "google-auth>=2.47.0",
     "pyjwt>=2.12.1",
-    "google-cloud-aiplatform>=1.153.1",
     "rank-bm25>=0.2.2",
     "markdown>=3.10.2",
     "weasyprint>=69.0",
@@ -60,18 +61,17 @@ ignore_missing_imports = true
 [tool.coverage.run]
 source = ["src"]
 omit = [
-    "*/services/research/agents/sales/prompts/*",
-    "*/services/research/agents/adk/callbacks/*",
-    "*/services/catalog/*",
-    "*/services/research/agents/sales/tools/verification.py",
-    "*/services/research/agents/sales/tools/embedding_similarity.py",
-    "*/services/research/finalization/evaluation_section_a.py",
-    "*/services/research/finalization/evaluation_section_b.py",
-    "*/services/research/finalization/evaluation_service.py",
-    "*/services/research/run/event_log.py",
-    "*/services/research/run/runner.py",
-    "*/services/research/run/progress.py",
-    "*/repositories/catalog_job_repository.py",
+    "*/worker/agents/sales/prompts/*",
+    "*/worker/agents/adk/callbacks/*",
+    "*/worker/agents/sales/schemas.py",
+    "*/worker/agents/sales/tools/verification.py",
+    "*/worker/agents/sales/tools/embedding_similarity.py",
+    "*/worker/finalization/evaluation_section_a.py",
+    "*/worker/finalization/evaluation_section_b.py",
+    "*/worker/finalization/evaluation_service.py",
+    "*/worker/run/event_log.py",
+    "*/worker/run/runner.py",
+    "*/worker/run/progress.py",
 ]
 
 [tool.coverage.report]

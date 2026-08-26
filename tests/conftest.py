@@ -8,15 +8,14 @@ from fastapi.testclient import TestClient
 
 from tests._bootstrap import SESSION_MP  # isort: skip
 
-import src.core.config as core_config
-import src.core.logging_config as logging_config
-import src.repositories.bigquery_repository as bigquery_repository
-import src.repositories.gcs_repository as gcs_repository
-import src.utils.guardrails as guardrails
-from src.dependencies.auth import get_current_user
-from src.dependencies.handler_dependencies import get_research_handler
-from src.handlers.research_handler import ResearchHandler
-from src.routes.app import app
+import src.shared.config as core_config
+import src.shared.logging_config as logging_config
+import src.shared.repositories.bigquery_repository as bigquery_repository
+import src.shared.repositories.gcs_repository as gcs_repository
+import src.shared.utils.guardrails as guardrails
+from src.api.dependencies import get_current_user, get_research_handler
+from src.api.handlers.research_handler import ResearchHandler
+from src.api.main import app
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -83,7 +82,7 @@ def mock_storage_client() -> MagicMock:
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    import src.routes.app as app_module
+    import src.api.main as app_module
 
     mock_service = MagicMock()
     mock_service.new_job_id.return_value = "job_123"

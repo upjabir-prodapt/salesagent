@@ -6,8 +6,8 @@ import pytest
 from google.adk.agents.run_config import RunConfig
 from google.genai import types
 
-from src.core.exceptions import AgentOutputError
-from src.services.research.run.resilience.runner_loop import (
+from src.shared.exceptions import AgentOutputError
+from src.worker.runtime.resilience.runner_loop import (
     run_runner_with_per_agent_retry,
 )
 

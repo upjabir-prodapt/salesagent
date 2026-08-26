@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.config import settings
-from src.services.research.agents.sales.tools.report_validation import (
+from src.shared.config import settings
+from src.worker.agents.tools.report_validation import (
     validate_final_report,
 )
 
@@ -36,7 +36,7 @@ async def test_report_verification_exhausted_attempts_is_nonfatal(
         )
 
     monkeypatch.setattr(
-        "src.services.research.agents.sales.tools.report_validation.OutputGuardrail.validate",
+        "src.worker.agents.tools.report_validation.OutputGuardrail.validate",
         _fake_validate,
     )
     monkeypatch.setattr(settings, "OUTPUT_GUARDRAIL_MAX_RETRIES", 1)
@@ -63,7 +63,7 @@ async def test_report_verification_returns_failed_status_before_max_retries(
         )
 
     monkeypatch.setattr(
-        "src.services.research.agents.sales.tools.report_validation.OutputGuardrail.validate",
+        "src.worker.agents.tools.report_validation.OutputGuardrail.validate",
         _fake_validate,
     )
     monkeypatch.setattr(settings, "OUTPUT_GUARDRAIL_MAX_RETRIES", 2)

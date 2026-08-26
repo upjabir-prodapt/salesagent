@@ -1,25 +1,25 @@
 import pytest
 from google.adk.sessions.state import State
 
-from src.core.exceptions import AgentOutputError
-from src.services.research.run.resilience.errors import (
+from src.shared.exceptions import AgentOutputError
+from src.worker.runtime.resilience.errors import (
     RETRY_SCOPE_LEAF_LOCAL,
     RETRY_SCOPE_NONE,
     RETRY_SCOPE_RUNNER_WARM,
     retry_scope_for_error_class,
 )
-from src.services.research.run.resilience.runner_loop import (
+from src.worker.runtime.resilience.runner_loop import (
     build_retry_continuation_message,
     get_output_key,
     validate_agent_output,
 )
-from src.services.research.run.resilience.state import (
+from src.worker.runtime.resilience.state import (
     clear_retry_flag,
     increment_retry_count,
     pop_retry_hint,
     prepare_agent_retry,
 )
-from src.services.research.run.state_mutation import requires_cold_retry
+from src.worker.runtime.state_mutation import requires_cold_retry
 
 
 def test_validate_agent_output_contract():

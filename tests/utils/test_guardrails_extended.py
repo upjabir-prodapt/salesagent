@@ -2,8 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.core.exceptions import InputValidationException
-from src.utils.guardrails import InputGuardrail, OutputGuardrail
+from src.shared.exceptions import InputValidationException
+from src.shared.utils.guardrails import InputGuardrail, OutputGuardrail
 
 
 def test_input_guardrail_pii_functional():
@@ -57,7 +57,7 @@ def test_output_guardrail_narrative_bullets_constraint():
 
 def test_output_guardrail_completeness_requirement(mock_settings):
     """Verify that reports missing too many sections are flagged as incomplete."""
-    with patch("src.utils.guardrails.settings") as mock_s:
+    with patch("src.shared.utils.guardrails.settings") as mock_s:
         mock_s.OUTPUT_GUARDRAIL_MIN_SECTIONS = 5
         og = OutputGuardrail()
         # Functional scenario: Report with only 2 sections when 5 are required
@@ -72,7 +72,7 @@ def test_output_guardrail_completeness_failure_unavailable_functional(mock_setti
     og = OutputGuardrail()
     # If content says publicly unavailable it shouldn't count if small
     report = "## Company Snapshot\nInformation is publicly unavailable."
-    with patch("src.utils.guardrails.settings") as mock_s:
+    with patch("src.shared.utils.guardrails.settings") as mock_s:
         mock_s.OUTPUT_GUARDRAIL_MIN_SECTIONS = 1
         violations = og.check_completeness(report)
         assert len(violations) == 1
@@ -120,10 +120,10 @@ async def test_output_guardrail_hallucination_check_legacy_failure_functional(
 
     with (
         patch(
-            "src.utils.guardrails.client_pool.get_genai_client",
+            "src.shared.utils.guardrails.client_pool.get_genai_client",
             return_value=mock_client,
         ),
-        patch("src.utils.guardrails.settings") as mock_s,
+        patch("src.shared.utils.guardrails.settings") as mock_s,
     ):
         mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD = 1
         mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL = "gemini-flash"
@@ -155,10 +155,10 @@ async def test_output_guardrail_hallucination_check_with_cache_functional(
 
     with (
         patch(
-            "src.utils.guardrails.client_pool.get_genai_client",
+            "src.shared.utils.guardrails.client_pool.get_genai_client",
             return_value=mock_client,
         ),
-        patch("src.utils.guardrails.settings") as mock_s,
+        patch("src.shared.utils.guardrails.settings") as mock_s,
     ):
         mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD = 1
         mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL = "gemini-flash"

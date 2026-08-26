@@ -5,10 +5,10 @@ from types import SimpleNamespace
 import pytest
 from google.adk.agents import LlmAgent
 
-from src.core.config import settings
-from src.core.exceptions import AgentOutputError
-from src.services.research.agents.adk.retrying_llm_agent import RetryingLlmAgent
-from src.services.research.run.resilience.state import AGENT_RETRY_COUNTS_KEY
+from src.shared.config import settings
+from src.shared.exceptions import AgentOutputError
+from src.worker.agents.retrying_agent import RetryingLlmAgent
+from src.worker.runtime.resilience.state import AGENT_RETRY_COUNTS_KEY
 
 
 @pytest.mark.asyncio

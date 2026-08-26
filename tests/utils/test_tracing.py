@@ -2,7 +2,7 @@ import inspect
 
 import pytest
 
-from src.utils.tracing import job_attrs, traced, traced_with_context
+from src.shared.utils.tracing import job_attrs, traced, traced_with_context
 
 
 def test_job_attrs_from_bound_arguments():

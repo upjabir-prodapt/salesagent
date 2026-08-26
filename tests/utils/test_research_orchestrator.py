@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.services.research.pipeline.orchestrator import ResearchJobOrchestrator
+from src.worker.services.orchestrator import ResearchJobOrchestrator
 
 
 class _StatusRepoStub:
@@ -190,7 +190,7 @@ async def test_orchestrator_completes_when_agent_skipped_tool_and_guardrail_fail
         )
 
     monkeypatch.setattr(
-        "src.services.research.agents.sales.tools.report_validation.OutputGuardrail.validate",
+        "src.worker.agents.tools.report_validation.OutputGuardrail.validate",
         _fake_validate,
     )
 
@@ -220,7 +220,7 @@ async def test_orchestrator_validation_gate_passes_when_agent_skipped_tool(
         return _GuardrailResult()
 
     monkeypatch.setattr(
-        "src.services.research.agents.sales.tools.report_validation.OutputGuardrail.validate",
+        "src.worker.agents.tools.report_validation.OutputGuardrail.validate",
         _fake_validate,
     )
 

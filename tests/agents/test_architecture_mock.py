@@ -14,26 +14,31 @@ Run with: pytest tests/agents/test_architecture_mock.py -v -s
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.core.logging_config import logger
-from src.services.research.agents.sales.composition.app import SalesAgentAppFactory
-from src.services.research.agents.sales.query_generator.bm25_selector import (
+from src.shared.logging_config import logger
+from src.worker.agents.keyword_agent import (
     Bm25QuerySelector,
-)
-from src.services.research.agents.sales.query_generator.schemas import (
     CandidateQueries,
     NormalizedQueryPlan,
     QueryWithMetadata,
 )
-from src.services.research.agents.sales.query_generator.search_orchestrator import (
-    SearchExecution,
-)
-from src.services.research.cost import CostAnalyzer
-from src.services.research.search_cache import SearchCacheService
+from src.worker.agents.workflow import SalesAgentAppFactory
+from src.worker.runtime.pricing import CostAnalyzer
+
+
+@dataclass
+class SearchExecution:
+    query: str
+    domain: str
+    results: dict[str, Any]
+    from_cache: bool
+    cached_at: str | None = None
 
 
 class TestArchitectureMockFlow:
@@ -254,9 +259,7 @@ class TestArchitectureMockFlow:
         logger.info(f"  Searches (${search_portion:.6f}): {search_count} queries")
         logger.info(f"  Total: ${total:.6f}")
 
-    @patch(
-        "src.services.research.agents.sales.composition.app.SalesAgentAppFactory.create"
-    )
+    @patch("src.worker.agents.workflow.SalesAgentAppFactory.create")
     def test_app_creation_with_mock(self, mock_create):
         """Test app creation with mocked factory."""
         mock_app = MagicMock()
@@ -274,12 +277,8 @@ class TestArchitectureMockFlow:
 
         logger.info("✓ App created with mocked factory")
 
-    @patch("src.services.research.search_cache.service.FirestoreSearchCacheRepository")
-    def test_search_cache_mock(self, mock_repo):
+    def test_search_cache_mock(self):
         """Test search cache with mock data."""
-        mock_repo_instance = MagicMock()
-        mock_repo.return_value = mock_repo_instance
-        SearchCacheService(repository=mock_repo_instance)
 
         mock_cached = {
             "Acme Corp revenue 2025": {
@@ -426,7 +425,7 @@ Based on research and Colt capabilities, we recommend:
         logger.info("TESTING DOMAIN COVERAGE")
         logger.info("=" * 60)
 
-        from src.services.research.agents.sales.query_generator.bm25_selector import (
+        from src.worker.agents.keyword_agent import (
             Bm25QuerySelector,
         )
 

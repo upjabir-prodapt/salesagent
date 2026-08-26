@@ -1,7 +1,7 @@
 import pytest
 
-from src.core.exceptions import InputValidationException
-from src.utils.guardrails import InputGuardrail, OutputGuardrail
+from src.shared.exceptions import InputValidationException
+from src.shared.utils.guardrails import InputGuardrail, OutputGuardrail
 
 
 def _valid_report(

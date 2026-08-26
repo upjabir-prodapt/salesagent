@@ -1,6 +1,6 @@
 """Tests for unified job / ADK session id helper."""
 
-from src.services.research.run.session_ids import runner_session_id
+from src.worker.runtime.session_ids import runner_session_id
 
 
 def test_runner_session_id_attempt_zero():

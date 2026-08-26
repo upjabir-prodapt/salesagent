@@ -1,0 +1,104 @@
+[
+  {
+    "provider": "gemini_vertexai",
+    "model_id": "gemini-3.5-flash",
+    "region": "europe-west3",
+    "context_window_tokens": 1048576,
+    "search_cost_per_1k": 35.0,
+    "tiers": [
+      {
+        "max_input_tokens": null,
+        "input_cost_per_1k": 0.00165,
+        "output_cost_per_1k": 0.0099,
+        "cache_hit_cost_per_1k": 0.000165
+      }
+    ]
+  },
+  {
+    "provider": "gemini_vertexai",
+    "model_id": "gemini-3.5-flash",
+    "region": null,
+    "context_window_tokens": 1048576,
+    "search_cost_per_1k": 35.0,
+    "tiers": [
+      {
+        "max_input_tokens": null,
+        "input_cost_per_1k": 0.0015,
+        "output_cost_per_1k": 0.009,
+        "cache_hit_cost_per_1k": 0.00015
+      }
+    ]
+  },
+  {
+    "provider": "gemini_vertexai",
+    "model_id": "gemini-2.5-pro",
+    "region": "europe-west1",
+    "context_window_tokens": 2097152,
+    "search_cost_per_1k": 35.0,
+    "tiers": [
+      {
+        "max_input_tokens": 200000,
+        "input_cost_per_1k": 0.00125,
+        "output_cost_per_1k": 0.01,
+        "cache_hit_cost_per_1k": 0.00013
+      },
+      {
+        "max_input_tokens": null,
+        "input_cost_per_1k": 0.0025,
+        "output_cost_per_1k": 0.015,
+        "cache_hit_cost_per_1k": 0.00025
+      }
+    ]
+  },
+  {
+    "provider": "gemini_vertexai",
+    "model_id": "gemini-2.5-pro",
+    "region": null,
+    "context_window_tokens": 2097152,
+    "search_cost_per_1k": 35.0,
+    "tiers": [
+      {
+        "max_input_tokens": 200000,
+        "input_cost_per_1k": 0.00125,
+        "output_cost_per_1k": 0.01,
+        "cache_hit_cost_per_1k": 0.00013
+      },
+      {
+        "max_input_tokens": null,
+        "input_cost_per_1k": 0.0025,
+        "output_cost_per_1k": 0.015,
+        "cache_hit_cost_per_1k": 0.00025
+      }
+    ]
+  },
+  {
+    "provider": "gemini_vertexai",
+    "model_id": "gemini-2.5-flash",
+    "region": null,
+    "context_window_tokens": 1048576,
+    "search_cost_per_1k": 35.0,
+    "tiers": [
+      {
+        "max_input_tokens": null,
+        "input_cost_per_1k": 0.0003,
+        "output_cost_per_1k": 0.0025,
+        "cache_hit_cost_per_1k": 0.00003
+      }
+    ]
+  },
+  {
+    "provider": "gemini_vertexai",
+    "model_id": "gemini-2.5-flash-lite",
+    "region": null,
+    "context_window_tokens": 1048576,
+    "search_cost_per_1k": 35.0,
+    "tiers": [
+      {
+        "max_input_tokens": null,
+        "input_cost_per_1k": 0.0001,
+        "output_cost_per_1k": 0.0004,
+        "cache_hit_cost_per_1k": 0.00001
+      }
+    ]
+  }
+]

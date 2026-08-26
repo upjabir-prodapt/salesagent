@@ -1,9 +1,9 @@
-from src.services.research.domain.agent_contracts import (
+from src.worker.domain.agent_contracts import (
     AGENT_CONTRACTS,
     AGENT_OUTPUT_KEYS,
     get_agent_contract,
 )
-from src.services.research.domain.session_state import ResearchSessionState
+from src.worker.domain.session_state import ResearchSessionState
 
 
 def test_agent_contract_registry_matches_legacy_output_keys() -> None:

@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from src.utils.url_utils import is_authoritative
+from src.shared.utils.url_utils import is_authoritative
 
 
 def test_is_authoritative_trusted_domain():
@@ -17,5 +17,7 @@ def test_is_authoritative_empty_or_invalid():
 
 
 def test_is_authoritative_returns_false_when_parse_raises():
-    with patch("src.utils.url_utils.urlparse", side_effect=ValueError("bad url")):
+    with patch(
+        "src.shared.utils.url_utils.urlparse", side_effect=ValueError("bad url")
+    ):
         assert is_authoritative("https://reuters.com/article") is False

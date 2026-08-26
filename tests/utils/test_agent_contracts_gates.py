@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.exceptions import AgentOutputError
-from src.services.research.domain.agent_contracts import (
+from src.shared.exceptions import AgentOutputError
+from src.worker.domain.contracts import (
     list_missing_research_outputs,
     validate_research_outputs_complete,
 )
-from src.services.research.run.resilience.errors import (
+from src.worker.runtime.resilience.errors import (
     RETRY_SCOPE_LEAF_LOCAL,
     resolve_retry_agents,
     retry_scope_for_error_class,
@@ -47,7 +47,7 @@ def test_resolve_retry_agents_alignment_research_ok():
     state = {
         contract.output_key: "x"
         for contract in __import__(
-            "src.services.research.domain.agent_contracts",
+            "src.worker.domain.agent_contracts",
             fromlist=["RESEARCH_AGENT_CONTRACTS"],
         ).RESEARCH_AGENT_CONTRACTS
     }

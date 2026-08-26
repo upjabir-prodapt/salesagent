@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from google.genai import types
 
-from src.services.research.agents.adk.safety import (
+from src.worker.agents.safety import (
     analyze_safety_block,
     create_safety_summary,
     format_safety_ratings,
@@ -22,12 +22,11 @@ def test_get_default_safety_settings(mock_settings):
 
     with (
         patch(
-            "src.services.research.agents.adk.safety.get_default_safety_settings",
+            "src.worker.agents.safety.get_default_safety_settings",
             wraps=get_default_safety_settings,
         ),
-        patch("src.core.config.settings", mock_settings),
+        patch("src.shared.config.settings", mock_settings),
     ):
-        # Need to patch the settings used INSIDE the function if it's imported there
         settings = get_default_safety_settings()
         assert len(settings) == 4
         for s in settings:
@@ -106,7 +105,7 @@ def test_is_safety_block():
 
 
 def test_log_safety_event(mock_settings):
-    with patch("src.services.research.agents.adk.safety.logger") as mock_logger:
+    with patch("src.worker.agents.safety.logger") as mock_logger:
         mock_settings.SAFETY_LOGGING_ENABLED = True
         log_safety_event("BLOCK", {"info": "test"}, level="ERROR")
         mock_logger.error.assert_called()
@@ -126,7 +125,7 @@ def test_log_safety_event(mock_settings):
 
 
 def test_log_safety_event_disabled(mock_settings):
-    with patch("src.services.research.agents.adk.safety.logger") as mock_logger:
+    with patch("src.worker.agents.safety.logger") as mock_logger:
         mock_settings.SAFETY_LOGGING_ENABLED = False
         log_safety_event("BLOCK", {"info": "test"})
         mock_logger.warning.assert_not_called()
@@ -153,7 +152,7 @@ def test_get_safety_config_for_agent(mock_settings):
     mock_settings.SAFETY_SEXUAL_THRESHOLD = "BLOCK_LOW_AND_ABOVE"
     mock_settings.SAFETY_DANGEROUS_THRESHOLD = "BLOCK_ONLY_HIGH"
 
-    with patch("src.core.config.settings", mock_settings):
+    with patch("src.shared.config.settings", mock_settings):
         config = get_safety_config_for_agent("TestAgent")
         assert isinstance(config, types.GenerateContentConfig)
         assert len(config.safety_settings) == 4
