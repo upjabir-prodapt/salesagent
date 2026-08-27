@@ -1,7 +1,7 @@
 [project]
-name = "colt_ai"
-version = "0.2.0"
-description = "Colt-AI Data Ingestion and Crawling System"
+name = "sales-agent"
+version = "0.3.0"
+description = "Colt Sales Intelligence Research Agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -60,19 +60,6 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 source = ["src"]
-omit = [
-    "*/worker/agents/sales/prompts/*",
-    "*/worker/agents/adk/callbacks/*",
-    "*/worker/agents/sales/schemas.py",
-    "*/worker/agents/sales/tools/verification.py",
-    "*/worker/agents/sales/tools/embedding_similarity.py",
-    "*/worker/finalization/evaluation_section_a.py",
-    "*/worker/finalization/evaluation_section_b.py",
-    "*/worker/finalization/evaluation_service.py",
-    "*/worker/run/event_log.py",
-    "*/worker/run/runner.py",
-    "*/worker/run/progress.py",
-]
 
 [tool.coverage.report]
 fail_under = 80

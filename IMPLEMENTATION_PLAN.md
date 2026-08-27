@@ -414,16 +414,38 @@ removed once all four steps have explicit per-agent policies.
   - [ ] Live E2E run (Accenture) on the **new** pipeline; diff report
         section-by-section against the Step-0 baseline
 
-- [ ] **Step 6 — Cutover (irreversible; tag before this step)**
-  - [ ] Tag `pre-cutover` for rollback safety
-  - [ ] Update `worker/dependencies.py` to construct `ResearchPipeline`
-  - [ ] Update `worker/api/handlers.py::ResearchTaskHandler` to call
-        `pipeline.run()` and pass `PipelineResult.to_legacy_state()` into
-        the unchanged `finalization_service`
-  - [ ] Delete all 23 files listed in §4 (plus the 3 repo-root files)
-  - [ ] Fix `src/worker/agents/__init__.py` exports
-  - [ ] Full test suite green; fix/replace the 8+8 impacted test files
-        listed in §8
+- [x] **Step 6 — Cutover (irreversible; tag before this step)**
+  - [x] Tag `pre-cutover` for rollback safety (commit `8de51f6`)
+  - [x] Created `services/job_runner.py::ResearchJobRunner` (replaces
+        orchestrator.py + runtime/runner.py + pipeline_service.py) and
+        wired it through `worker/dependencies.py` and
+        `worker/api/handlers.py::ResearchTaskHandler`
+  - [x] Updated `api/services/research_job_service.py`'s local dev-mode
+        in-process path to build `ResearchJobRunner` directly
+  - [x] Deleted 26 files total: the 23 from §4 plus `main.py`,
+        `bigquery_migrations.py`, `shared/utils/grounding.py`
+  - [x] Fixed `src/worker/agents/__init__.py`,
+        `src/worker/runtime/__init__.py`, `src/worker/domain/__init__.py`,
+        `src/worker/services/__init__.py`, `src/shared/utils/__init__.py`
+        exports (all referenced deleted modules)
+  - [x] Deleted 16 obsolete test files that exclusively tested deleted
+        machinery (8 from §8.1 plus 8 more discovered during cutover:
+        `test_architecture_mock.py`, `test_agent_registry_and_factory.py`,
+        `test_domain_contracts.py`, `test_report_verification_contract.py`,
+        `test_research_characterization.py`,
+        `test_research_service_application_bridge.py`,
+        `test_pipeline_service.py`,
+        `test_sales_workflow_and_parallel_search.py`,
+        `test_session_state.py`, `test_domain_outputs.py`,
+        `test_agent_factory_callback_order.py`)
+  - [x] Fixed 6 test files referencing the old constructor signatures
+        (`ResearchTaskHandler`, `worker.dependencies`, `research_job_service`)
+  - [x] Verified zero functional references to any of the 26 deleted
+        modules remain anywhere in `src/`/`tests/` (only docstring/comment
+        mentions in the new files documenting what was replaced)
+  - [x] Full test suite green: **331 passed, 0 failed**
+  - [x] `ruff check .` and `ruff format --check .` clean across the
+        entire repository
 
 - [ ] **Step 7 — Tests, coverage, config cleanup**
   - [ ] Add the 6 new test modules listed in §8
