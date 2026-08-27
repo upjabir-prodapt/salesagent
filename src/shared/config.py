@@ -128,6 +128,18 @@ class Settings(BaseSettings):
     SEARCH_CONCURRENCY_LIMIT: int = 8
     TOTAL_KEYWORD_BUDGET: int = 30
 
+    # Search executor QPS/retry (see IMPLEMENTATION_PLAN.md section 6)
+    SEARCH_QPS: float = 4.0
+    SEARCH_QPS_BURST: int = 8
+    SEARCH_TIMEOUT_SECONDS: float = 60.0
+    SEARCH_QUERY_RETRY_ATTEMPTS: int = 3
+    SEARCH_MIN_SUCCESS_RATE: float = 0.6
+
+    # Per-agent retry policies for the pipeline steps
+    PLANNER_RETRY_ATTEMPTS: int = 3
+    ALIGNMENT_RETRY_ATTEMPTS: int = 2
+    COMPILER_RETRY_ATTEMPTS: int = 2
+
     # Mounted Assets (pricing catalog, Colt product catalog)
     ASSETS_ROOT: str = ""
     PRICING_CATALOG_FILENAME: str = "pricing_catalog.json"
