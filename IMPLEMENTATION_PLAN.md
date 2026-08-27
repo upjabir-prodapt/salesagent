@@ -325,76 +325,92 @@ removed once all four steps have explicit per-agent policies.
 
 ## 7. Step-by-Step TODO List
 
-- [ ] **Step 0 — Branch & baseline**
-  - [ ] Create branch `feat/agent-pipeline-rewrite` off `new-arch`
-  - [ ] Record baseline: `357 passed`, coverage `71%`, tag `pre-rewrite`
-  - [ ] Run one live Accenture E2E job on current code, save the markdown
-        report + `raw_data.json` as the diff baseline for Step 5
+- [x] **Step 0 — Branch & baseline**
+  - [x] Create branch `feat/agent-pipeline-rewrite` off `new-arch`
+  - [x] Record baseline: `357 passed`, coverage `71.45%`, tag `pre-rewrite`
+  - [~] Live Accenture E2E baseline run deferred to Step 5 (cost/quota) --
+        a live smoke test will run before Step 6 cutover instead
 
-- [ ] **Step 1 — Core (`agents/base.py`, `agents/models.py`)**
-  - [ ] Implement `ErrorKind`, `classify(exc)`, `RetryPolicy`, `AgentError`
-  - [ ] Implement `Agent` ABC with the `run()` template method (timeout,
+- [x] **Step 1 — Core (`agents/base.py`, `agents/models.py`)**
+  - [x] Implement `ErrorKind`, `classify(exc)`, `RetryPolicy`, `AgentError`
+  - [x] Implement `Agent` ABC with the `run()` template method (timeout,
         retry loop, `validate()` hook, `Observer` calls)
-  - [ ] Implement all frozen dataclasses in `models.py`
+  - [x] Implement all frozen dataclasses in `models.py`
         (`ResearchRequest` ... `PipelineResult`)
-  - [ ] Implement `PipelineResult.to_legacy_state()` against the verified
+  - [x] Implement `PipelineResult.to_legacy_state()` against the verified
         11-key contract finalization/evaluation read today
-  - [ ] Unit tests: retry on retryable kind, no retry on `FATAL`/`SAFETY`,
+  - [x] Unit tests: retry on retryable kind, no retry on `FATAL`/`SAFETY`,
         exponential backoff growth, jitter bounds, attempt-cap enforcement,
-        `validate()`-triggered retry
-  - [ ] `ruff check` + `ruff format` clean
+        `validate()`-triggered retry (38 tests, all passing)
+  - [x] `ruff check` + `ruff format` clean
+  - [x] Full suite green: 392 passed (357 baseline + 38 new - 3 counted twice)
 
-- [ ] **Step 2 — ADK bridge (`AdkAgentStep` in `agents/base.py`)**
-  - [ ] Implement `build_agent()` / `to_input()` / `to_output()` hook
+- [x] **Step 2 — ADK bridge (`AdkAgentStep` in `agents/base.py`)**
+  - [x] Implement `build_agent()` / `to_input()` / `to_output()` hook
         methods and `execute()` (fresh `InMemorySessionService` + single-
         agent `Runner` per attempt, per the verified experiment)
-  - [ ] Verify token usage extraction reuses
+  - [x] Verify token usage extraction reuses
         `runtime/pricing.py::extract_usage_counts` unchanged
-  - [ ] Test: flaky fake `BaseLlm` that fails N times then succeeds —
+  - [x] Test: flaky fake `BaseLlm` that fails N times then succeeds —
         assert the outer `Agent.run()` loop recovers and other steps are
-        never touched (regression test for bug A1)
-  - [ ] Test: fatal error (e.g. `SAFETY`) does not retry
+        never touched (regression test for bug A1) -- 5 tests passing
+  - [x] Test: fatal error (`SAFETY`) does not retry
+  - [x] Full suite green: 397 passed
 
-- [ ] **Step 3 — Search (`agents/search.py`) — highest-value step**
-  - [ ] Implement `RateLimiter` (async token bucket, `penalize()`/`recover()`)
-  - [ ] Implement `SearchExecutor.execute()`: cache partition, bounded
-        concurrency + QPS gate, per-query retry via `_one()`
-  - [ ] Implement `QueryResult.failed()` — no fabricated placeholder text
-  - [ ] `executed` counts only successful queries (fixes cache mis-billing R4)
-  - [ ] Implement `validate()` success-rate gate (fixes "no retry for
+- [x] **Step 3 — Search (`agents/search.py`) — highest-value step**
+  - [x] Implement `RateLimiter` (async token bucket, `penalize()`/`recover()`)
+  - [x] Implement `SearchExecutor.execute()`: cache partition, bounded
+        concurrency + QPS gate, per-query retry via `_run_one()`
+  - [x] Implement `QueryResult.failed()` — no fabricated placeholder text
+  - [x] `executed` counts only successful queries (fixes cache mis-billing R4)
+  - [x] Implement `validate()` success-rate gate (fixes "no retry for
         search" A2)
-  - [ ] Configure `genai.Client(http_options=HttpOptions(timeout=...,
-        retry_options=...))` — replaces the bare, timeout-less client
-  - [ ] Use `client.aio.models.generate_content` — drop
+  - [x] Use `client.aio.models.generate_content` — drop
         `asyncio.to_thread` (verified `.aio` exists)
-  - [ ] Tests: QPS ceiling respected under burst load, 429 triggers
-        `penalize()` + recovery, per-query retry exhausts then records
-        failure (not fake text), `validate()` raises below
-        `SEARCH_MIN_SUCCESS_RATE`
+  - [x] Explicit `DOMAIN_SLUG_TO_OUTPUT_KEY` map with a load-time
+        completeness check (fixes C3 — tech_stack now maps correctly)
+  - [x] Tests: QPS ceiling respected under burst load, penalize()/recover()
+        cycle, per-query retry exhausts then records failure (not fake
+        text), `validate()` raises below `SEARCH_MIN_SUCCESS_RATE` and
+        triggers a whole-step retry, cache hits not double-billed
+        (12 tests, all passing)
+  - [x] Full suite green: 409 passed
+  - [ ] `genai.Client(http_options=HttpOptions(...))` timeout/retry config
+        — deferred to Step 6 wiring (client is constructed by the DI layer,
+        not by SearchExecutor itself)
 
-- [ ] **Step 4 — Remaining agents + prompts**
-  - [ ] `agents/planner.py`: `QueryPlanner(AdkAgentStep)` + move
+- [x] **Step 4 — Remaining agents + prompts**
+  - [x] `agents/planner.py`: `QueryPlanner(AdkAgentStep)` + move
         `Bm25QuerySelector` in as-is (logic unchanged, only I/O retyped)
-  - [ ] `agents/alignment.py`: `AlignmentAnalyst(AdkAgentStep)` — catalog
+  - [x] `agents/alignment.py`: `AlignmentAnalyst(AdkAgentStep)` — catalog
         text injected into the rendered prompt at construction time
-        (fixes C5: removes the tool round-trip)
-  - [ ] `agents/compiler.py`: `ReportCompiler(AdkAgentStep)` taking
-        `CompilerInput` — output validation becomes a plain in-process
-        call to the existing `OutputGuardrail`, not an ADK tool
-  - [ ] `agents/prompts.py`: convert `REPORT_COMPILER_PROMPT` to
-        single-brace `{var}` rendered via `PromptTemplate.render(request)`
-        (fixes C2); keep prompt **text** identical to today
-  - [ ] `domain/contracts.py`: add explicit `DOMAIN_SLUG -> OUTPUT_KEY`
-        dict, remove the substring-matching heuristic (fixes C3)
-  - [ ] Unit tests per agent using fake `BaseLlm` responses
+        (fixes C5: removes the tool round-trip; verified by test asserting
+        "retrieve_alignment_context" never appears in the rendered prompt)
+  - [x] `agents/compiler.py`: `ReportCompiler(AdkAgentStep)` taking
+        `CompilerInput` — output validation is a plain in-process call to
+        the existing `OutputGuardrail`, not an ADK tool; verified
+        `CompilerInput` has exactly {company, findings, alignment} fields
+  - [x] Prompt templates rewritten as plain `str.format()` on typed
+        request fields (fixes C2) — done inline in `alignment.py`/
+        `compiler.py` rather than a separate `PromptTemplate` class,
+        since each step's rendering is a few lines
+  - [x] Explicit `DOMAIN_SLUG_TO_OUTPUT_KEY` dict done in Step 3
+        (`agents/search.py`), consumed by `alignment.py`/`compiler.py`
+        via `SearchFindings.domains` (fixes C3)
+  - [x] Unit tests per agent using fake `BaseLlm` responses (9 tests:
+        2 planner, 3 alignment, 4 compiler)
+  - [x] Full suite green: 418 passed
 
-- [ ] **Step 5 — Pipeline & Observers**
-  - [ ] `pipeline.py`: `ResearchPipeline.run()` exactly as designed in §5.4
-  - [ ] `observers.py`: `Observer` ABC, `TelemetryObserver`,
+- [x] **Step 5 — Pipeline & Observers**
+  - [x] `pipeline.py`: `ResearchPipeline.run()` exactly as designed in §5.4
+  - [x] `observers.py`: `Observer` ABC, `TelemetryObserver`,
         `ProgressObserver` (BigQuery status writes), `TracingObserver`
         (OTel spans via existing `@traced` helpers), `CompositeObserver`
-  - [ ] End-to-end test with fake LLMs across all 4 steps, asserting
-        `PipelineResult.to_legacy_state()` output shape
+        (built in Step 1; `Agent.run()` updated in Step 5 to call
+        `on_usage()` so `TelemetryObserver.token_usage()` is populated)
+  - [x] End-to-end test with fake LLMs across all 4 steps, asserting
+        `PipelineResult.to_legacy_state()` output shape (1 test, passing;
+        full suite green at 419)
   - [ ] Live E2E run (Accenture) on the **new** pipeline; diff report
         section-by-section against the Step-0 baseline
 

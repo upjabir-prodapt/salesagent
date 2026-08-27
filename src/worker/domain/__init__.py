@@ -1,4 +1,4 @@
-"""Domain contracts, models, and schemas for research services."""
+"""Domain contracts and schemas for research services."""
 
 from .contracts import (
     AGENT_CONTRACTS,
@@ -16,7 +16,6 @@ from .contracts import (
     validate_agent_output,
     validate_domain_outputs_present,
 )
-from .models import EvidenceRecord, ResearchJob, ResearchMetrics
 from .schemas import (
     CandidateQueries,
     ColtAlignmentMapping,
@@ -26,7 +25,6 @@ from .schemas import (
     StrategicOpportunitySummary,
     UseCaseRecommendation,
 )
-from .session_state import ResearchSessionState
 
 __all__ = [
     "AgentContract",
@@ -43,10 +41,6 @@ __all__ = [
     "list_missing_domain_outputs",
     "validate_domain_outputs_present",
     "validate_agent_output",
-    "ResearchJob",
-    "ResearchMetrics",
-    "EvidenceRecord",
-    "ResearchSessionState",
     "QueryWithMetadata",
     "CandidateQueries",
     "NormalizedQueryPlan",

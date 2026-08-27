@@ -1,26 +1,18 @@
-"""ADK agents and master workflow for sales research."""
+"""Agent pipeline steps for sales research (see IMPLEMENTATION_PLAN.md).
 
-from .alignment_agent import create_alignment_agent
-from .compiler_agent import create_compiler_agent
-from .keyword_agent import QueryGeneratorFactory
-from .prompts import ALIGNMENT_PROMPT, REPORT_COMPILER_PROMPT
-from .search_agent import ParallelSearchAgent
-from .workflow import SalesAgentAppFactory, SalesResearchWorkflowAgent
+Each step is an independent Agent (src/worker/agents/base.py) composed by
+ResearchPipeline (src/worker/pipeline.py) -- there is no root agent
+containing sub-agents, and no shared session state between steps.
+"""
 
-
-def create_sales_agent_app(company_name: str = "Unknown"):
-    """Build the ADK app through the centralized application factory."""
-    return SalesAgentAppFactory().create(company_name)
-
+from .alignment import AlignmentAnalyst
+from .compiler import ReportCompiler
+from .planner import QueryPlanner
+from .search import SearchExecutor
 
 __all__ = [
-    "SalesAgentAppFactory",
-    "SalesResearchWorkflowAgent",
-    "ParallelSearchAgent",
-    "QueryGeneratorFactory",
-    "create_alignment_agent",
-    "create_compiler_agent",
-    "create_sales_agent_app",
-    "ALIGNMENT_PROMPT",
-    "REPORT_COMPILER_PROMPT",
+    "QueryPlanner",
+    "SearchExecutor",
+    "AlignmentAnalyst",
+    "ReportCompiler",
 ]
