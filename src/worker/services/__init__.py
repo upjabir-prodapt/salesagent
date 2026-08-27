@@ -1,4 +1,13 @@
-"""Worker services package."""
+"""Worker services package.
+
+Note: ResearchJobRunner is deliberately NOT imported here at package level.
+It imports src.worker.pipeline, which imports src.worker.agents.compiler,
+which imports src.worker.services.formatting -- importing any submodule of
+`services` first executes this __init__.py, so eagerly importing
+job_runner here would create a circular import
+(services -> job_runner -> pipeline -> agents.compiler -> services).
+Import it directly: `from src.worker.services.job_runner import ResearchJobRunner`.
+"""
 
 from .artifacts import ResearchArtifactService
 from .async_retry import with_retry, with_retry_sync
@@ -11,7 +20,6 @@ from .finalization_ops import (
 )
 from .finalization_service import ResearchFinalizationService
 from .formatting import clean_markdown_report
-from .job_runner import ResearchJobRunner
 from .metrics import calculate_metrics, reconcile_cost
 from .status import (
     build_completion_metadata,
@@ -20,7 +28,6 @@ from .status import (
 )
 
 __all__ = [
-    "ResearchJobRunner",
     "ResearchArtifactService",
     "ResearchFinalizationService",
     "run_pdf_op",
