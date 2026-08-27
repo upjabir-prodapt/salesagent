@@ -23,16 +23,16 @@ def test_get_research_handler_returns_handler_with_service() -> None:
 
 
 def test_get_research_task_handler_returns_handler_with_service() -> None:
-    mock_service = MagicMock()
+    mock_job_runner = MagicMock()
     mock_bq = MagicMock()
     with (
         patch.object(
-            worker_deps, "get_research_pipeline_service", return_value=mock_service
+            worker_deps, "get_research_job_runner", return_value=mock_job_runner
         ),
         patch.object(worker_deps, "get_bigquery_repository", return_value=mock_bq),
     ):
         handler = worker_deps.get_research_task_handler()
 
     assert isinstance(handler, ResearchTaskHandler)
-    assert handler._pipeline is mock_service
+    assert handler._job_runner is mock_job_runner
     assert handler._bigquery is mock_bq

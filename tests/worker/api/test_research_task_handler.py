@@ -10,12 +10,13 @@ from src.worker.api.handlers import ResearchTaskHandler
 
 @pytest.mark.asyncio
 async def test_handle_job_not_found_returns_noop():
-    mock_pipeline = MagicMock()
+    mock_job_runner = MagicMock()
+    mock_job_runner.run = AsyncMock()
     mock_bq = MagicMock()
     mock_bq.get_status.return_value = None
 
     handler = ResearchTaskHandler(
-        pipeline_service=mock_pipeline, bigquery_repository=mock_bq
+        job_runner=mock_job_runner, bigquery_repository=mock_bq
     )
     payload = ResearchTaskPayload(
         job_id="job_missing",
@@ -24,12 +25,13 @@ async def test_handle_job_not_found_returns_noop():
 
     result = await handler.handle(payload)
     assert result == {"job_id": "job_missing", "status": "not_found", "action": "noop"}
-    assert not mock_pipeline.process_research_background.called
+    assert not mock_job_runner.run.called
 
 
 @pytest.mark.asyncio
 async def test_handle_terminal_status_returns_noop():
-    mock_pipeline = MagicMock()
+    mock_job_runner = MagicMock()
+    mock_job_runner.run = AsyncMock()
     mock_bq = MagicMock()
     mock_bq.get_status.return_value = {
         "request_id": "job_done",
@@ -37,7 +39,7 @@ async def test_handle_terminal_status_returns_noop():
     }
 
     handler = ResearchTaskHandler(
-        pipeline_service=mock_pipeline, bigquery_repository=mock_bq
+        job_runner=mock_job_runner, bigquery_repository=mock_bq
     )
     payload = ResearchTaskPayload(
         job_id="job_done",
@@ -46,13 +48,13 @@ async def test_handle_terminal_status_returns_noop():
 
     result = await handler.handle(payload)
     assert result == {"job_id": "job_done", "status": "COMPLETED", "action": "noop"}
-    assert not mock_pipeline.process_research_background.called
+    assert not mock_job_runner.run.called
 
 
 @pytest.mark.asyncio
 async def test_handle_runs_pipeline_for_pending_job():
-    mock_pipeline = MagicMock()
-    mock_pipeline.process_research_background = AsyncMock()
+    mock_job_runner = MagicMock()
+    mock_job_runner.run = AsyncMock()
     mock_bq = MagicMock()
     mock_bq.get_status.side_effect = [
         {"request_id": "job_123", "status": "PENDING"},
@@ -60,7 +62,7 @@ async def test_handle_runs_pipeline_for_pending_job():
     ]
 
     handler = ResearchTaskHandler(
-        pipeline_service=mock_pipeline, bigquery_repository=mock_bq
+        job_runner=mock_job_runner, bigquery_repository=mock_bq
     )
     payload = ResearchTaskPayload(
         job_id="job_123",
@@ -71,12 +73,9 @@ async def test_handle_runs_pipeline_for_pending_job():
 
     result = await handler.handle(payload)
     assert result == {"job_id": "job_123", "status": "COMPLETED", "action": "ran"}
-    assert mock_pipeline.process_research_background.called
-    call_args = mock_pipeline.process_research_background.call_args
+    assert mock_job_runner.run.called
+    call_args = mock_job_runner.run.call_args
     assert call_args[0][0] == "job_123"
     assert call_args[0][1] == "Acme Corp"
     assert call_args[1]["metadata"] == {"user_id": "user@colt.net"}
-    assert (
-        call_args[1]["trace_context_headers"]["traceparent"]
-        == "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-    )
+    assert "span" in call_args[1]

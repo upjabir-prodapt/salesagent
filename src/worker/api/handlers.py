@@ -11,10 +11,9 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from src.shared.logging_config import logger
 from src.shared.repositories.bigquery_repository import BigQueryRepository
-from src.shared.repositories.gcs_repository import GCSRepository
 from src.shared.schemas.tasks import ResearchTaskPayload
 
-from ..services.pipeline_service import ResearchPipelineService
+from ..services.job_runner import ResearchJobRunner
 
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 
@@ -24,14 +23,11 @@ class ResearchTaskHandler:
 
     def __init__(
         self,
-        pipeline_service: ResearchPipelineService | None = None,
+        job_runner: ResearchJobRunner,
         bigquery_repository: BigQueryRepository | None = None,
     ) -> None:
         self._bigquery = bigquery_repository or BigQueryRepository()
-        self._pipeline = pipeline_service or ResearchPipelineService(
-            bigquery_repository=self._bigquery,
-            gcs_repository=GCSRepository(),
-        )
+        self._job_runner = job_runner
 
     def _attach_trace(self, payload: ResearchTaskPayload) -> Any:
         """Continue API submit span via W3C traceparent when present."""
@@ -72,17 +68,11 @@ class ResearchTaskHandler:
                 logger.info("Job %s already terminal (%s); skipping", job_id, status)
                 return {"job_id": job_id, "status": status, "action": "noop"}
 
-            trace_carrier: dict[str, str] = {}
-            if payload.traceparent:
-                trace_carrier["traceparent"] = payload.traceparent
-            if payload.tracestate:
-                trace_carrier["tracestate"] = payload.tracestate
-
-            await self._pipeline.process_research_background(
+            await self._job_runner.run(
                 job_id,
                 payload.company_name,
                 metadata=payload.metadata,
-                trace_context_headers=trace_carrier,
+                span=span,
             )
 
             final_data = self._bigquery.get_status(job_id)

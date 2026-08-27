@@ -11,6 +11,7 @@ from .finalization_ops import (
 )
 from .finalization_service import ResearchFinalizationService
 from .formatting import clean_markdown_report
+from .job_runner import ResearchJobRunner
 from .metrics import calculate_metrics, reconcile_cost
 from .orchestrator import (
     AdkRunnerAdapter,
@@ -29,6 +30,7 @@ from .status import (
 )
 
 __all__ = [
+    "ResearchJobRunner",
     "ResearchPipelineService",
     "ResearchJobOrchestrator",
     "ResearchApplicationService",

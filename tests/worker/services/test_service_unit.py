@@ -56,10 +56,15 @@ async def test_process_research_background_delegates():
     bq = MagicMock()
     gcs = MagicMock()
     service = ResearchJobService(bq, gcs)
-    with patch(
-        "src.worker.services.pipeline_service.ResearchPipelineService.process_research_background",
-        return_value=None,
-    ) as run_background_job:
+    with (
+        patch(
+            "src.worker.dependencies.build_research_pipeline", return_value=MagicMock()
+        ),
+        patch(
+            "src.worker.services.job_runner.ResearchJobRunner.run",
+            return_value=None,
+        ) as run_background_job,
+    ):
         await service.process_research_background("job_1", "Acme", metadata={"k": "v"})
     run_background_job.assert_called_once()
 

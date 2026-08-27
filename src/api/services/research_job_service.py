@@ -118,14 +118,20 @@ class ResearchJobService:
         trace_context_headers: dict[str, str] | None = None,
     ) -> None:
         """Lazy local in-process pipeline runner (for dev mode: API_USE_BACKGROUND_PIPELINE)."""
-        from src.worker.services.pipeline_service import (
-            ResearchPipelineService,
+        del trace_context_headers  # tracing handled by the caller's own span
+        from src.worker.dependencies import build_research_pipeline
+        from src.worker.services.artifacts import ResearchArtifactService
+        from src.worker.services.finalization_service import (
+            ResearchFinalizationService,
         )
+        from src.worker.services.job_runner import ResearchJobRunner
 
-        pipeline = ResearchPipelineService(self.bigquery_repo, self.gcs_repo)
-        await pipeline.process_research_background(
-            job_id,
-            company_name,
-            metadata=metadata,
-            trace_context_headers=trace_context_headers,
+        runner = ResearchJobRunner(
+            pipeline=build_research_pipeline(),
+            bigquery_repository=self.bigquery_repo,
+            artifact_service=ResearchArtifactService(self.bigquery_repo, self.gcs_repo),
+            finalization_service=ResearchFinalizationService(
+                self.bigquery_repo, self.gcs_repo
+            ),
         )
+        await runner.run(job_id, company_name, metadata=metadata)
