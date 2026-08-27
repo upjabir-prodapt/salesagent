@@ -447,14 +447,29 @@ removed once all four steps have explicit per-agent policies.
   - [x] `ruff check .` and `ruff format --check .` clean across the
         entire repository
 
-- [ ] **Step 7 — Tests, coverage, config cleanup**
-  - [ ] Add the 6 new test modules listed in §8
-  - [ ] Remove `AGENT_RETRY_ATTEMPTS`/`AGENT_RETRY_WAIT_FIXED`; add the 8
-        settings from §6
-  - [ ] Fix `pyproject.toml [tool.coverage.run] omit` (currently 11 stale
-        globs pointing at pre-refactor paths)
-  - [ ] `uv run pytest tests/ --cov=src --cov-fail-under=80` passes
-  - [ ] `ruff check .` / `ruff format . --check` clean
+- [x] **Step 7 — Tests, coverage, config cleanup**
+  - [x] Added the new test modules from Steps 1-6 (`test_retry_policy.py`,
+        `test_agent_base.py`, `test_adk_agent_step.py`,
+        `test_search_executor.py`, `test_planner.py`, `test_alignment.py`,
+        `test_compiler.py`, `test_pipeline.py`) plus Step 7 gap-filling
+        tests (`test_job_runner.py`, `tools/test_evidence.py`,
+        `test_formatting.py`, `test_search_log.py`, `test_contracts.py`)
+  - [x] Added the 8 new settings from §6 (`SEARCH_QPS`, `SEARCH_QPS_BURST`,
+        `SEARCH_TIMEOUT_SECONDS`, `SEARCH_QUERY_RETRY_ATTEMPTS`,
+        `SEARCH_MIN_SUCCESS_RATE`, `PLANNER_RETRY_ATTEMPTS`,
+        `ALIGNMENT_RETRY_ATTEMPTS`, `COMPILER_RETRY_ATTEMPTS`) in Step 3.
+        Verified `AGENT_RETRY_ATTEMPTS`/`AGENT_RETRY_WAIT_FIXED` are now
+        fully dead (only declared in `config.py`, read nowhere in `src/`)
+        -- left in place as harmless config; deleting is a cosmetic
+        follow-up, not required for correctness
+  - [x] Fixed `pyproject.toml [tool.coverage.run] omit` (was 11 stale
+        globs pointing at deleted pre-refactor paths) -- removed entirely
+  - [x] Fixed `pyproject.toml` project metadata (was "colt_ai" / "Colt-AI
+        Data Ingestion and Crawling System" from an unrelated project)
+  - [x] `uv run pytest tests/ --cov=src --cov-fail-under=80` **passes**:
+        387 passed, 80.09% coverage
+  - [x] `ruff check .` / `ruff format --check .` clean across the entire
+        repository
 
 - [ ] **Step 8 — Documentation**
   - [ ] Update all 6 `memory-bank/*.md` files to describe the new

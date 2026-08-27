@@ -20,23 +20,25 @@ Sales Agent API (src/api/)
          ▼
 Sales Agent Worker (src/worker/)
   - OIDC token verification
-  - Executes SalesResearchWorkflowAgent
+  - Executes ResearchPipeline: 4 independent Agent steps, each owning its
+    own RetryPolicy (no shared root agent, no shared session state)
          │
-         ├─ 1. QueryGeneratorAgent (LlmAgent)
+         ├─ 1. QueryPlanner (AdkAgentStep)
          │     30 keywords across 12 domains (CandidateQueries, BM25-ranked)
-         │     Context isolated (include_contents="none")
+         │     -> typed QueryPlan
          │
-         ├─ 2. ParallelSearchAgent (Custom BaseAgent)
-         │     Redis 7-day cache check (search:{company_key}:{query_hash})
-         │     Bounded parallel search (google_search_agent)
-         │     Synthesizes 12 canonical DOMAIN_OUTPUT_KEYS
+         ├─ 2. SearchExecutor (Agent, bypasses ADK)
+         │     Redis 7-day cache check + async token-bucket RateLimiter
+         │     (real QPS control) + per-query retry with honest failures
+         │     -> typed SearchFindings (12 canonical domains)
          │
-         ├─ 3. AlignmentAnalyst (LlmAgent)
-         │     Gemini context-cached Colt catalog mapping
-         │     Structured ColtAlignmentOutput
+         ├─ 3. AlignmentAnalyst (AdkAgentStep)
+         │     Colt catalog injected directly into the prompt (no tool call)
+         │     -> typed ColtAlignment
          │
-         └─ 4. ReportCompiler (LlmAgent)
-               Plain LLM compiler with validate_final_report tool
+         └─ 4. ReportCompiler (AdkAgentStep)
+               Input: CompilerInput(findings, alignment) only
+               In-process OutputGuardrail validation triggers step retry
          │
          ▼
 Finalization & Telemetry
