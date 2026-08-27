@@ -200,6 +200,9 @@ class Agent(ABC, Generic[TIn, TOut]):
     retry: RetryPolicy = RetryPolicy()
 
     async def run(self, request: TIn, obs: Observer) -> TOut:
+        # Stashed so AdkAgentStep.execute() can report token usage without
+        # widening the execute()/to_output() abstract method signatures.
+        self._current_observer = obs
         attempt = 0
         while True:
             attempt += 1
@@ -306,6 +309,11 @@ class AdkAgentStep(Agent[TIn, TOut]):
                 delta_in, delta_out = extract_usage_counts(usage_metadata)
                 input_tokens += delta_in
                 output_tokens += delta_out
+
+        model_name = getattr(agent.model, "model", None) or str(agent.model)
+        observer = getattr(self, "_current_observer", None)
+        if observer is not None and (input_tokens or output_tokens):
+            observer.on_usage(self.name, model_name, input_tokens, output_tokens)
 
         session = await session_service.get_session(
             app_name=self.name, user_id=self._USER_ID, session_id=session_id
