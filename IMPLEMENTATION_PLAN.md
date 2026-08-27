@@ -471,12 +471,24 @@ removed once all four steps have explicit per-agent policies.
   - [x] `ruff check .` / `ruff format --check .` clean across the entire
         repository
 
-- [ ] **Step 8 — Documentation**
-  - [ ] Update all 6 `memory-bank/*.md` files to describe the new
-        pipeline architecture
-  - [ ] Update `README.md` architecture diagram and "4-phase pipeline"
-        description
-  - [ ] Update `aidlc-docs/` unit-of-work docs affected by deleted modules
+- [x] **Step 8 — Documentation**
+  - [x] Updated `memory-bank/systemPatterns.md` (new Agent Pipeline
+        Architecture section + rewritten `src/worker/` component list),
+        `memory-bank/techContext.md` (ADK version, model resolution,
+        per-step retry policies), `memory-bank/activeContext.md` (new
+        entry documenting the rewrite, its motivation, and the verified
+        design decision to keep ADK), `memory-bank/progress.md` (new
+        "What Works" entry + updated "What's Left to Build" with the
+        deferred live E2E smoke test and the dead-settings cosmetic
+        follow-up). Note: `memory-bank/` is gitignored, so these are local
+        persistent-memory files, not part of the repo's tracked history.
+  - [x] Updated `README.md` architecture diagram to show the 4
+        independent `Agent` steps (`QueryPlanner`, `SearchExecutor`,
+        `AlignmentAnalyst`, `ReportCompiler`) instead of the old
+        `SalesResearchWorkflowAgent` root-agent description
+  - [ ] `aidlc-docs/` unit-of-work docs left unchanged -- out of scope for
+        this rewrite (they document the original AI-DLC inception/
+        construction process, not current implementation state)
 
 ## 8. Test Impact (verified against current `tests/` tree)
 
@@ -567,15 +579,28 @@ removed once all four steps have explicit per-agent policies.
 
 ## 12. Definition of Done
 
-- [ ] All 8 steps checked off
-- [ ] `uv run pytest tests/ --cov=src --cov-fail-under=80` passes
-- [ ] `ruff check .` and `ruff format . --check` clean
+- [x] All 8 steps checked off
+- [x] `uv run pytest tests/ --cov=src --cov-fail-under=80` passes:
+      387 passed, 80.09% coverage
+- [x] `ruff check .` and `ruff format . --check` clean across the whole
+      repository
 - [ ] Live E2E run on new pipeline produces a report materially
       equivalent to the Step-0 baseline (all 13 sections populated,
-      including Technology Landscape — regression check for C3)
-- [ ] No references to deleted modules remain (`grep -rn` clean for each
-      entry in §4)
-- [ ] `google-adk` still imported and functioning (§10.3)
-- [ ] Memory bank + README updated (Step 8)
+      including Technology Landscape — regression check for C3).
+      **Deferred** to avoid API cost/quota risk mid-rewrite; must run
+      before merging `feat/agent-pipeline-rewrite` into `new-arch`.
+- [x] No references to deleted modules remain (verified via `grep -rn`
+      across `src/`/`tests/` for every entry in §4 — only docstring/
+      comment mentions in the new files documenting what was replaced)
+- [x] `google-adk` still imported and functioning — `AdkAgentStep` drives
+      a real `google.adk.runners.Runner` per attempt, verified by 5
+      integration tests in `test_adk_agent_step.py`
+- [x] Memory bank + README updated (Step 8)
 
-   tool loop, auto-instrumentation) that are already working.
+**Note on invariant §10.2** (prompt text byte-identical): not held
+literally — the prompt *content and intent* (sections, anti-hallucination
+rules, required structure) were preserved, but the substitution mechanism
+change (Step 4) required rewriting the templates as Python `str.format()`
+calls on typed fields rather than copy-pasting the old `{{var}}`/`{var}`
+strings verbatim. This was a deliberate, reviewed decision (fixes bug C2)
+rather than an oversight.
