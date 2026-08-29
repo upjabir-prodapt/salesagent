@@ -51,12 +51,39 @@ def get_storage_client() -> storage.Client:
 
 
 def get_genai_client() -> genai.Client:
-    """Get shared Google Gen AI client singleton."""
+    """Get shared Google Gen AI client singleton.
+
+    Explicitly passes project/location rather than relying on the
+    GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION process env vars, so the
+    Vertex AI inference region (settings.vertex_ai_location, e.g.
+    europe-west3) can differ from the project's infra region
+    (settings.GOOGLE_CLOUD_LOCATION, e.g. europe-west1 for Cloud
+    Tasks/GCS/BigQuery) without a second process-wide env var.
+    """
     global _genai_client
     with _lock:
         if _genai_client is None:
-            _genai_client = genai.Client()
+            _genai_client = genai.Client(
+                vertexai=settings.GOOGLE_GENAI_USE_VERTEXAI,
+                project=settings.GOOGLE_CLOUD_PROJECT,
+                location=settings.vertex_ai_location,
+            )
     return _genai_client
+
+
+def _redis_tls_kwargs() -> dict:
+    """TLS kwargs shared by sync/async clients.
+
+    ssl_cert_reqs=None (skip verification) is only used when
+    REDIS_TLS_VERIFY_CERT=False -- e.g. Memorystore Redis Cluster over PSC
+    presents a Google-managed per-instance CA not in the system trust
+    store. Defaults to full verification.
+    """
+    if not settings.REDIS_TLS_ENABLED:
+        return {}
+    if not settings.REDIS_TLS_VERIFY_CERT:
+        return {"ssl": True, "ssl_cert_reqs": None}
+    return {"ssl": True}
 
 
 def get_redis_client() -> redis.Redis:
@@ -69,9 +96,9 @@ def get_redis_client() -> redis.Redis:
                 port=settings.REDIS_PORT,
                 password=settings.REDIS_PASSWORD or None,
                 db=settings.REDIS_DB,
-                ssl=settings.REDIS_TLS_ENABLED,
                 socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT_SECONDS,
                 decode_responses=True,
+                **_redis_tls_kwargs(),
             )
     return _redis_client
 
@@ -86,8 +113,8 @@ def get_async_redis_client() -> aioredis.Redis:
                 port=settings.REDIS_PORT,
                 password=settings.REDIS_PASSWORD or None,
                 db=settings.REDIS_DB,
-                ssl=settings.REDIS_TLS_ENABLED,
                 socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT_SECONDS,
                 decode_responses=True,
+                **_redis_tls_kwargs(),
             )
     return _async_redis_client

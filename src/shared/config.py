@@ -101,6 +101,15 @@ class Settings(BaseSettings):
             "GOOGLE_CLOUD_LOCATION", "GOOGLE_PROJECT_LOCATION"
         ),
     )
+    # Region for Vertex AI model inference (Gemini) specifically. Distinct
+    # from GOOGLE_CLOUD_LOCATION, which anchors project-scoped infra (Cloud
+    # Tasks queue location, GCS bucket location, BigQuery-adjacent defaults).
+    # A project's infra region (e.g. europe-west1) does not have to match
+    # the region a given Gemini model is served from / priced in (e.g.
+    # europe-west3 for gemini-3.5-flash per the mounted pricing_catalog.json).
+    # Defaults to GOOGLE_CLOUD_LOCATION when unset so existing single-region
+    # deployments are unaffected.
+    VERTEX_AI_LOCATION: str = ""
     GOOGLE_GENAI_USE_VERTEXAI: bool
     GOOGLE_CLOUD_QUOTA_PROJECT: str
 
@@ -121,6 +130,11 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str | None = None
     REDIS_DB: int = 0
     REDIS_TLS_ENABLED: bool = True
+    # Memorystore Redis Cluster (PSC) uses a Google-managed per-instance CA
+    # that is not in the system trust store by default. Set to False only
+    # for ad-hoc verification against such an instance without installing
+    # its CA bundle; production should keep this True.
+    REDIS_TLS_VERIFY_CERT: bool = True
     REDIS_KEY_PREFIX: str = "salesagent:search:"
     REDIS_CONNECT_TIMEOUT_SECONDS: float = 2.0
     SEARCH_CACHE_BACKEND: str = "redis"  # "redis" | "firestore" | "none"
@@ -377,12 +391,23 @@ class Settings(BaseSettings):
         return self.AGENT_COMPACT_SUMMARIZER_MODEL or self.SEARCH_MODEL
 
     @property
+    def vertex_ai_location(self) -> str:
+        """Region used for Vertex AI Gemini inference calls specifically.
+
+        Falls back to GOOGLE_CLOUD_LOCATION when VERTEX_AI_LOCATION is not
+        set, so single-region deployments need no config change. Set
+        VERTEX_AI_LOCATION explicitly when the LLM-serving region differs
+        from the project's infra region (Cloud Tasks/GCS/BigQuery).
+        """
+        return self.VERTEX_AI_LOCATION or self.GOOGLE_CLOUD_LOCATION
+
+    @property
     def llm_model_info(self) -> Any:
         """Resolved ModelInfo object from mounted pricing catalog for primary LLM."""
         from src.shared.model_registry import get_model_registry
 
         return get_model_registry().get_model(
-            self.LLM_MODEL, region=self.GOOGLE_CLOUD_LOCATION
+            self.LLM_MODEL, region=self.vertex_ai_location
         )
 
     @property
@@ -391,7 +416,7 @@ class Settings(BaseSettings):
         from src.shared.model_registry import get_model_registry
 
         return get_model_registry().get_model(
-            self.SEARCH_MODEL, region=self.GOOGLE_CLOUD_LOCATION
+            self.SEARCH_MODEL, region=self.vertex_ai_location
         )
 
     def validate_mounted_assets(self) -> dict[str, Path]:

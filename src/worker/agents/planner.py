@@ -12,14 +12,13 @@ from datetime import datetime
 from typing import Any
 
 from google.adk.agents import LlmAgent
-from google.adk.models import Gemini
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.shared.config import settings
 from src.worker.agents.base import AdkAgentStep, RetryPolicy
 from src.worker.agents.models import Query, QueryPlan, ResearchRequest
 from src.worker.agents.safety import get_safety_config_for_agent
-from src.worker.model import retry_config
+from src.worker.model import RegionalGemini, retry_config
 
 
 class _QueryWithMetadata(BaseModel):
@@ -197,7 +196,7 @@ class QueryPlanner(AdkAgentStep[ResearchRequest, QueryPlan]):
     def build_agent(self) -> LlmAgent:
         return LlmAgent(
             name=self.name,
-            model=Gemini(model=self._model, retry_options=retry_config),
+            model=RegionalGemini(model=self._model, retry_options=retry_config),
             # The concrete task (company, domains, year) is provided in the
             # per-request user message via to_input() -- this instruction
             # only sets the agent's fixed role.

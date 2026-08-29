@@ -19,14 +19,13 @@ from __future__ import annotations
 from typing import Any
 
 from google.adk.agents import LlmAgent
-from google.adk.models import Gemini
 
 from src.shared.config import settings
 from src.shared.utils.guardrails import OutputGuardrail
 from src.worker.agents.base import AdkAgentStep, InvalidOutputError, RetryPolicy
 from src.worker.agents.models import CompilerInput, Report
 from src.worker.agents.safety import get_safety_config_for_agent
-from src.worker.model import retry_config
+from src.worker.model import RegionalGemini, retry_config
 from src.worker.services.formatting import clean_markdown_report
 
 _REPORT_COMPILER_PROMPT_TEMPLATE = """You are the Report Compiler for Colt Technology Services. Your job is to compile the research findings and Colt alignment analysis into a professional, executive-ready "Strategic Account Brief" formatted in clean GitHub-Flavored Markdown.
@@ -105,7 +104,7 @@ class ReportCompiler(AdkAgentStep[CompilerInput, Report]):
     def build_agent(self) -> LlmAgent:
         return LlmAgent(
             name=self.name,
-            model=Gemini(model=self._model, retry_options=retry_config),
+            model=RegionalGemini(model=self._model, retry_options=retry_config),
             instruction="You are the Report Compiler for Colt Technology Services.",
             tools=[],
             output_key="final_report",

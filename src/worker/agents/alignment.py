@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing import Any
 
 from google.adk.agents import LlmAgent
-from google.adk.models import Gemini
 from pydantic import BaseModel, Field
 
 from src.shared.config import settings
@@ -25,7 +24,7 @@ from src.worker.agents.base import AdkAgentStep, RetryPolicy
 from src.worker.agents.models import ColtAlignment, ColtAlignmentMapping, SearchFindings
 from src.worker.agents.safety import get_safety_config_for_agent
 from src.worker.agents.tools.gcs_pdf_loader import get_alignment_context
-from src.worker.model import retry_config
+from src.worker.model import RegionalGemini, retry_config
 
 
 class _ColtAlignmentMappingSchema(BaseModel):
@@ -118,7 +117,7 @@ class AlignmentAnalyst(AdkAgentStep[SearchFindings, ColtAlignment]):
     def build_agent(self) -> LlmAgent:
         return LlmAgent(
             name=self.name,
-            model=Gemini(model=self._model, retry_options=retry_config),
+            model=RegionalGemini(model=self._model, retry_options=retry_config),
             instruction="You are the Colt Alignment Analyst.",
             tools=[],
             output_key="alignment_output",
