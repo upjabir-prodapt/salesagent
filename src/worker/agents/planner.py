@@ -9,7 +9,7 @@ ResearchRequest -> QueryPlan.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +19,64 @@ from src.worker.agents.base import AdkAgentStep, InvalidOutputError, RetryPolicy
 from src.worker.agents.models import Query, QueryPlan, ResearchRequest
 from src.worker.agents.safety import get_safety_config_for_agent
 from src.worker.model import RegionalGemini, retry_config
+
+# One-sentence description per research domain, used both to enrich the
+# generation prompt (so the model knows what each domain actually means,
+# not just its slug) and as the single source of truth for the domain
+# enum used by DomainQueryGroup below. Keys must match
+# Bm25QuerySelector.DOMAIN_LIMITS and src.worker.agents.search's
+# DOMAIN_SLUG_TO_OUTPUT_KEY exactly.
+DOMAIN_DESCRIPTIONS: dict[str, str] = {
+    "firmographics": (
+        "Core company facts: revenue, employee count, ownership structure, "
+        "subsidiaries, financial performance, and market capitalization."
+    ),
+    "geographic": (
+        "Physical footprint and expansion: headquarters, regional offices, "
+        "data centers, manufacturing sites, and new-market entry plans."
+    ),
+    "executive": (
+        "Leadership: C-suite and board members, recent appointments/"
+        "departures, and their public statements on strategy or technology."
+    ),
+    "strategy": (
+        "Corporate strategy: digital transformation initiatives, stated "
+        "business priorities, multi-year plans, and strategic pivots."
+    ),
+    "compliance": (
+        "Regulatory and legal posture: industry regulations, certifications, "
+        "data-privacy obligations, audits, and compliance incidents."
+    ),
+    "market": (
+        "Competitive and market position: market share, key competitors, "
+        "industry trends, and analyst commentary."
+    ),
+    "ecosystem": (
+        "Partnerships and alliances: technology/vendor partnerships, "
+        "channel relationships, joint ventures, and integration ecosystems."
+    ),
+    "tech_stack": (
+        "Technology footprint: cloud providers, network/connectivity "
+        "vendors, enterprise software, and infrastructure modernization "
+        "projects -- the primary signal for Colt's connectivity offerings."
+    ),
+    "procurement": (
+        "Purchasing behavior: vendor selection criteria, RFP/tender "
+        "activity, sourcing strategy, and existing supplier relationships."
+    ),
+    "growth_signals": (
+        "Expansion indicators: mergers and acquisitions, funding rounds, "
+        "hiring trends, and new product or market launches."
+    ),
+    "risk_signals": (
+        "Risk indicators: security incidents, outages, litigation, "
+        "financial distress, and negative press coverage."
+    ),
+    "campaign_signals": (
+        "Marketing and public visibility: advertising campaigns, event "
+        "sponsorships, press releases, and brand positioning."
+    ),
+}
 
 
 class _QueryWithMetadata(BaseModel):
@@ -31,23 +89,79 @@ class _QueryWithMetadata(BaseModel):
     year: int | None = Field(None, description="Year specificity if applicable")
 
 
+DomainName = Literal[
+    "firmographics",
+    "geographic",
+    "executive",
+    "strategy",
+    "compliance",
+    "market",
+    "ecosystem",
+    "tech_stack",
+    "procurement",
+    "growth_signals",
+    "risk_signals",
+    "campaign_signals",
+]
+
+if set(DomainName.__args__) != set(DOMAIN_DESCRIPTIONS):  # pragma: no cover
+    raise RuntimeError("DomainName must cover every DOMAIN_DESCRIPTIONS key exactly")
+
+
+class DomainQueryGroup(BaseModel):
+    """Candidate search queries generated for exactly one research domain.
+
+    Modeled as an explicit array-of-objects (list[DomainQueryGroup]) rather
+    than an open-ended dict[str, list[str]] mapping. Gemini's constrained
+    structured-output decoding follows an array-of-typed-objects schema
+    (with a closed `domain` enum) far more reliably than an
+    additionalProperties-style dict schema: a dict schema only requires
+    *some* object be returned and lets the model emit an empty `{}` and
+    still satisfy validation, whereas an array schema paired with a
+    required, enumerated `domain` field per item gives the decoder an
+    explicit, closed set of values it must attempt to produce. This
+    directly addresses a live bug (2026-08-29) where Gemini 3.5 Flash
+    spent its entire response budget on internal "thinking" and then
+    emitted a syntactically valid but empty `{"domain_queries": {}}` under
+    the old dict-shaped schema (finish_reason=STOP, candidates_token_count
+    as low as 11) -- see QueryPlanner.validate() for the runtime safety
+    net that remains in place regardless.
+    """
+
+    domain: DomainName = Field(
+        ..., description="Which research domain this group of queries covers."
+    )
+    queries: list[str] = Field(
+        ...,
+        min_length=3,
+        max_length=5,
+        description="3-5 diverse, targeted search queries for this domain.",
+    )
+
+
 class CandidateQueries(BaseModel):
     """Output schema for QueryPlanner's LlmAgent (ADK output_schema)."""
 
-    domain_queries: dict[str, list[str]] = Field(
-        ..., description="Mapping of domain -> list of candidate queries"
+    domain_query_groups: list[DomainQueryGroup] = Field(
+        ...,
+        description=(
+            "One entry per research domain listed in the prompt, each "
+            "with 3-5 candidate search queries for that domain."
+        ),
     )
 
     def to_flat_list(self) -> list[_QueryWithMetadata]:
         result: list[_QueryWithMetadata] = []
-        for domain, queries in self.domain_queries.items():
-            for query in queries:
+        for group in self.domain_query_groups:
+            for query in group.queries:
                 year = None
                 for word in query.split():
                     if word.isdigit() and len(word) == 4 and 2000 <= int(word) <= 2026:
                         year = int(word)
                         break
-                result.append(_QueryWithMetadata(query=query, domain=domain, year=year))
+                result.append(
+                    _QueryWithMetadata(query=query, domain=group.domain, year=year)
+                )
         return result
 
 
@@ -168,13 +282,48 @@ def build_query_generator_prompt(
     company_name: str, domains: list[str], current_year: int | None = None
 ) -> str:
     year = current_year or datetime.now().year
-    return f"""You are a Google Search Query Generation Specialist for {company_name}.
-Current year: {year}
-Research domains: {", ".join(domains)}
+    domain_lines = "\n".join(
+        f"- {domain}: {DOMAIN_DESCRIPTIONS[domain]}" for domain in domains
+    )
+    return f"""You are a Google Search Query Generation Specialist working for \
+Colt Technology Services' sales research team. Your queries are the \
+foundation of a Strategic Account Brief that a Colt sales rep will use to \
+identify and pitch a concrete sales opportunity at {company_name} -- every \
+query you write should surface facts that later help map {company_name}'s \
+real challenges and priorities to a Colt solution (network connectivity, \
+SD-WAN/SASE, cloud on-ramps, colocation, etc.).
 
-Generate 3-5 diverse, targeted search queries for each domain.
+Target company: {company_name}
+Current year: {year}
+
+Generate 3-5 diverse, targeted search queries for EACH of the following \
+research domains. Use each domain's description to decide what the \
+queries should actually investigate -- do not just repeat the domain name. \
+Prioritise queries likely to surface a business pain point, technology \
+gap, or growth trigger that Colt could address.
+
+Research domains:
+{domain_lines}
+
 Include company name "{company_name}" and year where relevant.
-Output matching CandidateQueries schema: {{"domain_queries": {{"firmographics": [...], ...}}}}"""
+
+## Required Output Structure
+
+Return a JSON object matching this exact structure (this is the \
+CandidateQueries schema, also enforced via response_schema):
+
+{{
+  "domain_query_groups": [
+    {{"domain": "<one of the domain names listed above>", "queries": ["<query 1>", "<query 2>", "<query 3>", ...]}},
+    ...
+  ]
+}}
+
+Requirements:
+- Include exactly one entry per domain listed above -- all {len(domains)} domains, no more, no fewer, no duplicates.
+- Each entry's "queries" list must contain 3 to 5 distinct search query strings.
+- Never return an empty "domain_query_groups" list or omit a domain -- \
+every domain must have its own populated entry with real, usable queries."""
 
 
 class QueryPlanner(AdkAgentStep[ResearchRequest, QueryPlan]):
@@ -200,7 +349,12 @@ class QueryPlanner(AdkAgentStep[ResearchRequest, QueryPlan]):
             # The concrete task (company, domains, year) is provided in the
             # per-request user message via to_input() -- this instruction
             # only sets the agent's fixed role.
-            instruction="You are a Google Search Query Generation Specialist.",
+            instruction=(
+                "You are a Google Search Query Generation Specialist for "
+                "Colt Technology Services' sales research team. You generate "
+                "search queries that will surface facts feeding into a "
+                "Strategic Account Brief used to identify a sales opportunity."
+            ),
             tools=[],
             output_key="query_generator_output",
             output_schema=CandidateQueries,
@@ -261,6 +415,9 @@ class QueryPlanner(AdkAgentStep[ResearchRequest, QueryPlan]):
 __all__ = [
     "Bm25QuerySelector",
     "CandidateQueries",
+    "DOMAIN_DESCRIPTIONS",
+    "DomainName",
+    "DomainQueryGroup",
     "QueryPlanner",
     "build_query_generator_prompt",
 ]

@@ -97,10 +97,24 @@ async def test_full_pipeline_produces_report_and_legacy_state(monkeypatch):
         planner,
         json.dumps(
             {
-                "domain_queries": {
-                    "firmographics": ["Acme Corp revenue 2025"],
-                    "tech_stack": ["Acme Corp cloud stack"],
-                }
+                "domain_query_groups": [
+                    {
+                        "domain": "firmographics",
+                        "queries": [
+                            "Acme Corp revenue 2025",
+                            "Acme Corp employee count",
+                            "Acme Corp ownership structure",
+                        ],
+                    },
+                    {
+                        "domain": "tech_stack",
+                        "queries": [
+                            "Acme Corp cloud stack",
+                            "Acme Corp network vendor",
+                            "Acme Corp SD-WAN provider",
+                        ],
+                    },
+                ]
             }
         ),
     )
@@ -154,7 +168,7 @@ async def test_full_pipeline_produces_report_and_legacy_state(monkeypatch):
     assert result.report.validation_status == "PASSED"
     assert "Strategic Account Brief" in result.report.markdown
     assert result.findings.company == "Acme Corp"
-    assert result.findings.executed == 2  # both queries succeeded
+    assert result.findings.executed == 6  # all 6 queries (2 domains x 3) succeeded
     assert len(result.alignment.mappings) == 1
 
     state = result.to_legacy_state()
@@ -174,7 +188,7 @@ async def test_full_pipeline_produces_report_and_legacy_state(monkeypatch):
     assert expected_keys.issubset(state.keys())
     assert state["company_name"] == "Acme Corp"
     assert state["report_validation_status"] == "PASSED"
-    assert state["mc_search_count"] == 2
+    assert state["mc_search_count"] == 6
     # TelemetryObserver records one row per step attempt (all 4 steps),
     # but only the 3 AdkAgentStep-backed steps (planner, alignment,
     # compiler) report LLM token usage via on_usage(); SearchExecutor
