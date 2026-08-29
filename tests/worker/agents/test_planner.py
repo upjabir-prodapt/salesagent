@@ -9,7 +9,7 @@ from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
-from src.worker.agents.base import RetryPolicy
+from src.worker.agents.base import AgentError, RetryPolicy
 from src.worker.agents.models import ResearchRequest
 from src.worker.agents.planner import Bm25QuerySelector, QueryPlanner
 from src.worker.observers import Observer
@@ -90,8 +90,17 @@ async def test_query_planner_produces_bm25_selected_plan():
 
 
 @pytest.mark.asyncio
-async def test_query_planner_handles_empty_domain_queries_gracefully():
-    planner = QueryPlanner(retry=RetryPolicy(max_attempts=1))
+async def test_query_planner_retries_on_empty_domain_queries_then_exhausts():
+    """Regression test for a live bug (2026-08-29): Gemini 3.5 Flash
+    occasionally returns a syntactically valid but empty
+    {"domain_queries": {}} under output_schema (finish_reason=STOP,
+    candidates_token_count as low as 11, thinking budget fully consumed).
+    This used to pass through silently as a 0-query QueryPlan, leaving
+    SearchExecutor with nothing to search and the report compiled with
+    "(no domain findings available)". validate() must now reject an empty
+    plan so the step retries instead of silently degrading.
+    """
+    planner = QueryPlanner(retry=RetryPolicy(max_attempts=2, initial_delay=0.001))
     original_build_agent = planner.build_agent
 
     def build_agent_with_fake_llm():
@@ -101,9 +110,38 @@ async def test_query_planner_handles_empty_domain_queries_gracefully():
 
     planner.build_agent = build_agent_with_fake_llm  # type: ignore[method-assign]
 
+    with pytest.raises(AgentError):
+        await planner.run(
+            ResearchRequest(job_id="job1", company="Acme Corp"), NullObserver()
+        )
+
+
+@pytest.mark.asyncio
+async def test_query_planner_retries_on_empty_then_succeeds():
+    """Empty-then-populated: the step should retry and return a real plan
+    once the model produces usable queries on a later attempt.
+    """
+    planner = QueryPlanner(retry=RetryPolicy(max_attempts=3, initial_delay=0.001))
+    original_build_agent = planner.build_agent
+    attempts = {"n": 0}
+
+    def build_agent_with_fake_llm():
+        attempts["n"] += 1
+        agent = original_build_agent()
+        payload = (
+            json.dumps({"domain_queries": {}})
+            if attempts["n"] == 1
+            else _domain_queries_payload()
+        )
+        agent.model = ScriptedLlm(payload=payload)
+        return agent
+
+    planner.build_agent = build_agent_with_fake_llm  # type: ignore[method-assign]
+
     plan = await planner.run(
         ResearchRequest(job_id="job1", company="Acme Corp"), NullObserver()
     )
 
+    assert attempts["n"] == 2
     assert plan.company == "Acme Corp"
-    assert plan.queries == ()
+    assert len(plan.queries) > 0

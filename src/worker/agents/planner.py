@@ -15,7 +15,7 @@ from google.adk.agents import LlmAgent
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.shared.config import settings
-from src.worker.agents.base import AdkAgentStep, RetryPolicy
+from src.worker.agents.base import AdkAgentStep, InvalidOutputError, RetryPolicy
 from src.worker.agents.models import Query, QueryPlan, ResearchRequest
 from src.worker.agents.safety import get_safety_config_for_agent
 from src.worker.model import RegionalGemini, retry_config
@@ -168,7 +168,7 @@ def build_query_generator_prompt(
     company_name: str, domains: list[str], current_year: int | None = None
 ) -> str:
     year = current_year or datetime.now().year
-    return f"""You are a Search Query Generation Specialist for {company_name}.
+    return f"""You are a Google Search Query Generation Specialist for {company_name}.
 Current year: {year}
 Research domains: {", ".join(domains)}
 
@@ -200,7 +200,7 @@ class QueryPlanner(AdkAgentStep[ResearchRequest, QueryPlan]):
             # The concrete task (company, domains, year) is provided in the
             # per-request user message via to_input() -- this instruction
             # only sets the agent's fixed role.
-            instruction="You are a Search Query Generation Specialist.",
+            instruction="You are a Google Search Query Generation Specialist.",
             tools=[],
             output_key="query_generator_output",
             output_schema=CandidateQueries,
@@ -227,6 +227,29 @@ class QueryPlanner(AdkAgentStep[ResearchRequest, QueryPlan]):
             company=self._company,
             queries=tuple(Query(text=q.query, domain=q.domain) for q in selected),
         )
+
+    def validate(self, result: QueryPlan) -> None:
+        """Reject a structurally-valid-but-empty plan and trigger a retry.
+
+        Observed live (2026-08-29): Gemini 3.5 Flash occasionally returns
+        a syntactically valid but empty `{"domain_queries": {}}` under
+        output_schema (finish_reason=STOP, candidates_token_count as low
+        as 11, with thoughts_token_count in the 1000+ range consuming the
+        whole response budget on internal reasoning before emitting any
+        schema content). AdkAgentStep.execute()'s "not empty" check only
+        rejects a None/blank-string output_key value, so a valid-but-empty
+        dict passes through silently and SearchExecutor then has zero
+        queries to run -- the report is compiled with
+        "(no domain findings available)" and no real research content.
+        """
+        if not result.queries:
+            raise InvalidOutputError(
+                f"{self.name} produced an empty query plan (0 queries) "
+                "for company="
+                f"{result.company!r} -- likely a thinking-budget/schema "
+                "interaction; retrying.",
+                agent_name=self.name,
+            )
 
     async def execute(self, request: ResearchRequest) -> QueryPlan:
         # to_output() needs the company name but AdkAgentStep's contract
