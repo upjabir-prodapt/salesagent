@@ -50,12 +50,17 @@ def reconcile_cost(
 
     if records:
         telemetry_input = sum(
-            r.get("tokens_input") or r.get("input_tokens", 0) for r in records
+            r.get("tokens_input") or r.get("input_tokens") or 0 for r in records
         )
         telemetry_output = sum(
-            r.get("tokens_output") or r.get("output_tokens", 0) for r in records
+            r.get("tokens_output") or r.get("output_tokens") or 0 for r in records
         )
-        telemetry_cost = sum(r.get("cost_usd", 0.0) for r in records)
+        # `.get(key, default)` only substitutes the default when the key is
+        # absent, not when it's present with value None. TelemetryObserver
+        # always includes "cost_usd" (currently None -- see its docstring;
+        # per-agent cost is not yet computed there), so this must guard
+        # against an explicit None, not just a missing key.
+        telemetry_cost = sum(r.get("cost_usd") or 0.0 for r in records)
     else:
         telemetry_input = 0
         telemetry_output = 0

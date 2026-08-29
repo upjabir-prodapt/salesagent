@@ -102,3 +102,40 @@ def test_reconcile_cost_logs_warning_on_large_delta(
     reconcile_cost(session_state, metrics)
 
     assert "[CostReconciliation] Notable discrepancy" in caplog.text
+
+
+def test_reconcile_cost_handles_explicit_none_cost_usd_in_records() -> None:
+    """Regression test: live E2E run crashed with
+    `TypeError: unsupported operand type(s) for +: 'int' and 'NoneType'`
+    because TelemetryObserver._to_row() always sets "cost_usd": None (see
+    src/worker/observers.py docstring -- per-agent cost is not yet computed
+    there). dict.get(key, default) only substitutes the default when the
+    key is *absent*, not when it's present with value None, so
+    r.get("cost_usd", 0.0) summed to None and crashed reconcile_cost().
+    """
+    session_state = {
+        "mc_input_tokens": 100,
+        "mc_output_tokens": 50,
+        "agent_telemetry_records": [
+            {
+                "tokens_input": 100,
+                "tokens_output": 50,
+                "cost_usd": None,
+                "success": True,
+            },
+            {
+                "tokens_input": 20,
+                "tokens_output": 10,
+                "cost_usd": None,
+                "success": True,
+            },
+        ],
+    }
+    metrics = calculate_metrics(session_state, latency=1.0)
+
+    reconciliation = reconcile_cost(session_state, metrics)
+
+    # metric_input=100 (mc_input_tokens) vs telemetry_input=100+20=120
+    assert reconciliation["telemetry_cost_usd"] == 0.0
+    assert reconciliation["delta_input_tokens"] == 20
+    assert reconciliation["delta_output_tokens"] == 10

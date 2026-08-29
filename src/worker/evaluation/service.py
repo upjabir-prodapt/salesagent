@@ -66,7 +66,7 @@ class EvaluationService:
             "section_b": section_b_result,
             "final_composite_score": round(final_score, 2),
             "evaluation_metadata": {
-                "evaluator_model": settings.EVALUATOR_MODEL,
+                "evaluator_model": settings.evaluator_model,
                 "evaluated_at": datetime.now(UTC).isoformat(),
                 "request_id": request_id,
                 "scoring_version": "v2",
@@ -158,14 +158,14 @@ class EvaluationService:
             job_evidence=job_evidence or [],
         )
         response = client.models.generate_content(
-            model=settings.EVALUATOR_MODEL,
+            model=settings.evaluator_model,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.0,
             ),
         )
-        record_genai_response_usage(session_state, settings.EVALUATOR_MODEL, response)
+        record_genai_response_usage(session_state, settings.evaluator_model, response)
         raw_text = response.text.strip() if response.text else ""
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```(?:json)?\n?", "", raw_text)

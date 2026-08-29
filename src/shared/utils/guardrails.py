@@ -572,7 +572,7 @@ class OutputGuardrail:
             )
 
             response = client.models.generate_content(
-                model=settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL,
+                model=settings.output_guardrail_hallucination_model,
                 contents=prompt,
                 config=genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -586,7 +586,7 @@ class OutputGuardrail:
 
                 record_genai_response_usage(
                     session_state,
-                    settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL,
+                    settings.output_guardrail_hallucination_model,
                     response,
                 )
 
@@ -718,7 +718,7 @@ class OutputGuardrail:
             )
 
             response = client.models.generate_content(
-                model=settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL,
+                model=settings.output_guardrail_hallucination_model,
                 contents=prompt,
                 config=genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -732,7 +732,7 @@ class OutputGuardrail:
 
                 record_genai_response_usage(
                     session_state,
-                    settings.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL,
+                    settings.output_guardrail_hallucination_model,
                     response,
                 )
 
