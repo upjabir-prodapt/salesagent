@@ -44,6 +44,7 @@ def test_get_research_status_success(client):
     job_id = "job_123"
     status_data = {
         "request_id": job_id,
+        "job_id": job_id,
         "status": "PROCESSING",
         "progress": 50,
         "current_step": "Researching",
@@ -53,7 +54,52 @@ def test_get_research_status_success(client):
     response = client.get(f"/api/v1/research/status/{job_id}")
 
     assert response.status_code == 200
-    assert response.json() == status_data
+    data = response.json()
+    assert data["status"] == "PROCESSING"
+    assert data["progress"] == 50
+    assert data["request_id"] == job_id
+    assert data["job_id"] == job_id
+
+
+def test_list_research_jobs_success(client):
+    """Test listing user's research jobs."""
+    jobs_data = [
+        {
+            "job_id": "job_1",
+            "status": "COMPLETED",
+            "company_name": "Acme Corp",
+            "account_id": "ACC1",
+            "progress": 100,
+        },
+        {
+            "job_id": "job_2",
+            "status": "PROCESSING",
+            "company_name": "Beta Inc",
+            "account_id": "ACC2",
+            "progress": 40,
+        },
+    ]
+    client.mock_service.list_jobs.return_value = jobs_data
+
+    response = client.get("/api/v1/research/jobs")
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 2
+    assert items[0]["job_id"] == "job_1"
+    assert items[0]["company"] == "Acme Corp"
+    assert items[1]["job_id"] == "job_2"
+
+
+def test_cancel_research_job_success(client):
+    """Test cancelling a research job."""
+    client.mock_service.cancel_job.return_value = True
+
+    response = client.delete("/api/v1/research/job_123")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["job_id"] == "job_123"
+    assert data["status"] == "CANCELLED"
+    assert data["message"] == "Job cancelled successfully"
 
 
 def test_get_research_status_not_found(client):

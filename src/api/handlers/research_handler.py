@@ -14,10 +14,12 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from src.api.schemas.research_schemas import (
     ModelCard,
+    ResearchCancelResponse,
     ResearchFeedbackRequest,
     ResearchFeedbackResponse,
     ResearchInitiateRequest,
     ResearchInitiateResponse,
+    ResearchJobListItem,
     ResearchResultResponse,
     ResearchStatusResponse,
 )
@@ -128,20 +130,25 @@ class ResearchHandler:
                     check_status_url=f"{settings.API_PREFIX}/research/status/{job_id}",
                 )
 
-    def get_research_status(self, job_id: str) -> ResearchStatusResponse:
-        status_data = self._service.get_request_status(job_id)
+    def get_research_status(
+        self, job_id: str, user_email: str | None = None
+    ) -> ResearchStatusResponse:
+        status_data = self._service.get_request_status(job_id, user_email=user_email)
         if not status_data:
             raise ResourceNotFoundError(f"Job {job_id} not found")
         return ResearchStatusResponse(
             request_id=status_data["request_id"],
+            job_id=status_data["request_id"],
             status=status_data["status"],
             progress=status_data.get("progress", 0),
             current_step=status_data.get("current_step"),
             current_agent=status_data.get("current_agent"),
         )
 
-    def get_research_result(self, job_id: str) -> ResearchResultResponse:
-        result = self._service.get_request_result(job_id)
+    def get_research_result(
+        self, job_id: str, user_email: str | None = None
+    ) -> ResearchResultResponse:
+        result = self._service.get_request_result(job_id, user_email=user_email)
         if not result:
             raise ResourceNotFoundError(f"Job {job_id} not found")
 
@@ -154,14 +161,18 @@ class ResearchHandler:
         )
         return ResearchResultResponse(
             request_id=str(result.get("request_id", "")),
+            job_id=str(result.get("request_id", "")),
             status=str(result.get("status", "")),
             report_content=result.get("report_content"),
+            report_markdown=result.get("report_content"),
             download_url=result.get("download_url"),
             model_card=model_card,
         )
 
-    def download_pdf_report(self, job_id: str) -> StreamingResponse:
-        result = self._service.get_pdf_report(job_id)
+    def download_pdf_report(
+        self, job_id: str, user_email: str | None = None
+    ) -> StreamingResponse:
+        result = self._service.get_pdf_report(job_id, user_email=user_email)
         if result is None:
             raise ResourceNotFoundError(f"Job {job_id} not found")
 
@@ -173,6 +184,22 @@ class ResearchHandler:
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    def list_jobs(
+        self, user_email: str, limit: int = 50, offset: int = 0
+    ) -> list[ResearchJobListItem]:
+        raw_jobs = self._service.list_jobs(
+            user_email=user_email, limit=limit, offset=offset
+        )
+        return [ResearchJobListItem.model_validate(item) for item in raw_jobs]
+
+    def cancel_research(self, job_id: str, user_email: str) -> ResearchCancelResponse:
+        self._service.cancel_job(job_id=job_id, user_email=user_email)
+        return ResearchCancelResponse(
+            job_id=job_id,
+            status="CANCELLED",
+            message="Job cancelled successfully",
         )
 
     async def submit_feedback(

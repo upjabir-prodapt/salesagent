@@ -342,6 +342,7 @@ class BigQueryRepository:
         row = results[0]
 
         metadata_dict = self._parse_metadata_row(getattr(row, "metadata", None))
+        user_id = metadata_dict.get("user_id") or metadata_dict.get("email")
 
         return {
             "request_id": job_id,
@@ -350,6 +351,8 @@ class BigQueryRepository:
             "progress": row.progress if row.progress is not None else 0,
             "current_step": row.current_step,
             "current_agent": metadata_dict.get("current_agent"),
+            "user_id": user_id,
+            "metadata": metadata_dict,
         }
 
     def get_request_result(
@@ -404,11 +407,13 @@ class BigQueryRepository:
         row = results[0]
 
         metadata = self._parse_metadata_row(getattr(row, "metadata", None))
+        user_id = metadata.get("user_id") or metadata.get("email")
 
         result = {
             "request_id": job_id,
             "status": row.status,
             "metadata": metadata,
+            "user_id": user_id,
         }
 
         # Add GCS download URLs if available
@@ -422,6 +427,106 @@ class BigQueryRepository:
             result["report_content"] = gcs_repo.download_markdown(job_id)
 
         return result
+
+    def list_jobs_for_user(
+        self,
+        user_email: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List research jobs owned by a specific user from the last 7 days."""
+        if self.client is None:
+            return []
+
+        query = f"""
+        SELECT
+            job_execution_id,
+            company_name,
+            status,
+            created_at,
+            updated_at,
+            error_message,
+            progress,
+            metadata
+        FROM `{self.table_ref}`
+        WHERE (
+            JSON_VALUE(metadata, '$.user_id') = @user_email
+            OR JSON_VALUE(metadata, '$.email') = @user_email
+        )
+        AND created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+        ORDER BY created_at DESC
+        LIMIT @limit OFFSET @offset
+        """
+
+        query_parameters = [
+            bigquery.ScalarQueryParameter("user_email", "STRING", user_email),
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset),
+        ]
+
+        results = list(
+            self._execute_query(query, query_parameters, "listing user jobs")
+        )
+
+        jobs: list[dict[str, Any]] = []
+        for row in results:
+            meta = self._parse_metadata_row(getattr(row, "metadata", None))
+            created_iso = (
+                row.created_at.isoformat() if getattr(row, "created_at", None) else None
+            )
+            updated_iso = (
+                row.updated_at.isoformat() if getattr(row, "updated_at", None) else None
+            )
+            completed_iso = (
+                updated_iso
+                if row.status in ("COMPLETED", "FAILED", "CANCELLED")
+                else None
+            )
+
+            jobs.append(
+                {
+                    "job_id": row.job_execution_id,
+                    "status": row.status,
+                    "company_name": row.company_name,
+                    "company": row.company_name,
+                    "account_id": meta.get("account_id"),
+                    "created_at": created_iso,
+                    "completed_at": completed_iso,
+                    "error_message": row.error_message,
+                    "progress": row.progress if row.progress is not None else 0,
+                }
+            )
+
+        return jobs
+
+    def cancel_job(
+        self,
+        job_id: str,
+        user_email: str | None = None,
+    ) -> bool:
+        """Cancel a pending/processing research job for a user."""
+        if self.client is None:
+            return True
+
+        status_data = self.get_status(job_id)
+        if not status_data:
+            return False
+
+        if user_email and not settings.IS_LOCAL:
+            owner = status_data.get("user_id")
+            if owner and owner != user_email:
+                logger.warning(
+                    "Cancel rejected for job %s: ownership mismatch (owner=%s, requester=%s)",
+                    job_id,
+                    owner,
+                    user_email,
+                )
+                return False
+
+        if status_data.get("status") in ("COMPLETED", "FAILED", "CANCELLED"):
+            return False
+
+        return self.update_status(job_id, "CANCELLED", error="Cancelled by user")
 
     def insert_agent_telemetry_batch(self, records: list[dict[str, Any]]) -> bool:
         """Insert telemetry records in batch"""

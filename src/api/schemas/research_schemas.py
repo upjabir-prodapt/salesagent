@@ -1,5 +1,7 @@
 """Research Schemas - Pydantic Models for Research Domain"""
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -51,8 +53,10 @@ class ResearchStatusResponse(BaseModel):
     """Response model for status polling"""
 
     request_id: str = Field(..., description="Job ID")
+    job_id: str | None = Field(None, description="Alias for request_id")
     status: str = Field(
-        ..., description="Current status: QUEUED, PROCESSING, COMPLETED, FAILED"
+        ...,
+        description="Current status: QUEUED, PROCESSING, COMPLETED, FAILED, CANCELLED",
     )
     progress: int = Field(..., description="Progress percentage (0-100)")
     current_step: str | None = Field(
@@ -62,14 +66,19 @@ class ResearchStatusResponse(BaseModel):
         None, description="Name of the agent currently executing (PROCESSING only)"
     )
 
+    def model_post_init(self, __context: Any) -> None:
+        if self.job_id is None:
+            self.job_id = self.request_id
+
     model_config = {
         "json_schema_extra": {
             "example": {
                 "request_id": "job_123e4567-e89b-12d3-a456-426614174000",
+                "job_id": "job_123e4567-e89b-12d3-a456-426614174000",
                 "status": "PROCESSING",
                 "progress": 45,
-                "current_step": "Running: StrategyAgent",
-                "current_agent": "StrategyAgent",
+                "current_step": "Running: QueryPlanner",
+                "current_agent": "QueryPlanner",
             }
         }
     }
@@ -101,22 +110,34 @@ class ResearchResultResponse(BaseModel):
     """Response model for completed research result"""
 
     request_id: str = Field(..., description="Job ID")
+    job_id: str | None = Field(None, description="Alias for request_id")
     status: str = Field(..., description="Final status")
     report_content: str | None = Field(None, description="Full markdown report content")
+    report_markdown: str | None = Field(
+        None, description="Alias for report_content for backward compatibility"
+    )
     download_url: str | None = Field(
         None, description="Signed GCS URL for downloading the report"
     )
     model_card: ModelCard | None = Field(None, description="Model and cost metadata")
 
+    def model_post_init(self, __context: Any) -> None:
+        if self.job_id is None:
+            self.job_id = self.request_id
+        if self.report_markdown is None:
+            self.report_markdown = self.report_content
+
     model_config = {
         "json_schema_extra": {
             "example": {
                 "request_id": "job_123e4567-e89b-12d3-a456-426614174000",
+                "job_id": "job_123e4567-e89b-12d3-a456-426614174000",
                 "status": "COMPLETED",
                 "report_content": "# Sales Report for Acme Corp\n\n...",
+                "report_markdown": "# Sales Report for Acme Corp\n\n...",
                 "download_url": "https://storage.googleapis.com/bucket/report.md?signed=...",
                 "model_card": {
-                    "model_version": "gemini-2.5-pro",
+                    "model_version": "gemini-3.5-flash",
                     "tokens_used": 28500,
                     "latency_seconds": 185.0,
                     "cost_usd": 0.35,
@@ -124,6 +145,48 @@ class ResearchResultResponse(BaseModel):
             }
         }
     }
+
+
+class ResearchJobListItem(BaseModel):
+    """One entry from the research job history."""
+
+    job_id: str = Field(..., description="Unique research job ID")
+    status: str = Field(
+        ..., description="Job status (QUEUED, PROCESSING, COMPLETED, FAILED, CANCELLED)"
+    )
+    company_name: str | None = Field(None, description="Researched company name")
+    company: str | None = Field(None, description="Alias for company_name")
+    account_id: str | None = Field(None, description="Account identifier")
+    created_at: str | None = Field(
+        None, description="Job creation timestamp (ISO 8601)"
+    )
+    completed_at: str | None = Field(
+        None, description="Job completion timestamp (ISO 8601)"
+    )
+    error_message: str | None = Field(None, description="Error message if failed")
+    progress: int | None = Field(None, description="Progress percentage (0-100)")
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.company is None:
+            self.company = self.company_name
+
+
+class ResearchJobListResponse(BaseModel):
+    """List response of research jobs for current user."""
+
+    jobs: list[ResearchJobListItem] = Field(
+        default_factory=list, description="List of research jobs"
+    )
+
+
+class ResearchCancelResponse(BaseModel):
+    """Response model for job cancellation."""
+
+    job_id: str = Field(..., description="Cancelled job ID")
+    status: str = Field("CANCELLED", description="Cancelled status")
+    message: str = Field(
+        "Job cancelled successfully", description="Cancellation message"
+    )
 
 
 class ResearchFeedbackRequest(BaseModel):
