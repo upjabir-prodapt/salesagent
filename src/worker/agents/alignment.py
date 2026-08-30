@@ -26,6 +26,21 @@ from src.worker.agents.safety import get_safety_config_for_agent
 from src.worker.agents.tools.gcs_pdf_loader import get_alignment_context
 from src.worker.model import RegionalGemini, retry_config
 
+# NOTE on Gemini explicit context caching (2026-08-30): a Gemini
+# cached_content reference cannot be combined with a request that also
+# sets system_instruction/tools ("Tool config, tools and system
+# instruction should not be set in the request when using cached
+# content." -- confirmed live). ADK's LlmAgent unconditionally injects a
+# system_instruction identity block for every root agent
+# (flows/llm_flows/identity.py: `if agent.mode != 'single_turn'`), and
+# `mode='single_turn'` is rejected outright for a root agent under
+# Runner ("LlmAgent as root agent must have mode='chat'", confirmed
+# live). There is therefore no supported way to use cached_content with
+# an AdkAgentStep-driven root LlmAgent in this ADK version. Caching was
+# implemented and then reverted here after live testing surfaced this
+# incompatibility; see git history for the attempted implementation if
+# ADK adds a way to suppress the identity injection in a future version.
+
 
 class _ColtAlignmentMappingSchema(BaseModel):
     challenge_or_priority: str = Field(

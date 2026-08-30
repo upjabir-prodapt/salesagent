@@ -13,6 +13,7 @@ Design intent (see IMPLEMENTATION_PLAN.md):
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import random
 import time
 from abc import ABC, abstractmethod
@@ -187,6 +188,34 @@ class RetryPolicy:
         )
 
 
+_LOG_FIELD_MAX_CHARS = 2000
+_LOG_RESULT_MAX_CHARS = 6000
+
+
+def _truncate(value: str, limit: int = _LOG_FIELD_MAX_CHARS) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}... [truncated, {len(value)} chars total]"
+
+
+def _format_result_for_log(result: Any) -> str:
+    """Render an agent's typed result for the log without dumping huge
+    fields (e.g. Report.markdown can be 40k+ chars) verbatim. Falls back
+    to a length-capped repr() for anything that isn't a dataclass.
+    """
+    if dataclasses.is_dataclass(result) and not isinstance(result, type):
+        parts = []
+        for f in dataclasses.fields(result):
+            value = getattr(result, f.name)
+            if isinstance(value, str):
+                value = _truncate(value)
+            parts.append(f"{f.name}={value!r}")
+        rendered = f"{type(result).__name__}({', '.join(parts)})"
+    else:
+        rendered = repr(result)
+    return _truncate(rendered, _LOG_RESULT_MAX_CHARS)
+
+
 class Agent(ABC, Generic[TIn, TOut]):
     """Base class for every pipeline step. Owns retry; subclasses implement
     only execute() (the actual work) and, optionally, validate() (a gate
@@ -238,7 +267,12 @@ class Agent(ABC, Generic[TIn, TOut]):
                 await asyncio.sleep(delay)
                 continue
             else:
-                obs.on_success(self.name, attempt, time.monotonic() - started)
+                elapsed = time.monotonic() - started
+                obs.on_success(self.name, attempt, elapsed)
+                logger.info(
+                    f"[AgentResponse] {self.name} succeeded (attempt {attempt}, "
+                    f"{elapsed:.2f}s): {_format_result_for_log(result)}"
+                )
                 return result
 
     @abstractmethod

@@ -160,18 +160,41 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
             self.retry = step_retry
 
     async def execute(self, plan: QueryPlan) -> SearchFindings:
+        logger.info(
+            f"[SearchExecutor] Starting search execution for '{plan.company}' "
+            f"with {len(plan.queries)} planned queries"
+        )
         cached_results, uncached = await self._partition_cache(plan)
+        logger.info(
+            f"[SearchExecutor] Cache partition for '{plan.company}': "
+            f"{len(cached_results)} cache hits, {len(uncached)} uncached queries"
+        )
+        for q_text, res in cached_results.items():
+            logger.debug(
+                f"[SearchExecutor]   [CACHE HIT] [{res.query.domain}] '{q_text}' -> "
+                f"{len(res.text)} chars, {len(res.evidence)} evidence URLs"
+            )
 
         fresh_results = await asyncio.gather(
             *(self._run_one(plan.company, q) for q in uncached)
         )
 
         all_results: dict[str, QueryResult] = dict(cached_results)
+        succeeded_fresh = 0
+        failed_fresh = 0
         for res in fresh_results:
             all_results[res.query.text] = res
             if res.succeeded:
+                succeeded_fresh += 1
                 await self._store_cache(plan.company, res)
+            else:
+                failed_fresh += 1
 
+        logger.info(
+            f"[SearchExecutor] All queries finished for '{plan.company}': "
+            f"{len(all_results)} total ({len(cached_results)} cached, "
+            f"{succeeded_fresh} fresh succeeded, {failed_fresh} fresh failed)"
+        )
         return self._assemble(plan, all_results)
 
     def validate(self, findings: SearchFindings) -> None:
@@ -222,23 +245,34 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
             attempt += 1
             await self._limiter.acquire()
             async with self._semaphore:
+                t0 = time.monotonic()
                 try:
+                    logger.debug(
+                        f"[SearchExecutor] Query attempt {attempt} starting: "
+                        f"[{query.domain}] '{query.text}'"
+                    )
                     text, evidence = await self._search_once(company, query)
+                    elapsed = time.monotonic() - t0
+                    logger.info(
+                        f"[SearchExecutor] Query attempt {attempt} succeeded in {elapsed:.2f}s: "
+                        f"[{query.domain}] '{query.text}' -> {len(text)} chars, {len(evidence)} evidence URLs"
+                    )
                     return QueryResult.ok(query, text, evidence)
                 except Exception as exc:  # noqa: BLE001 - classified below
+                    elapsed = time.monotonic() - t0
                     kind = classify(exc)
                     if kind is ErrorKind.RATE_LIMIT:
                         self._limiter.penalize()
                     if not self._query_retry.should_retry(kind, attempt):
                         logger.warning(
-                            f"[SearchExecutor] query failed permanently "
-                            f"(attempt {attempt}, kind={kind}): {query.text!r}: {exc}"
+                            f"[SearchExecutor] Query failed permanently in {elapsed:.2f}s "
+                            f"(attempt {attempt}, kind={kind}): [{query.domain}] {query.text!r}: {exc}"
                         )
                         return QueryResult.failed(query, str(kind))
                     delay = self._query_retry.delay_for(attempt)
                     logger.debug(
-                        f"[SearchExecutor] query attempt {attempt} failed "
-                        f"(kind={kind}), retrying in {delay:.2f}s: {query.text!r}"
+                        f"[SearchExecutor] Query attempt {attempt} failed in {elapsed:.2f}s "
+                        f"(kind={kind}), retrying in {delay:.2f}s: [{query.domain}] {query.text!r}"
                     )
                     await asyncio.sleep(delay)
 
@@ -260,9 +294,12 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
         text = response.text or ""
         evidence: list[Evidence] = []
         candidates = getattr(response, "candidates", None) or []
+        chunks_count = 0
         if candidates:
             grounding = getattr(candidates[0], "grounding_metadata", None)
-            for chunk in getattr(grounding, "grounding_chunks", None) or []:
+            chunks = getattr(grounding, "grounding_chunks", None) or []
+            chunks_count = len(chunks)
+            for chunk in chunks:
                 web = getattr(chunk, "web", None)
                 if web is not None and getattr(web, "uri", None):
                     evidence.append(
@@ -275,18 +312,28 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
                             authoritative=is_authoritative(web.uri),
                         )
                     )
+        logger.debug(
+            f"[SearchExecutor] _search_once completed: [{query.domain}] '{query.text}': "
+            f"text_len={len(text)}, candidates={len(candidates)}, "
+            f"grounding_chunks={chunks_count}, extracted_evidence_urls={len(evidence)}"
+        )
         return text, tuple(evidence)
 
     async def _store_cache(self, company: str, result: QueryResult) -> None:
         try:
+            urls = [e.url for e in result.evidence if e.url]
             await self._cache.async_set_search(
                 company,
                 result.query.text,
                 {
                     "text": result.text,
-                    "sources": [e.url for e in result.evidence if e.url],
+                    "sources": urls,
                 },
                 domain=result.query.domain,
+            )
+            logger.debug(
+                f"[SearchExecutor] Cached result for [{result.query.domain}] "
+                f"'{result.query.text}' ({len(result.text)} chars, {len(urls)} URLs)"
             )
         except Exception as exc:  # pragma: no cover - best-effort cache write
             logger.debug(f"[SearchExecutor] cache write failed: {exc}")
@@ -309,14 +356,27 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
             by_domain_evidence.setdefault(q.domain, []).extend(res.evidence)
 
         domains: dict[str, DomainFinding] = {}
+        total_evidence_count = 0
         for slug, output_key in DOMAIN_SLUG_TO_OUTPUT_KEY.items():
             texts = by_domain_text.get(slug, [])
             content = "\n\n".join(texts)
+            ev_list = tuple(by_domain_evidence.get(slug, []))
+            total_evidence_count += len(ev_list)
             domains[output_key] = DomainFinding(
                 domain=slug,
                 content=content,
-                evidence=tuple(by_domain_evidence.get(slug, [])),
+                evidence=ev_list,
             )
+            logger.info(
+                f"[SearchExecutor] Domain '{slug}' ({output_key}): "
+                f"{len(texts)} queries succeeded, {len(content)} chars, {len(ev_list)} evidence URLs"
+            )
+
+        logger.info(
+            f"[SearchExecutor] Assemble complete for '{plan.company}': "
+            f"{executed}/{len(plan.queries)} queries succeeded ({len(failed)} failed), "
+            f"{len(domains)} domains populated, {total_evidence_count} total evidence citations"
+        )
 
         return SearchFindings(
             company=plan.company,

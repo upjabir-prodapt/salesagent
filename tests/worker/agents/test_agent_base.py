@@ -8,6 +8,7 @@ shared state or cross-step effects.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 
 import pytest
 
@@ -17,6 +18,7 @@ from src.worker.agents.base import (
     ErrorKind,
     InvalidOutputError,
     RetryPolicy,
+    _format_result_for_log,
 )
 from src.worker.observers import Observer
 
@@ -169,3 +171,48 @@ async def test_two_independent_agents_do_not_share_retry_state():
     # agent_a's budget must be untouched by agent_b's successful run
     result_a = await agent_a.run("a", obs)
     assert result_a == "ok:a:3"
+
+
+@dataclass(frozen=True)
+class _FakeReport:
+    markdown: str
+    validation_status: str = "PASSED"
+
+
+def test_format_result_for_log_truncates_long_dataclass_fields():
+    """Regression: logging an agent's full typed result (e.g. Report with
+    a 40k+ char markdown body) must not dump the whole field verbatim.
+    """
+    huge_markdown = "x" * 10_000
+    rendered = _format_result_for_log(_FakeReport(markdown=huge_markdown))
+    assert "_FakeReport(" in rendered
+    assert "validation_status='PASSED'" in rendered
+    assert "[truncated" in rendered
+    assert len(rendered) < len(huge_markdown)
+
+
+def test_format_result_for_log_keeps_short_results_intact():
+    rendered = _format_result_for_log(_FakeReport(markdown="short body"))
+    assert rendered == "_FakeReport(markdown='short body', validation_status='PASSED')"
+
+
+def test_format_result_for_log_falls_back_to_repr_for_non_dataclass():
+    assert _format_result_for_log(["a", "b"]) == repr(["a", "b"])
+    assert _format_result_for_log("plain string") == "'plain string'"
+
+
+@pytest.mark.asyncio
+async def test_agent_run_logs_agent_response_on_success(caplog):
+    """Every agent's response must be written to the log (worker log file
+    mirrors this via LOG_FILE) on successful completion, not just via the
+    Observer callbacks.
+    """
+    obs = RecordingObserver()
+    agent = FlakyAgent(fail_times=0)
+    with caplog.at_level("INFO"):
+        result = await agent.run("company", obs)
+    assert result == "ok:company:1"
+    assert any(
+        "[AgentResponse] FlakyAgent succeeded" in record.message
+        for record in caplog.records
+    )

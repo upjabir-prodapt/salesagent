@@ -74,9 +74,26 @@ class FakeCache:
 
 class FakeSearchModels:
     async def generate_content(self, *, model, contents, config):
-        from types import SimpleNamespace
-
-        return SimpleNamespace(text="Acme facts found via search", candidates=[])
+        # Includes real grounding_metadata (matching what Google Search
+        # grounding actually returns -- see search.py::_search_once) so
+        # this end-to-end test exercises the full evidence chain,
+        # including ReportCompiler's BM25 groundedness gate, exactly like
+        # a real job does rather than always hitting its "no evidence"
+        # path.
+        chunk = genai_types.GroundingChunk(
+            web=genai_types.GroundingChunkWeb(
+                uri="https://acme.example.com/press-release",
+                title="Acme Corp Press Release",
+            )
+        )
+        candidate = genai_types.Candidate(
+            content=genai_types.Content(
+                role="model",
+                parts=[genai_types.Part(text="Acme facts found via search")],
+            ),
+            grounding_metadata=genai_types.GroundingMetadata(grounding_chunks=[chunk]),
+        )
+        return genai_types.GenerateContentResponse(candidates=[candidate])
 
 
 class FakeSearchAsync:
@@ -159,6 +176,15 @@ async def test_full_pipeline_produces_report_and_legacy_state(monkeypatch):
     compiler._guardrail.validate = AsyncMock(
         return_value=type("R", (), {"is_valid": True, "violations": []})()
     )
+    # This test's fixed compiler output ("Full report body here.") is not
+    # meant to exercise ReportCompiler's BM25 groundedness gate (see
+    # tests/worker/agents/test_compiler.py::test_report_compiler_bm25_gate_*
+    # for that) -- it verifies the pipeline's typed data flow end to end.
+    # Stub the gate to PASSED so this test isn't coupled to Bm25Verifier's
+    # exact claim-count/scoring thresholds.
+    compiler._bm25_verifier.verify = lambda *a, **k: type(
+        "VR", (), {"status": "PASSED", "unsupported": []}
+    )()
 
     pipeline = ResearchPipeline(planner, searcher, analyst, compiler)
     request = ResearchRequest(job_id="job-e2e-1", company="Acme Corp")

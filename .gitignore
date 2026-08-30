@@ -137,6 +137,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env*
+.env.*
 .envrc
 .venv
 env/
@@ -206,6 +208,7 @@ cython_debug/
 # Local docs and runtime output (not versioned)
 docs/
 out/
+.local-tmp/
 
 # Marimo
 marimo/_static/

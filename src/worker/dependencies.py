@@ -57,12 +57,16 @@ def build_research_pipeline() -> ResearchPipeline:
             timeout=settings.SEARCH_TIMEOUT_SECONDS,
         ),
         min_success_rate=settings.SEARCH_MIN_SUCCESS_RATE,
+        step_retry=RetryPolicy(timeout=settings.SEARCH_STEP_TIMEOUT_SECONDS),
     )
     analyst = AlignmentAnalyst(
         retry=RetryPolicy(max_attempts=settings.ALIGNMENT_RETRY_ATTEMPTS)
     )
     compiler = ReportCompiler(
-        retry=RetryPolicy(max_attempts=settings.COMPILER_RETRY_ATTEMPTS)
+        retry=RetryPolicy(
+            max_attempts=settings.COMPILER_RETRY_ATTEMPTS,
+            timeout=settings.COMPILER_TIMEOUT_SECONDS,
+        )
     )
     return ResearchPipeline(planner, searcher, analyst, compiler)
 

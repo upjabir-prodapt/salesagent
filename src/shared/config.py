@@ -152,7 +152,13 @@ class Settings(BaseSettings):
     # Per-agent retry policies for the pipeline steps
     PLANNER_RETRY_ATTEMPTS: int = 3
     ALIGNMENT_RETRY_ATTEMPTS: int = 2
-    COMPILER_RETRY_ATTEMPTS: int = 2
+    # 3 total attempts: compile -> validate -> (fail) -> revise w/ feedback
+    # as this same step's next attempt -> validate -> (fail) -> revise
+    # again -> validate -> (fail) -> give up. See ReportCompiler.to_input()
+    # / execute() in agents/compiler.py for the revision-feedback loop.
+    COMPILER_RETRY_ATTEMPTS: int = 3
+    COMPILER_TIMEOUT_SECONDS: float = 300.0
+    SEARCH_STEP_TIMEOUT_SECONDS: float = 300.0
 
     # Mounted Assets (pricing catalog, Colt product catalog)
     ASSETS_ROOT: str = ""
@@ -245,6 +251,15 @@ class Settings(BaseSettings):
     OUTPUT_GUARDRAIL_MIN_SECTIONS: int = 8
     OUTPUT_GUARDRAIL_MAX_RETRIES: int = 2
     OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD: int = 5
+    # Second, stronger ReportCompiler retry gate: BM25-scores each factual
+    # sentence in the drafted report against the real Google Search
+    # grounding evidence (SearchFindings.all_evidence()) via Bm25Verifier.
+    # A structurally-perfect report (passes OUTPUT_GUARDRAIL checks) with
+    # mostly ungrounded/hallucinated claims still fails this gate and
+    # triggers a ReportCompiler revision retry. Kept as a toggle so it can
+    # be disabled without a code change if it proves too strict in
+    # production.
+    REPORT_COMPILER_BM25_GATE_ENABLED: bool = True
 
     model_config = SettingsConfigDict(
         env_file=_DOTENV_FILE,

@@ -11,7 +11,7 @@ PROJECT="${PROJECT:?Set PROJECT}"
 REGION="${REGION:-europe-west1}"
 QUEUE="${QUEUE:-research-jobs}"
 
-# Queue defaults
+# Standard tier defaults (supports 30 concurrent users)
 MAX_CONCURRENT="${MAX_CONCURRENT:-30}"
 MAX_RATE="${MAX_RATE:-10}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-5}"

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import threading
+import time
+
 import pypdf
 
 from src.shared.config import settings
@@ -134,38 +137,85 @@ def get_alignment_context(company_name: str) -> str:
     return COLT_CATALOG_HARDCODED
 
 
+# Colt's product catalog is byte-identical across every research job for
+# every company -- unlike a per-job cache, this amortizes across the
+# entire fleet of jobs the worker processes over its lifetime. Verified
+# live (2026-08-30): a 24,749-char catalog tokenizes to ~5,372 tokens
+# (above the 4,096-token minimum for Gemini 3.x Flash on Vertex AI); a
+# generate_content call referencing the resulting cached_content reported
+# cached_content_token_count=5360 (near-100% hit), confirming caches.
+# create()/cached_content actually work end-to-end in this deployment.
+_COLT_CACHE_TTL_SECONDS = 3600
+# Refresh a bit before the server-side TTL actually expires, so a request
+# arriving right at the boundary doesn't race an expired cache reference.
+_COLT_CACHE_REFRESH_MARGIN_SECONDS = 120
+
 _colt_cache_name: str | None = None
+_colt_cache_expires_at: float = 0.0
+_colt_cache_lock = threading.Lock()
 
 
 def get_or_create_colt_context_cache(model_name: str | None = None) -> str | None:
-    """Create or return existing Gemini context cache for the Colt catalog."""
-    global _colt_cache_name
-    if _colt_cache_name:
-        return _colt_cache_name
+    """Create or return the existing Gemini context cache for the Colt
+    catalog, refreshing it once the server-side TTL is close to expiring.
 
-    try:
-        from src.shared.repositories.clients import get_genai_client
+    Returns None (never raises) on any failure -- callers must fall back
+    to inlining the catalog text directly in the prompt in that case, so
+    a cache-service hiccup never blocks report generation.
 
-        client = get_genai_client()
-        target_model = model_name or settings.GEMINI_MODEL
-        catalog_text = get_alignment_context("default")
+    NOT CURRENTLY CALLED (2026-08-30): live end-to-end testing showed
+    AlignmentAnalyst cannot actually use the resulting cache name. Gemini
+    rejects a request that sets `cached_content` together with
+    `system_instruction`/`tools` ("Tool config, tools and system
+    instruction should not be set in the request when using cached
+    content."), and ADK's LlmAgent unconditionally injects a
+    system_instruction identity block for every root agent
+    (google.adk.flows.llm_flows.identity: `if agent.mode != 'single_turn'`)
+    with no way to suppress it -- `mode='single_turn'` is itself rejected
+    for a root agent under Runner ("LlmAgent as root agent must have
+    mode='chat'"). This function (and the cache-creation logic below) is
+    kept, working and tested, in case a future ADK version exposes a way
+    to build a request without the identity injection.
+    """
+    global _colt_cache_name, _colt_cache_expires_at
 
-        cache = client.caches.create(
-            model=target_model,
-            config={
-                "contents": [catalog_text],
-                "ttl": "3600s",
-                "display_name": "colt_product_catalog_cache",
-            },
-        )
-        _colt_cache_name = cache.name
-        logger.info(
-            f"[ContextCache] Created Colt catalog context cache: {_colt_cache_name}"
-        )
-        return _colt_cache_name
-    except Exception as exc:
-        logger.debug(f"[ContextCache] Context cache creation skipped/fallback: {exc}")
-        return None
+    with _colt_cache_lock:
+        if _colt_cache_name and time.monotonic() < _colt_cache_expires_at:
+            return _colt_cache_name
+
+        try:
+            from src.shared.repositories.clients import get_genai_client
+
+            client = get_genai_client()
+            target_model = model_name or settings.GEMINI_MODEL
+            catalog_text = get_alignment_context("default")
+
+            cache = client.caches.create(
+                model=target_model,
+                config={
+                    "contents": [catalog_text],
+                    "ttl": f"{_COLT_CACHE_TTL_SECONDS}s",
+                    "display_name": "colt_product_catalog_cache",
+                },
+            )
+            _colt_cache_name = cache.name
+            _colt_cache_expires_at = time.monotonic() + (
+                _COLT_CACHE_TTL_SECONDS - _COLT_CACHE_REFRESH_MARGIN_SECONDS
+            )
+            logger.info(
+                f"[ContextCache] Created Colt catalog context cache: "
+                f"{_colt_cache_name} (expires in {_COLT_CACHE_TTL_SECONDS}s)"
+            )
+            return _colt_cache_name
+        except Exception as exc:
+            logger.warning(
+                f"[ContextCache] Context cache creation failed; "
+                f"AlignmentAnalyst will fall back to inlining the catalog "
+                f"text directly in the prompt: {exc}"
+            )
+            _colt_cache_name = None
+            _colt_cache_expires_at = 0.0
+            return None
 
 
 __all__ = [
