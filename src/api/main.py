@@ -34,19 +34,16 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {'DEBUG' if settings.DEBUG else 'PRODUCTION'}")
     logger.info(f"Google Cloud Project: {settings.GOOGLE_CLOUD_PROJECT}")
 
-    # 1. Lifecycle preflight: Validate required mounted assets
-    logger.info("Validating required mounted assets during startup lifecycle...")
-    try:
-        mounted_assets = settings.validate_mounted_assets()
-        logger.info(
-            "Mounted assets verified: %s",
-            {k: str(v) for k, v in mounted_assets.items()},
-        )
-    except Exception as e:
-        logger.critical("FATAL: Asset preflight failed during startup lifecycle: %s", e)
-        raise RuntimeError(
-            f"API startup aborted due to missing/invalid mounted assets: {e}"
-        ) from e
+    # NOTE: No mounted-asset preflight here. pricing_catalog.json and
+    # ColtProductCatalog.pdf are only read by the worker (model pricing
+    # lookups, AlignmentAnalyst's Colt catalog context) -- the API role is
+    # a pure job dispatcher (Firestore/BigQuery + Cloud Tasks enqueue) and
+    # never touches either file. The GCS asset volume is therefore only
+    # ever mounted onto the worker Cloud Run service in .gitlab-ci.yml
+    # (`$VOLUME_ARGS` is passed to the worker `gcloud run deploy` only),
+    # so validating assets here would always fail on a correctly deployed
+    # API service. See src/worker/main.py for the worker's own asset
+    # preflight, which does need and validate both files.
 
     try:
         await _init_bigquery()
