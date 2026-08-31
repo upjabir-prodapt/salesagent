@@ -210,6 +210,18 @@ docs/
 out/
 .local-tmp/
 
+# Mounted assets (pricing catalog, Colt product catalog) — production reads
+# these from a GCS-mounted volume (Cloud Run --add-volume); local dev keeps
+# a copy on disk for zero-infra testing, but they are not tracked in git.
+/ColtProductCatalog.pdf
+/data/
+/assets/
+
+# Internal review/planning artifacts — not part of the shipped codebase.
+/improvements.md
+/IMPLEMENTATION_PLAN.md
+/aidlc-docs/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

@@ -415,17 +415,13 @@ Sales-Agent/
 │       ├── schemas/                  # Cross-service task schemas (ResearchTaskPayload)
 │       └── utils/                    # Guardrails (PII/Prompt injection), URL utilities
 ├── tests/                            # Comprehensive test suite (414+ tests)
-├── aidlc-docs/                       # AI-DLC architecture design and audit artifacts
 ├── pyproject.toml                    # Project dependencies and configuration
 └── README.md                         # This file
 ```
 
----
-
-## AI-DLC Documentation
-
-Complete architecture decisions, component specifications, and functional design documents are maintained in `aidlc-docs/`:
-- `aidlc-docs/aidlc-state.md` — Master stage and unit progress tracker.
-- `aidlc-docs/audit.md` — Audit trail of architecture decisions.
-- `aidlc-docs/inception/` — Requirements, architecture overview, component specs, data models, and API contracts.
-- `aidlc-docs/construction/` — Functional designs, NFR assessments, code plans, code summaries, and verification checklists.
+> **Note:** Mounted runtime assets (`assets/`, `data/`, `ColtProductCatalog.pdf`) and internal
+> planning/review artifacts (`improvements.md`, `IMPLEMENTATION_PLAN.md`, `aidlc-docs/`) are
+> intentionally excluded from this repository (see `.gitignore`). Production and CI resolve the
+> pricing catalog and Colt product catalog exclusively from the GCS-mounted volume configured in
+> `.gitlab-ci.yml` (`--add-volume ... type=cloud-storage`); for local development, place your own
+> copies under `assets/` or set `ASSETS_ROOT` to a local path (see `src/shared/config.py`).
