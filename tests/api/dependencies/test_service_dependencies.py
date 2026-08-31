@@ -56,6 +56,8 @@ def test_repository_and_service_factories():
         patch("src.api.dependencies.BigQueryRepository") as mock_bq_repo,
         patch("src.api.dependencies.GCSRepository") as mock_gcs_repo,
         patch("src.api.dependencies.ResearchJobService") as mock_job_svc,
+        patch("src.worker.dependencies.BigQueryRepository"),
+        patch("src.worker.dependencies.GCSRepository"),
         patch("src.worker.dependencies.build_research_pipeline") as mock_build_pipeline,
         patch("src.worker.dependencies.ResearchArtifactService"),
         patch("src.worker.dependencies.ResearchFinalizationService"),
