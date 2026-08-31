@@ -418,10 +418,3 @@ Sales-Agent/
 ├── pyproject.toml                    # Project dependencies and configuration
 └── README.md                         # This file
 ```
-
-> **Note:** Mounted runtime assets (`assets/`, `data/`, `ColtProductCatalog.pdf`) and internal
-> planning/review artifacts (`improvements.md`, `IMPLEMENTATION_PLAN.md`, `aidlc-docs/`) are
-> intentionally excluded from this repository (see `.gitignore`). Production and CI resolve the
-> pricing catalog and Colt product catalog exclusively from the GCS-mounted volume configured in
-> `.gitlab-ci.yml` (`--add-volume ... type=cloud-storage`); for local development, place your own
-> copies under `assets/` or set `ASSETS_ROOT` to a local path (see `src/shared/config.py`).
