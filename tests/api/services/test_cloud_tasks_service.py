@@ -91,6 +91,44 @@ def test_enqueue_research_creates_cloud_task():
             task["http_request"]["oidc_token"]["audience"]
             == "https://worker.run.app/internal/tasks/research"
         )
+        assert task["dispatch_deadline"].seconds == 1800
+
+
+def test_enqueue_research_clamps_dispatch_deadline():
+    mock_client = MagicMock()
+    mock_client.queue_path.return_value = (
+        "projects/test-proj/locations/europe-west1/queues/research-jobs"
+    )
+    mock_created = MagicMock()
+    mock_created.name = "projects/test-proj/locations/europe-west1/queues/research-jobs/tasks/research-job_123"
+    mock_client.create_task.return_value = mock_created
+
+    service = CloudTasksService(client=mock_client)
+
+    with patch("src.api.services.cloud_tasks_service.settings") as mock_settings:
+        mock_settings.IS_LOCAL = False
+        mock_settings.CLOUD_TASKS_PROJECT = "test-proj"
+        mock_settings.CLOUD_TASKS_LOCATION = "europe-west1"
+        mock_settings.CLOUD_TASKS_QUEUE = "research-jobs"
+        mock_settings.CLOUD_TASKS_WORKER_URL = (
+            "https://worker.run.app/internal/tasks/research"
+        )
+        mock_settings.CLOUD_TASKS_OIDC_SERVICE_ACCOUNT = (
+            "sa@project.iam.gserviceaccount.com"
+        )
+        mock_settings.WORKER_OIDC_AUDIENCE = ""
+
+        # Test upper bound clamp (e.g. 3600 -> 1800)
+        mock_settings.CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS = 3600
+        service.enqueue_research(job_id="job_123", company_name="Acme Corp")
+        task = mock_client.create_task.call_args[1]["request"]["task"]
+        assert task["dispatch_deadline"].seconds == 1800
+
+        # Test lower bound clamp (e.g. 5 -> 15)
+        mock_settings.CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS = 5
+        service.enqueue_research(job_id="job_123", company_name="Acme Corp")
+        task = mock_client.create_task.call_args[1]["request"]["task"]
+        assert task["dispatch_deadline"].seconds == 15
 
 
 def test_enqueue_research_already_exists_is_idempotent():

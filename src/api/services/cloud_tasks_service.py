@@ -149,7 +149,10 @@ class CloudTasksService:
 
         deadline = int(settings.CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS)
         if deadline > 0:
-            task["dispatch_deadline"] = duration_pb2.Duration(seconds=deadline)
+            # Cloud Tasks requires dispatch_deadline between 15s and 30m (1800s) for HTTP tasks
+            task["dispatch_deadline"] = duration_pb2.Duration(
+                seconds=min(max(deadline, 15), 1800)
+            )
 
         parent = self._queue_path()
         task_name = f"{parent}/tasks/{self.task_id_for_job(job_id)}"

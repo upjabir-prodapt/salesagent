@@ -27,7 +27,7 @@ TEST_SETTINGS_ENV: dict[str, str] = {
     "CLOUD_TASKS_QUEUE": "research-jobs",
     "CLOUD_TASKS_WORKER_URL": "http://127.0.0.1:8001/internal/tasks/research",
     "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT": "test-tasks-sa@test-project.iam.gserviceaccount.com",
-    "CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS": "3600",
+    "CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS": "1800",
     "WORKER_OIDC_AUDIENCE": "",
     "WORKER_SKIP_OIDC_VERIFICATION": "true",
     "GOOGLE_CLOUD_PROJECT": "test-project",
