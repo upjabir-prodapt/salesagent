@@ -10,9 +10,13 @@ from fastapi.security import APIKeyHeader
 from jwt import InvalidTokenError
 from pydantic import BaseModel
 
+from src.api.core.entitlements import SCOPE_SALES
 from src.shared.config import settings
 
 logger = logging.getLogger(__name__)
+
+# The scope this service requires in every session token it accepts.
+SERVICE_SCOPE = SCOPE_SALES
 
 # App JWT via x-app-auth (Cloud Run IAM uses Authorization / X-Serverless-Authorization).
 # Use Security(app_auth_scheme) on routes/deps so Swagger shows the Authorize control.
@@ -56,7 +60,17 @@ class AuthenticatedUser(BaseModel):
 def create_access_token(
     claims: dict[str, Any], expires_delta: timedelta | None = None
 ) -> str:
-    """Create an HS256 signed JWT access token."""
+    """Create an HS256 signed JWT access token.
+
+    LOAD-BEARING: `settings.SECRET_KEY` is intentionally IDENTICAL to
+    Translation's `JWT_SECRET_KEY`. One IAP login mints one `colt_session`
+    cookie that both services accept, and that only works while both sign and
+    verify with the same key. Rotating one side independently breaks
+    cross-service SSO immediately and silently -- every call to the un-rotated
+    service starts 401ing. Rotate both together, or not at all. What keeps the
+    shared secret safe is the `scopes` claim (see _enforce_service_scope), not
+    key separation.
+    """
     now = datetime.now(UTC)
     expires = now + (
         expires_delta
@@ -71,8 +85,59 @@ def create_access_token(
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def normalize_scopes(raw: Any) -> set[str]:
+    """Normalize a `scopes` claim into a lowercase set.
+
+    Accepts the list form this service mints as well as a space/comma
+    separated string, so a token produced by a differently-serialising client
+    is still understood rather than silently treated as unscoped.
+    """
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.replace(",", " ").split() if p.strip()]
+        return {p.lower() for p in parts}
+    if isinstance(raw, (list, tuple, set)):
+        return {str(s).strip().lower() for s in raw if str(s).strip()}
+    return set()
+
+
+def _enforce_service_scope(payload: dict[str, Any]) -> None:
+    """Require this service's own scope in the token's `scopes` claim.
+
+    Sales-Agent and Translation share one HS256 secret and one `colt_session`
+    cookie so that a single IAP login covers both. A valid signature therefore
+    proves only "some Colt service minted this", not "the caller is entitled
+    to *this* service" -- this check is what actually separates the two.
+
+    While `REQUIRE_SCOPE_CLAIM` is False, a token with no `scopes` claim at
+    all is accepted so sessions minted before scopes existed keep working
+    through the rollout window. A token that *does* carry `scopes` is always
+    held to them, in both modes -- otherwise the bypass would remain wide open
+    for exactly the tokens the claim was added to constrain.
+    """
+    if "scopes" not in payload:
+        if settings.REQUIRE_SCOPE_CLAIM:
+            logger.warning("Token has no scopes claim and REQUIRE_SCOPE_CLAIM is on")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this service. Contact your administrator.",
+            )
+        return
+
+    scopes = normalize_scopes(payload.get("scopes"))
+    if SERVICE_SCOPE not in scopes:
+        logger.warning(
+            "Token rejected: scope %r absent from token scopes %s",
+            SERVICE_SCOPE,
+            sorted(scopes),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this service. Contact your administrator.",
+        )
+
+
 def decode_and_verify_token(token: str) -> dict[str, Any]:
-    """Decode and verify JWT token, including required claims."""
+    """Decode and verify JWT token, including required claims and scope."""
     try:
         payload = jwt.decode(
             token,
@@ -94,5 +159,7 @@ def decode_and_verify_token(token: str) -> dict[str, Any]:
             detail=f"Missing required token claims: {', '.join(missing)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    _enforce_service_scope(payload)
 
     return payload

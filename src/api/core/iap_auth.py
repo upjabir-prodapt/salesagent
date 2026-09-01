@@ -9,7 +9,11 @@ from google.oauth2 import id_token
 
 from src.shared.config import settings
 
-from .entitlements import has_sales_agent_access
+from .entitlements import (
+    SCOPE_SALES,
+    has_sales_agent_access,
+    resolve_scopes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +233,25 @@ def get_iap_identity(request: Request) -> IapIdentity:
     groups = _normalize_groups(claims.get("groups"))
     logger.info("Resolved IapIdentity: email=%s, groups=%s", email, sorted(groups))
     return IapIdentity(email=email, groups=groups)
+
+
+async def resolve_session_scopes(identity: IapIdentity) -> set[str]:
+    """Resolve the scopes to stamp into this identity's shared session token.
+
+    The `colt_session` cookie is shared with Translation, so whichever service
+    mints it stamps both services' scopes from Firestore. Local dev mode
+    assigns this service's own scope when the user has the required group.
+    """
+    if settings.IS_LOCAL:
+        scopes: set[str] = set()
+        if settings.SALES_REQUIRED_GROUP and identity.has_group(
+            settings.SALES_REQUIRED_GROUP
+        ):
+            scopes.add(SCOPE_SALES)
+        logger.info("[local] Simulated session scopes: %s", sorted(scopes))
+        return scopes
+
+    return await resolve_scopes(identity.email)
 
 
 def require_sales_agent_entitlement():

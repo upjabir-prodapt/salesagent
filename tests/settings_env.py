@@ -48,6 +48,8 @@ TEST_SETTINGS_ENV: dict[str, str] = {
     "IAP_AUDIENCE": "",
     "HUB_IAP_AUDIENCE": "",
     "SALES_REQUIRED_GROUP": "ai-salesagent-users",
+    "SESSION_ABSOLUTE_MAX_MINUTES": "480",
+    "REQUIRE_SCOPE_CLAIM": "false",
     "GCS_BUCKET_NAME": "test-bucket",
     "GCS_SIGNED_URL_EXPIRATION_HOURS": "1",
     "GCS_PARENT_FOLDER": "research",
