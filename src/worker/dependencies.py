@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.shared.config import settings
 from src.shared.repositories.clients import get_genai_client
 from src.shared.repositories.redis_repository import RedisSearchCacheRepository
@@ -40,14 +42,21 @@ def get_gcs_repository() -> GCSRepository:
     return _gcs_repo
 
 
-def build_research_pipeline() -> ResearchPipeline:
-    """Construct the 4-step ResearchPipeline with production dependencies."""
+def build_research_pipeline(*, cache_repo: Any | None = None) -> ResearchPipeline:
+    """Construct the 4-step ResearchPipeline with production dependencies.
+
+    *cache_repo* overrides the search cache backend. Production leaves it
+    None and gets RedisSearchCacheRepository; a local run with no
+    Memorystore reachability (scripts/local_research_e2e.py) injects an
+    in-process cache so the rest of the wiring -- models, retry policies,
+    timeouts -- stays byte-identical to what the worker runs.
+    """
     planner = QueryPlanner(
         retry=RetryPolicy(max_attempts=settings.PLANNER_RETRY_ATTEMPTS)
     )
     searcher = SearchExecutor(
         get_genai_client(),
-        RedisSearchCacheRepository(),
+        cache_repo if cache_repo is not None else RedisSearchCacheRepository(),
         model=settings.SEARCH_AGENT_MODEL,
         qps=settings.SEARCH_QPS,
         qps_burst=settings.SEARCH_QPS_BURST,

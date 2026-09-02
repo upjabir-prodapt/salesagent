@@ -8,12 +8,13 @@ Covers the three defects fixed here (see IMPLEMENTATION_PLAN.md):
 
 from __future__ import annotations
 
+import asyncio
 import time
 from types import SimpleNamespace
 
 import pytest
 
-from src.worker.agents.base import RetryPolicy
+from src.worker.agents.base import AgentError, ErrorKind, RetryPolicy
 from src.worker.agents.models import Query, QueryPlan
 from src.worker.agents.search import (
     DOMAIN_SLUG_TO_OUTPUT_KEY,
@@ -282,3 +283,112 @@ async def test_search_executor_cache_hits_are_not_counted_as_fresh_searches():
     # successes), but no new model call and no new cache write occurred.
     assert findings.executed == 1
     assert cache.writes == []
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for the 2026-09-02 prod TIMEOUT (job: "Societe Generale")
+#
+# A grounded-search call wedged inside _search_once. _run_one awaited it
+# bare -- the configured per-query timeout (SEARCH_TIMEOUT_SECONDS, passed
+# in as query_retry.timeout) was never applied -- so the hung query held a
+# concurrency-semaphore slot until Agent.run()'s step-level asyncio.wait_for
+# killed the whole step at 300s. That repeated for all 3 step attempts, and
+# because successful results were only cached in a post-gather loop, each
+# cancellation discarded every completed search and the retries started from
+# cold. The step failed with kind=TIMEOUT and an empty error string
+# (str(asyncio.TimeoutError()) == ""), taking the job with it.
+# ---------------------------------------------------------------------------
+
+
+async def _hang_forever() -> None:
+    await asyncio.Event().wait()  # never set
+
+
+@pytest.mark.asyncio
+async def test_hung_query_is_bounded_by_query_timeout_not_the_step_deadline():
+    """One wedged query must cost only itself, never the whole step."""
+
+    async def responder(call_count, contents):
+        if "HANGS" in contents:
+            await _hang_forever()
+        return _make_response("good text", sources=["https://reuters.com/x"])
+
+    executor, _, _ = _make_executor(
+        responder,
+        min_success_rate=0.5,
+        query_retry=RetryPolicy(
+            max_attempts=2, initial_delay=0.001, jitter=0.0, timeout=0.05
+        ),
+    )
+    # A generous step budget: if the per-query timeout were missing this
+    # test would hang until the step deadline instead of returning.
+    executor.retry = RetryPolicy(max_attempts=1, timeout=30.0)
+    plan = _plan(("HANGS forever", "firmographics"), ("fine query", "tech_stack"))
+
+    findings = await executor.run(plan, RecordingObserver())
+
+    assert findings.executed == 1
+    assert findings.failed == ("HANGS forever",)
+    assert findings.domains["techstackagent_output"].content == "good text"
+    assert findings.domains["firmographicsagent_output"].content == ""
+
+
+@pytest.mark.asyncio
+async def test_query_timeout_is_classified_as_timeout_and_retried_per_query():
+    """The bounded await must produce a retryable TIMEOUT, consuming the
+    query's own retry budget rather than surfacing as a step failure.
+    """
+    calls: list[str] = []
+
+    async def responder(call_count, contents):
+        calls.append(contents)
+        await _hang_forever()
+
+    executor, client, cache = _make_executor(
+        responder,
+        min_success_rate=0.0,  # accept an all-failed result so run() returns
+        query_retry=RetryPolicy(
+            max_attempts=3, initial_delay=0.001, jitter=0.0, timeout=0.05
+        ),
+    )
+    executor.retry = RetryPolicy(max_attempts=1, timeout=30.0)
+    plan = _plan(("HANGS forever", "firmographics"))
+
+    findings = await executor.run(plan, RecordingObserver())
+
+    assert findings.executed == 0
+    assert findings.failed == ("HANGS forever",)
+    # Every one of the query's own attempts ran and timed out.
+    assert client.aio.models.call_count == 3
+    assert cache.writes == []
+
+
+@pytest.mark.asyncio
+async def test_successful_results_are_cached_before_a_step_timeout_cancels():
+    """A step-level timeout must not discard searches that already finished.
+
+    Before the fix the cache write happened in a loop after
+    asyncio.gather() returned, so cancelling the gather threw away every
+    completed result and the next step attempt re-ran the whole plan.
+    """
+
+    async def responder(call_count, contents):
+        if "HANGS" in contents:
+            await _hang_forever()
+        return _make_response("fast result", sources=["https://reuters.com/x"])
+
+    executor, _, cache = _make_executor(
+        responder,
+        # No per-query bound here: this test is specifically about what
+        # survives a step-level cancellation.
+        query_retry=RetryPolicy(max_attempts=1, initial_delay=0.001, jitter=0.0),
+    )
+    executor.retry = RetryPolicy(max_attempts=1, timeout=0.3)
+    plan = _plan(("HANGS forever", "firmographics"), ("fast query", "tech_stack"))
+
+    with pytest.raises(AgentError) as excinfo:
+        await executor.run(plan, RecordingObserver())
+
+    assert excinfo.value.kind is ErrorKind.TIMEOUT
+    # The completed query is already durable despite the cancellation.
+    assert [q for _c, q, _r in cache.writes] == ["fast query"]
