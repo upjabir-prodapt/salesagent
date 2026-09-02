@@ -70,7 +70,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-
 COPY --from=builder /app/.venv /app/.venv
 COPY . .
 
