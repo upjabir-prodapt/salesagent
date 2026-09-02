@@ -228,6 +228,11 @@ class Settings(BaseSettings):
     GEMINI_RETRY_EXP_BASE: int = 2
     GEMINI_RETRY_JITTER: int = 1
     GEMINI_RETRY_STATUS_CODES: list[int] = [408, 429, 500, 502, 503, 504]
+    # Hard socket/request deadline for the shared google-genai client (see
+    # repositories/clients.py::get_genai_client). Must stay above the
+    # per-call app-level timeouts (SEARCH_TIMEOUT_SECONDS et al) so those
+    # fire first; this only catches a connection that wedges below them.
+    GENAI_HTTP_TIMEOUT_SECONDS: float = 120.0
     # Output cap for agents that emit one large structured payload
     AGENT_MAX_OUTPUT_TOKENS: int = 65_535
     # Minimum per-domain research outputs (of 12) required before synthesis.

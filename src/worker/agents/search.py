@@ -12,6 +12,19 @@ Fixes verified in IMPLEMENTATION_PLAN.md:
   - R4: search_count used to count every attempted query, including cache
     hits and fabricated failures. SearchFindings.executed counts only
     genuinely successful fresh searches.
+  - A2b: the per-query timeout (SEARCH_TIMEOUT_SECONDS, passed in as
+    query_retry.timeout) was configured but never applied -- _run_one
+    awaited _search_once() bare. A single hung grounded-search call
+    therefore held a semaphore slot indefinitely and ran the whole step
+    into its 300s step-level deadline, three attempts in a row, killing
+    the job (prod, 2026-09-02, "Societe Generale"). _run_one now wraps
+    each attempt in asyncio.wait_for, so a hang degrades to one failed
+    query that validate()'s success-rate gate can absorb.
+  - A2c: successful results were only written to the cache in a loop
+    *after* asyncio.gather() returned, so a step-level timeout cancelled
+    the gather and discarded every completed search. Retries re-ran the
+    full plan from cold and hit the same wall. _run_and_cache() now
+    persists each success as it lands.
 """
 
 from __future__ import annotations
@@ -176,7 +189,7 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
             )
 
         fresh_results = await asyncio.gather(
-            *(self._run_one(plan.company, q) for q in uncached)
+            *(self._run_and_cache(plan.company, q) for q in uncached)
         )
 
         all_results: dict[str, QueryResult] = dict(cached_results)
@@ -186,7 +199,6 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
             all_results[res.query.text] = res
             if res.succeeded:
                 succeeded_fresh += 1
-                await self._store_cache(plan.company, res)
             else:
                 failed_fresh += 1
 
@@ -236,6 +248,22 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
                 uncached.append(q)
         return cached, uncached
 
+    async def _run_and_cache(self, company: str, query: Query) -> QueryResult:
+        """Run one query and persist a successful result immediately.
+
+        The cache write has to happen here rather than in a post-gather
+        loop in execute(): when the step-level asyncio.wait_for deadline
+        in Agent.run() fires it cancels the gather, so anything not yet
+        written is lost. Writing per query means a timed-out attempt still
+        leaves its completed searches in the cache, and this step's next
+        attempt resumes from them via _partition_cache() instead of
+        re-running the whole plan from cold.
+        """
+        result = await self._run_one(company, query)
+        if result.succeeded:
+            await self._store_cache(company, result)
+        return result
+
     async def _run_one(self, company: str, query: Query) -> QueryResult:
         """Execute one query with QPS gating, concurrency limiting, and
         per-query retry. Never fabricates content on failure.
@@ -251,7 +279,10 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
                         f"[SearchExecutor] Query attempt {attempt} starting: "
                         f"[{query.domain}] '{query.text}'"
                     )
-                    text, evidence = await self._search_once(company, query)
+                    text, evidence = await asyncio.wait_for(
+                        self._search_once(company, query),
+                        timeout=self._query_retry.timeout,
+                    )
                     elapsed = time.monotonic() - t0
                     logger.info(
                         f"[SearchExecutor] Query attempt {attempt} succeeded in {elapsed:.2f}s: "
