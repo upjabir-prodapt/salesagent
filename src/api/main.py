@@ -15,7 +15,7 @@ from src.shared.logging_config import logger, setup_logging
 from src.shared.middlewares import error_handler_middleware, logging_middleware
 from src.shared.otel_setup import setup_telemetry, shutdown_telemetry
 
-from .routes import auth, research
+from .routes import research
 
 try:
     from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
@@ -148,7 +148,6 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(auth.router)
 app.include_router(research.router)
 
 
@@ -165,7 +164,7 @@ async def root():
             "openapi": "/openapi.json",
         },
         "endpoints": {
-            "research": "/api/v1/research",
+            "research": f"{settings.API_PREFIX}/research",
             "health": "/health",
             "metrics": "/metrics",
         },

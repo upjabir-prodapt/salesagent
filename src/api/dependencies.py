@@ -4,15 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi import Depends, Request
 
-from src.api.core.security import (
-    SESSION_COOKIE_NAME,
-    AuthenticatedUser,
-    app_auth_scheme,
-    decode_and_verify_token,
-    extract_bearer_token,
-)
+from src.api.core.apigee_auth import get_authenticated_user
+from src.api.core.security import AuthenticatedUser
 
 from ..shared.repositories.bigquery_repository import BigQueryRepository
 from ..shared.repositories.gcs_repository import GCSRepository
@@ -62,46 +57,36 @@ def get_research_handler() -> ResearchHandler:
 
 
 # --- Auth Dependencies --------------------------------------------------------
+#
+# Apigee is the sole authority for authentication and authorization; all
+# verification actually happens in apigee_auth.get_authenticated_user. These
+# names are kept so downstream route code needs zero changes.
 
 
 async def verify_token(
-    request: Request,
-    api_key: Annotated[str | None, Security(app_auth_scheme)],
-) -> dict[str, Any]:
-    """Verify bearer token from x-app-auth or the session cookie."""
-    token = extract_bearer_token(api_key) or extract_bearer_token(
-        request.cookies.get(SESSION_COOKIE_NAME)
-    )
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=(
-                "Not authenticated. Set x-app-auth to the access_token from "
-                "POST /api/v1/auth/token, or Bearer <access_token>."
-            ),
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return decode_and_verify_token(token)
+    user: Annotated[AuthenticatedUser, Depends(get_authenticated_user)],
+) -> AuthenticatedUser:
+    """Backward-compatible name: delegates to Apigee-based authentication."""
+    return user
 
 
 async def get_current_user(
-    payload: Annotated[dict[str, Any], Depends(verify_token)],
+    user: Annotated[AuthenticatedUser, Depends(get_authenticated_user)],
 ) -> dict[str, Any]:
-    """Backward-compatible dependency returning raw token payload with email mapping."""
-    if "sub" in payload and "email" not in payload:
-        payload["email"] = payload["sub"]
-    return payload
+    """Backward-compatible dependency returning a dict-shaped user context."""
+    return {
+        "oid": user.oid,
+        "email": user.email,
+        "roles": user.roles,
+        "business_unit": user.business_unit,
+        "organization": user.organization,
+    }
 
 
 async def get_current_user_context(
     request: Request,
-    payload: Annotated[dict[str, Any], Depends(verify_token)],
+    user: Annotated[AuthenticatedUser, Depends(get_authenticated_user)],
 ) -> AuthenticatedUser:
-    """FastAPI dependency to extract normalized user context from JWT."""
-    user = AuthenticatedUser(
-        email=str(payload["sub"]),
-        business_unit=str(payload["business_unit"]),
-        organization=str(payload["organization"]),
-    )
+    """FastAPI dependency to extract normalized user context from Apigee headers."""
     request.state.user = user
     return user

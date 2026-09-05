@@ -1,9 +1,8 @@
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import HTTPException
 
-from src.api.core.security import SESSION_COOKIE_NAME, create_access_token
+from src.api.core.security import AuthenticatedUser
 from src.api.dependencies import (
     get_current_user,
     get_current_user_context,
@@ -11,44 +10,58 @@ from src.api.dependencies import (
 )
 
 
-@pytest.mark.asyncio
-async def test_verify_token_missing_header():
-    request = MagicMock(cookies={})
-    with pytest.raises(HTTPException) as exc_info:
-        await verify_token(request, None)
-    assert exc_info.value.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_verify_token_from_header(mock_settings):
-    token = create_access_token(
-        {
-            "sub": "user@colt.net",
-            "business_unit": "Sales",
-            "organization": "Colt",
-        }
+def _mock_request(headers: dict[str, str] | None = None) -> MagicMock:
+    headers = headers or {}
+    request = MagicMock()
+    request.headers.get.side_effect = lambda key, default=None: headers.get(
+        key, default
     )
-    request = MagicMock(cookies={})
-    payload = await verify_token(request, f"Bearer {token}")
-    user = await get_current_user(payload)
-    assert user["email"] == "user@colt.net"
-
-    context = await get_current_user_context(request, payload)
-    assert context.email == "user@colt.net"
-    assert context.business_unit == "Sales"
-    assert request.state.user == context
+    request.state = MagicMock()
+    return request
 
 
 @pytest.mark.asyncio
-async def test_verify_token_from_cookie(mock_settings):
-    token = create_access_token(
-        {
-            "sub": "user@colt.net",
-            "business_unit": "Sales",
-            "organization": "Colt",
-        }
+async def test_verify_token_delegates_to_authenticated_user():
+    user = AuthenticatedUser(
+        oid="oid-1",
+        email="user@colt.net",
+        roles=["SalesAgent.User"],
+        business_unit="Sales",
+        organization="Colt",
     )
-    request = MagicMock(cookies={SESSION_COOKIE_NAME: token})
-    payload = await verify_token(request, None)
-    user = await get_current_user(payload)
-    assert user["email"] == "user@colt.net"
+    result = await verify_token(user)
+    assert result is user
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_returns_dict_shape():
+    user = AuthenticatedUser(
+        oid="oid-1",
+        email="user@colt.net",
+        roles=["SalesAgent.User"],
+        business_unit="Sales",
+        organization="Colt",
+    )
+    result = await get_current_user(user)
+    assert result == {
+        "oid": "oid-1",
+        "email": "user@colt.net",
+        "roles": ["SalesAgent.User"],
+        "business_unit": "Sales",
+        "organization": "Colt",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_context_sets_request_state():
+    user = AuthenticatedUser(
+        oid="oid-1",
+        email="user@colt.net",
+        roles=["SalesAgent.User"],
+        business_unit="Sales",
+        organization="Colt",
+    )
+    request = _mock_request()
+    context = await get_current_user_context(request, user)
+    assert context is user
+    assert request.state.user is user

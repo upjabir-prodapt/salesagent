@@ -169,7 +169,7 @@ def mock_settings(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         {
             "APP_NAME": "Sales Agent API",
             "APP_VERSION": "test",
-            "API_PREFIX": "/api/v1",
+            "API_PREFIX": "/api/sales/v1",
             "DEBUG": True,
             "LOG_LEVEL": "DEBUG",
             "LOG_FILE": None,
@@ -247,7 +247,9 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         mock_service
     )
     app.dependency_overrides[get_current_user] = lambda: {
+        "oid": "test-oid",
         "email": "test@colt.net",
+        "roles": ["SalesAgent.User"],
         "business_unit": "Sales",
         "organization": "Colt",
     }

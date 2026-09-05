@@ -165,26 +165,30 @@ class Settings(BaseSettings):
     PRICING_CATALOG_FILENAME: str = "pricing_catalog.json"
     COLT_CATALOG_FILENAME: str = "ColtProductCatalog.pdf"
 
-    # Security
-    SECRET_KEY: str
-    ALGORITHM: str
-    ACCESS_TOKEN_EXPIRE_MINUTES: int
-    IAP_AUDIENCE: str = ""
-    HUB_IAP_AUDIENCE: str = ""
-    # Entra security group required for Sales Agent entitlement (checked against IAP JWT `groups` claim).
-    SALES_REQUIRED_GROUP: str = ""
-    # Hard ceiling on a sliding session's total lifetime, measured from the
-    # `auth_time` claim stamped at the original IAP login and preserved
-    # unchanged across every renewal. POST /auth/refresh refuses to mint past
-    # this point, so 8 hours after signing in the user must authenticate with
-    # IAP again regardless of how continuously active they have been.
-    SESSION_ABSOLUTE_MAX_MINUTES: int = 480
-    # When False (rollout default), a token carrying NO `scopes` claim is
-    # accepted for backward compatibility with sessions minted before scopes
-    # existed; a token that *has* `scopes` must still include this service's
-    # own scope. Flip to True once every legacy token has expired -- that is
-    # the step that actually closes the cross-service bypass.
-    REQUIRE_SCOPE_CLAIM: bool = False
+    # Security -- Apigee is the sole authority for authentication and
+    # authorization. It calls this Cloud Run service with a Google-signed ID
+    # token (see src/api/core/apigee_auth.py); both settings below are
+    # required whenever this service is not running locally.
+    APIGEE_RUNTIME_SA_EMAIL: str = ""
+    CLOUD_RUN_SERVICE_URL: str = ""
+
+    # LLM gateway (Apigee `llm` env) -- no workload service account in
+    # gclt-aicoe-dev-st may hold roles/aiplatform.user (LLD decision D-30),
+    # so this is the only sanctioned path to Vertex AI from this project.
+    # LLM_GATEWAY_ENABLED defaults to false: the `llm` proxy does not exist
+    # yet (GAP-REGISTER R-08) and the highest-risk unknown in the whole
+    # shared-dev plan is whether server-side GoogleSearch grounding survives
+    # being proxied -- do not flip this to true outside a deliberate test.
+    LLM_GATEWAY_ENABLED: bool = False
+    LLM_GATEWAY_BASE_URL: str = ""
+    # Despite the _SECRET suffix (kept to match the shared-dev plan's naming),
+    # this holds the raw Apigee developer-app consumer key value itself, not
+    # a Secret Manager resource name -- this repo has no existing
+    # Secret-Manager-client-at-runtime pattern (unlike aihub-bff's
+    # apigee_api_key_secret, which does fetch live). The key is appended
+    # directly into this service's own already-mounted /secrets/.env
+    # payload, the same way docs/20 Part 5.10 has the operator add it.
+    LLM_GATEWAY_API_KEY_SECRET: str = ""
     PROMPT_TEMPLATE_VERSION: str = "v1.0"
 
     # GCS
@@ -301,8 +305,16 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _sync_sdk_environment(self) -> Self:
         """Push GenAI / OTEL SDK settings into os.environ (read by ADK and auto-instrumentation)."""
-        if not self.IS_LOCAL and not self.IAP_AUDIENCE:
-            raise ValueError("IAP_AUDIENCE is required when IS_LOCAL is false")
+        if not self.IS_LOCAL:
+            missing = [
+                name
+                for name in ("APIGEE_RUNTIME_SA_EMAIL", "CLOUD_RUN_SERVICE_URL")
+                if not getattr(self, name)
+            ]
+            if missing:
+                raise ValueError(
+                    f"{', '.join(missing)} required when IS_LOCAL is false"
+                )
         os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = (
             "true" if self.GOOGLE_GENAI_USE_VERTEXAI else "false"
         )

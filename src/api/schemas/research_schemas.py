@@ -43,7 +43,7 @@ class ResearchInitiateResponse(BaseModel):
             "example": {
                 "job_id": "job_123e4567-e89b-12d3-a456-426614174000",
                 "status": "PENDING",
-                "check_status_url": "/api/v1/research/status/job_123e4567-e89b-12d3-a456-426614174000",
+                "check_status_url": "/api/sales/v1/research/status/job_123e4567-e89b-12d3-a456-426614174000",
             }
         }
     }

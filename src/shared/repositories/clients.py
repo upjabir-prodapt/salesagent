@@ -11,6 +11,8 @@ from google.cloud import bigquery, firestore, storage
 from google.genai import types as genai_types
 
 from ..config import settings
+from ..llm_gateway import gateway_http_options_kwargs
+from ..llm_gateway import gateway_vertex_identity_kwargs
 
 _bq_client: bigquery.Client | None = None
 _firestore_client: firestore.Client | None = None
@@ -59,15 +61,19 @@ def get_genai_client() -> genai.Client:
     Vertex AI inference region (settings.vertex_ai_location, e.g.
     europe-west3) can differ from the project's infra region
     (settings.GOOGLE_CLOUD_LOCATION, e.g. europe-west1 for Cloud
-    Tasks/GCS/BigQuery) without a second process-wide env var.
+    Tasks/GCS/BigQuery) without a second process-wide env var -- unless the
+    LLM gateway is enabled, in which case gateway_vertex_identity_kwargs()
+    omits both instead (see its docstring: the gateway's own target supplies
+    the real, central inference project rather than this workload's own).
     """
     global _genai_client
     with _lock:
         if _genai_client is None:
             _genai_client = genai.Client(
                 vertexai=settings.GOOGLE_GENAI_USE_VERTEXAI,
-                project=settings.GOOGLE_CLOUD_PROJECT,
-                location=settings.vertex_ai_location,
+                **gateway_vertex_identity_kwargs(
+                    settings.GOOGLE_CLOUD_PROJECT, settings.vertex_ai_location
+                ),
                 # Belt-and-braces under the app-level asyncio.wait_for
                 # deadlines: without this the SDK inherits no socket
                 # timeout at all, so a wedged connection can outlive any
@@ -77,7 +83,8 @@ def get_genai_client() -> genai.Client:
                 # normally the one that fires and the caller keeps its
                 # own retry semantics. HttpOptions.timeout is in ms.
                 http_options=genai_types.HttpOptions(
-                    timeout=int(settings.GENAI_HTTP_TIMEOUT_SECONDS * 1000)
+                    timeout=int(settings.GENAI_HTTP_TIMEOUT_SECONDS * 1000),
+                    **gateway_http_options_kwargs(),
                 ),
             )
     return _genai_client

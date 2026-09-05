@@ -1,6 +1,5 @@
 """API Pydantic schemas."""
 
-from .auth_schemas import AuthRequest, Token, WhoamiResponse
 from .common_schemas import ErrorResponse
 from .research_schemas import (
     ModelCard,
@@ -13,7 +12,6 @@ from .research_schemas import (
 )
 
 __all__ = [
-    "AuthRequest",
     "ErrorResponse",
     "ModelCard",
     "ResearchFeedbackRequest",
@@ -22,6 +20,4 @@ __all__ = [
     "ResearchInitiateResponse",
     "ResearchResultResponse",
     "ResearchStatusResponse",
-    "Token",
-    "WhoamiResponse",
 ]

@@ -23,7 +23,7 @@ def test_initiate_research_success(client):
 
     client.mock_service.create_research_request.return_value = True
 
-    response = client.post("/api/v1/research/initiate", json=payload)
+    response = client.post("/api/sales/v1/research/initiate", json=payload)
 
     assert response.status_code == 202
     data = response.json()
@@ -51,7 +51,7 @@ def test_get_research_status_success(client):
     }
     client.mock_service.get_request_status.return_value = status_data
 
-    response = client.get(f"/api/v1/research/status/{job_id}")
+    response = client.get(f"/api/sales/v1/research/status/{job_id}")
 
     assert response.status_code == 200
     data = response.json()
@@ -81,7 +81,7 @@ def test_list_research_jobs_success(client):
     ]
     client.mock_service.list_jobs.return_value = jobs_data
 
-    response = client.get("/api/v1/research/jobs")
+    response = client.get("/api/sales/v1/research/jobs")
     assert response.status_code == 200
     items = response.json()
     assert len(items) == 2
@@ -94,7 +94,7 @@ def test_cancel_research_job_success(client):
     """Test cancelling a research job."""
     client.mock_service.cancel_job.return_value = True
 
-    response = client.delete("/api/v1/research/job_123")
+    response = client.delete("/api/sales/v1/research/job_123")
     assert response.status_code == 200
     data = response.json()
     assert data["job_id"] == "job_123"
@@ -106,7 +106,7 @@ def test_get_research_status_not_found(client):
     """Test getting research status for non-existent job."""
     client.mock_service.get_request_status.return_value = None
 
-    response = client.get("/api/v1/research/status/non-existent")
+    response = client.get("/api/sales/v1/research/status/non-existent")
     assert response.status_code == 404
 
 
@@ -127,7 +127,7 @@ def test_get_research_result_success(client):
     }
     client.mock_service.get_request_result.return_value = result_data
 
-    response = client.get(f"/api/v1/research/result/{job_id}")
+    response = client.get(f"/api/sales/v1/research/result/{job_id}")
 
     assert response.status_code == 200
     assert response.json()["request_id"] == job_id
@@ -138,7 +138,7 @@ def test_download_pdf_report_success(client):
     job_id = "job_123"
     client.mock_service.get_pdf_report.return_value = (b"%PDF-1.4 test", "Acme Corp")
 
-    response = client.get(f"/api/v1/research/download/{job_id}")
+    response = client.get(f"/api/sales/v1/research/download/{job_id}")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
@@ -156,6 +156,6 @@ def test_error_handler_middleware(client):
     """Test that the error handler middleware catches unhandled exceptions."""
     client.mock_service.get_request_status.side_effect = Exception("Crash")
 
-    response = client.get("/api/v1/research/status/job_123")
+    response = client.get("/api/sales/v1/research/status/job_123")
     assert response.status_code == 500
     assert "error" in response.json()
