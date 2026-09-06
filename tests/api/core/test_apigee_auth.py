@@ -63,7 +63,9 @@ async def test_success_via_serverless_authorization_header():
         patch.object(apigee_auth, "settings") as mock_settings,
         patch(
             "src.api.core.apigee_auth.id_token.verify_oauth2_token",
-            return_value={"email": "apigee-int-runtime@gclt-aicoe-dev-apigee.iam.gserviceaccount.com"},
+            return_value={
+                "email": "apigee-int-runtime@gclt-aicoe-dev-apigee.iam.gserviceaccount.com"
+            },
         ) as mock_verify,
     ):
         mock_settings.IS_LOCAL = False
@@ -89,7 +91,9 @@ async def test_success_falls_back_to_authorization_header():
         patch.object(apigee_auth, "settings") as mock_settings,
         patch(
             "src.api.core.apigee_auth.id_token.verify_oauth2_token",
-            return_value={"email": "apigee-int-runtime@gclt-aicoe-dev-apigee.iam.gserviceaccount.com"},
+            return_value={
+                "email": "apigee-int-runtime@gclt-aicoe-dev-apigee.iam.gserviceaccount.com"
+            },
         ),
     ):
         mock_settings.IS_LOCAL = False
@@ -164,7 +168,9 @@ async def test_missing_oid_header_raises_401():
         patch.object(apigee_auth, "settings") as mock_settings,
         patch(
             "src.api.core.apigee_auth.id_token.verify_oauth2_token",
-            return_value={"email": "apigee-int-runtime@gclt-aicoe-dev-apigee.iam.gserviceaccount.com"},
+            return_value={
+                "email": "apigee-int-runtime@gclt-aicoe-dev-apigee.iam.gserviceaccount.com"
+            },
         ),
     ):
         mock_settings.IS_LOCAL = False
@@ -191,7 +197,9 @@ async def test_department_and_company_absent_default_to_empty_string():
         patch.object(apigee_auth, "settings") as mock_settings,
         patch(
             "src.api.core.apigee_auth.id_token.verify_oauth2_token",
-            return_value={"email": "apigee-int-runtime@gclt-aicoe-dev-apigee.iam.gserviceaccount.com"},
+            return_value={
+                "email": "apigee-int-runtime@gclt-aicoe-dev-apigee.iam.gserviceaccount.com"
+            },
         ),
     ):
         mock_settings.IS_LOCAL = False

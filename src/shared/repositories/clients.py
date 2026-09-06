@@ -11,8 +11,7 @@ from google.cloud import bigquery, firestore, storage
 from google.genai import types as genai_types
 
 from ..config import settings
-from ..llm_gateway import gateway_http_options_kwargs
-from ..llm_gateway import gateway_vertex_identity_kwargs
+from ..llm_gateway import gateway_http_options_kwargs, gateway_vertex_identity_kwargs
 
 _bq_client: bigquery.Client | None = None
 _firestore_client: firestore.Client | None = None

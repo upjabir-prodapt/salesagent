@@ -5,8 +5,10 @@ from google.genai import Client
 from google.genai import types as genai_types
 
 from src.shared.config import settings
-from src.shared.llm_gateway import gateway_http_options_kwargs
-from src.shared.llm_gateway import gateway_vertex_identity_kwargs
+from src.shared.llm_gateway import (
+    gateway_http_options_kwargs,
+    gateway_vertex_identity_kwargs,
+)
 
 # Configuration with full Exponential Backoff and Jitter
 retry_config = genai_types.HttpRetryOptions(
