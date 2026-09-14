@@ -210,7 +210,11 @@ class ResearchFeedbackRequest(BaseModel):
         # Omit the field to leave no comment. An empty string is a malformed
         # comment rather than an absent one, so it is still rejected.
         min_length=1,
-        max_length=1000,
+        # 2000 to match the Translation service's review comment: the two
+        # services are presented as one feedback flow in the AI Hub, and a
+        # limit that differed by service was visible to users as a different
+        # character counter on an otherwise identical dialog.
+        max_length=2000,
     )
 
     model_config = ConfigDict(
