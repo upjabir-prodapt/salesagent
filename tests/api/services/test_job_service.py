@@ -102,7 +102,17 @@ def test_job_service_submit_feedback():
     bq.get_status.return_value = {"status": "COMPLETED", "user_id": "user@colt.net"}
     bq.insert_user_feedback.return_value = True
     service = ResearchJobService(bq, MagicMock())
-    assert service.submit_feedback("job_1", "Great report", "user@colt.net") is True
+    assert service.submit_feedback("job_1", 5, "Great report", "user@colt.net") is True
     bq.insert_user_feedback.assert_called_once_with(
-        "job_1", "user@colt.net", "Great report"
+        "job_1", "user@colt.net", 5, "Great report"
     )
+
+
+def test_job_service_submit_feedback_rating_only():
+    """The comment is optional, so a rating on its own must persist."""
+    bq = MagicMock()
+    bq.get_status.return_value = {"status": "COMPLETED", "user_id": "user@colt.net"}
+    bq.insert_user_feedback.return_value = True
+    service = ResearchJobService(bq, MagicMock())
+    assert service.submit_feedback("job_1", 3, None, "user@colt.net") is True
+    bq.insert_user_feedback.assert_called_once_with("job_1", "user@colt.net", 3, None)

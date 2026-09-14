@@ -205,7 +205,9 @@ class ResearchHandler:
     async def submit_feedback(
         self, job_id: str, request: ResearchFeedbackRequest, user_email: str
     ) -> ResearchFeedbackResponse:
-        success = self._service.submit_feedback(job_id, request.feedback, user_email)
+        success = self._service.submit_feedback(
+            job_id, request.rating, request.feedback, user_email
+        )
         if not success:
             raise ResourceNotFoundError(f"Job {job_id} not found")
         return ResearchFeedbackResponse(

@@ -126,7 +126,7 @@ def test_submit_feedback_success(client, mock_user):
 
     response = client.post(
         f"{settings.API_PREFIX}/research/job_123/feedback",
-        json={"feedback": "Great report!"},
+        json={"rating": 5, "feedback": "Great report!"},
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -135,7 +135,7 @@ def test_submit_feedback_success(client, mock_user):
     assert data["status"] == "SUCCESS"
     assert data["message"] == "Feedback submitted successfully"
     client.mock_service.submit_feedback.assert_called_once_with(
-        "job_123", "Great report!", "test@example.com"
+        "job_123", 5, "Great report!", "test@example.com"
     )
 
 
@@ -147,7 +147,7 @@ def test_submit_feedback_not_found(client, mock_user):
 
     response = client.post(
         f"{settings.API_PREFIX}/research/job_none/feedback",
-        json={"feedback": "No job feedback"},
+        json={"rating": 2, "feedback": "No job feedback"},
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -160,7 +160,7 @@ def test_submit_feedback_rejects_extra_fields(client, mock_user):
 
     response = client.post(
         f"{settings.API_PREFIX}/research/job_123/feedback",
-        json={"feedback": "Great report!", "extra_field": "forbidden"},
+        json={"rating": 5, "feedback": "Great report!", "extra_field": "forbidden"},
     )
 
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -173,7 +173,53 @@ def test_submit_feedback_invalid_empty(client, mock_user):
 
     response = client.post(
         f"{settings.API_PREFIX}/research/job_123/feedback",
-        json={"feedback": ""},
+        json={"rating": 3, "feedback": ""},
     )
 
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_submit_feedback_requires_a_rating(client, mock_user):
+    """The rating is the one mandatory part; a bare comment is not enough."""
+    from src.api.dependencies import get_current_user
+
+    client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    response = client.post(
+        f"{settings.API_PREFIX}/research/job_123/feedback",
+        json={"feedback": "Great report!"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+@pytest.mark.parametrize("rating", [0, 6, -1, "five"])
+def test_submit_feedback_rejects_an_out_of_range_rating(client, mock_user, rating):
+    from src.api.dependencies import get_current_user
+
+    client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    response = client.post(
+        f"{settings.API_PREFIX}/research/job_123/feedback",
+        json={"rating": rating},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_submit_feedback_accepts_a_rating_without_a_comment(client, mock_user):
+    """Rating a report must not require writing anything."""
+    client.mock_service.submit_feedback.return_value = True
+    from src.api.dependencies import get_current_user
+
+    client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    response = client.post(
+        f"{settings.API_PREFIX}/research/job_123/feedback",
+        json={"rating": 4},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    client.mock_service.submit_feedback.assert_called_once_with(
+        "job_123", 4, None, "test@example.com"
+    )

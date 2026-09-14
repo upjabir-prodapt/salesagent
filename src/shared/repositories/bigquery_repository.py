@@ -120,12 +120,18 @@ class BigQueryRepository:
         self,
         job_id: str,
         user_email: str,
+        rating: int | None = None,
         feedback: str | None = None,
     ) -> bool:
-        """Insert user feedback into the user_feedback table"""
+        """Insert a rating and optional comment into the user_feedback table.
+
+        `rating` requires an INT64 column of the same name on the table; see
+        the note above the INSERT.
+        """
         if self.client is None:
             logger.info(
-                f"Local Bypass: Inserted feedback for job {job_id} from {user_email}"
+                f"Local Bypass: Inserted feedback for job {job_id} from "
+                f"{user_email} (rating: {rating})"
             )
             return True
 
@@ -135,14 +141,22 @@ class BigQueryRepository:
         # partition pruning and any future expiry policy. Added 2026-09-11 -- the
         # table previously had no timestamp column at all.
         now = datetime.now(UTC)
+        # `rating` is an INT64 NULLABLE column added alongside the 1-5 rating on
+        # ResearchFeedbackRequest. It must exist on the table before this runs:
+        #   ALTER TABLE `<project>.<dataset>.<user_feedback>`
+        #     ADD COLUMN IF NOT EXISTS rating INT64;
+        # NULLABLE rather than REQUIRED so rows written before the rating
+        # existed stay valid.
         query = f"""
-        INSERT INTO `{self.user_feedback_table_ref}` (job_id, user_email, feedback, created_at)
-        VALUES (@job_id, @user_email, @feedback, @created_at)
+        INSERT INTO `{self.user_feedback_table_ref}`
+            (job_id, user_email, rating, feedback, created_at)
+        VALUES (@job_id, @user_email, @rating, @feedback, @created_at)
         """
 
         query_parameters = [
             bigquery.ScalarQueryParameter("job_id", "STRING", job_id),
             bigquery.ScalarQueryParameter("user_email", "STRING", user_email),
+            bigquery.ScalarQueryParameter("rating", "INT64", rating),
             bigquery.ScalarQueryParameter("feedback", "STRING", feedback),
             bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", now),
         ]

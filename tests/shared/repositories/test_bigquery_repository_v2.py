@@ -82,6 +82,7 @@ def test_insert_user_feedback_success(bq_repo, mock_bq_client):
     result = bq_repo.insert_user_feedback(
         job_id="job_123",
         user_email="test@example.com",
+        rating=5,
         feedback="Highly detailed report!",
     )
 
@@ -91,6 +92,34 @@ def test_insert_user_feedback_success(bq_repo, mock_bq_client):
     query = mock_bq_client.query.call_args[0][0]
     assert "INSERT INTO" in query
     assert "users_feedback" in query or "test_users_feedback" in query
+    assert "rating" in query
+
+    # The rating must go over as an INT64 parameter, not be interpolated.
+    params = {
+        p.name: p
+        for p in mock_bq_client.query.call_args[1]["job_config"].query_parameters
+    }
+    assert params["rating"].type_ == "INT64"
+    assert params["rating"].value == 5
+
+
+def test_insert_user_feedback_without_a_comment(bq_repo, mock_bq_client):
+    """A rating on its own is valid; the comment column simply takes NULL."""
+    mock_bq_client.query.return_value = MagicMock()
+
+    assert (
+        bq_repo.insert_user_feedback(
+            job_id="job_123", user_email="test@example.com", rating=2
+        )
+        is True
+    )
+
+    params = {
+        p.name: p
+        for p in mock_bq_client.query.call_args[1]["job_config"].query_parameters
+    }
+    assert params["rating"].value == 2
+    assert params["feedback"].value is None
 
 
 def test_list_jobs_for_user_success(bq_repo, mock_bq_client):

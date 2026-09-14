@@ -172,12 +172,16 @@ class ResearchJobService:
             logger.error(f"Failed to cancel job {job_id}: {e}")
             raise ServiceError(f"Failed to cancel research job: {str(e)}") from e
 
-    def submit_feedback(self, job_id: str, feedback: str, user_email: str) -> bool:
-        """Submit feedback for a completed research job."""
+    def submit_feedback(
+        self, job_id: str, rating: int, feedback: str | None, user_email: str
+    ) -> bool:
+        """Submit a rating, and optionally a comment, for a research job."""
         try:
             status_data = self.bigquery_repo.get_status(job_id)
             self._assert_owner(status_data, job_id, user_email)
-            return self.bigquery_repo.insert_user_feedback(job_id, user_email, feedback)
+            return self.bigquery_repo.insert_user_feedback(
+                job_id, user_email, rating, feedback
+            )
         except ResourceNotFoundError:
             raise
         except Exception as e:

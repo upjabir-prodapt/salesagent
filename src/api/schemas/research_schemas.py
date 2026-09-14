@@ -190,11 +190,25 @@ class ResearchCancelResponse(BaseModel):
 
 
 class ResearchFeedbackRequest(BaseModel):
-    """Request model for submitting user feedback"""
+    """Request model for submitting user feedback.
 
-    feedback: str = Field(
+    Mirrors the Translation service's review: a required 1-5 rating plus an
+    optional free-text comment. `feedback` was previously the only field and
+    was required; it is now optional, so a user can rate a report without
+    being made to write something.
+    """
+
+    rating: int = Field(
         ...,
-        description="Feedback message",
+        description="Overall rating of the research report, 1 (poor) to 5 (excellent)",
+        ge=1,
+        le=5,
+    )
+    feedback: str | None = Field(
+        None,
+        description="Optional free-text comment",
+        # Omit the field to leave no comment. An empty string is a malformed
+        # comment rather than an absent one, so it is still rejected.
         min_length=1,
         max_length=1000,
     )
@@ -202,7 +216,10 @@ class ResearchFeedbackRequest(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "example": {"feedback": "Great and highly detailed report!"}
+            "example": {
+                "rating": 5,
+                "feedback": "Great and highly detailed report!",
+            }
         },
     )
 
