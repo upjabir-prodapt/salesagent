@@ -19,5 +19,12 @@
     "type": "STRING",
     "description": "",
     "fields": []
+  },
+  {
+    "name": "created_at",
+    "mode": "REQUIRED",
+    "type": "TIMESTAMP",
+    "description": "Insert time. Added 2026-09-11: this table is DAY-partitioned on this column in Terraform (terraform/2-foundations), so it must always be populated - a NULL would land the row in the __NULL__ partition, escaping both partition pruning and any future expiry policy.",
+    "fields": []
   }
 ]

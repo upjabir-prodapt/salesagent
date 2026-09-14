@@ -129,15 +129,22 @@ class BigQueryRepository:
             )
             return True
 
+        # created_at is REQUIRED and is the DAY partition column for this table
+        # (provisioned in terraform/2-foundations). It must always be set: a NULL
+        # would put the row in BigQuery's __NULL__ partition, where it escapes
+        # partition pruning and any future expiry policy. Added 2026-09-11 -- the
+        # table previously had no timestamp column at all.
+        now = datetime.now(UTC)
         query = f"""
-        INSERT INTO `{self.user_feedback_table_ref}` (job_id, user_email, feedback)
-        VALUES (@job_id, @user_email, @feedback)
+        INSERT INTO `{self.user_feedback_table_ref}` (job_id, user_email, feedback, created_at)
+        VALUES (@job_id, @user_email, @feedback, @created_at)
         """
 
         query_parameters = [
             bigquery.ScalarQueryParameter("job_id", "STRING", job_id),
             bigquery.ScalarQueryParameter("user_email", "STRING", user_email),
             bigquery.ScalarQueryParameter("feedback", "STRING", feedback),
+            bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", now),
         ]
 
         self._execute_query(query, query_parameters, "inserting user feedback")
@@ -145,7 +152,12 @@ class BigQueryRepository:
         return True
 
     def create_request(
-        self, job_id: str, company_name: str, metadata: dict[str, Any] | None = None
+        self,
+        job_id: str,
+        company_name: str,
+        metadata: dict[str, Any] | None = None,
+        business_unit: str | None = None,
+        email: str | None = None,
     ) -> bool:
         """Create a new research request record"""
         if self.client is None:
@@ -156,6 +168,8 @@ class BigQueryRepository:
         INSERT INTO `{self.table_ref}` (
             job_execution_id,
             company_name,
+            business_unit,
+            email,
             status,
             created_at,
             updated_at,
@@ -168,6 +182,8 @@ class BigQueryRepository:
         VALUES (
             @job_execution_id,
             @company_name,
+            @business_unit,
+            @email,
             @status,
             @created_at,
             @updated_at,
@@ -182,6 +198,8 @@ class BigQueryRepository:
         query_parameters = [
             bigquery.ScalarQueryParameter("job_execution_id", "STRING", job_id),
             bigquery.ScalarQueryParameter("company_name", "STRING", company_name),
+            bigquery.ScalarQueryParameter("business_unit", "STRING", business_unit),
+            bigquery.ScalarQueryParameter("email", "STRING", email),
             bigquery.ScalarQueryParameter("status", "STRING", "QUEUED"),
             bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", now),
             bigquery.ScalarQueryParameter("updated_at", "TIMESTAMP", now),

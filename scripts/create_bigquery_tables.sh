@@ -46,6 +46,20 @@ readonly SCHEMA_AGENT_TELEMETRY="${SCHEMA_DIR}/agent_telemetry.json"
 readonly SCHEMA_CATALOG_JOBS="${SCHEMA_DIR}/catalog_build_jobs.json"
 readonly SCHEMA_USER_FEEDBACK="${SCHEMA_DIR}/users_feedback.json"
 
+# Clustering fields per table (comma-separated, ordered by filter selectivity —
+# most-selective/most-frequently-filtered column first, up to bq's 4-column limit).
+# Chosen to match the repository's actual WHERE clauses
+# (see src/shared/repositories/bigquery_repository.py):
+#   - job_execution_id/job_id is the primary point-lookup key on every table.
+#   - business_unit/email back the reporting & per-user filters added alongside
+#     those columns (research_requests, cost_attribution) or already present
+#     (catalog_build_jobs, users_feedback).
+readonly CLUSTERING_RESEARCH_REQUESTS="job_execution_id,business_unit,email"
+readonly CLUSTERING_COST_ATTRIBUTION="job_execution_id,business_unit,email"
+readonly CLUSTERING_AGENT_TELEMETRY="job_execution_id"
+readonly CLUSTERING_CATALOG_JOBS="job_id,user_email"
+readonly CLUSTERING_USER_FEEDBACK="job_id,user_email"
+
 DRY_RUN=0
 CUSTOM_PROJECT=""
 CUSTOM_DATASET=""
@@ -139,26 +153,41 @@ ensure_dataset() {
 }
 
 create_partitioned_table() {
-  local ref="$1" schema_file="$2" partition_field="${3:-created_at}"
-  log "Creating table ${ref} (partitioned on ${partition_field}, schema=${schema_file})"
-  run bq mk --table \
-    --time_partitioning_type=DAY \
-    --time_partitioning_field="$partition_field" \
-    "$ref" \
-    "$schema_file"
+  local ref="$1" schema_file="$2" partition_field="${3:-created_at}" clustering_fields="${4:-}"
+  local -a mk_args=(
+    --table
+    --time_partitioning_type=DAY
+    --time_partitioning_field="$partition_field"
+  )
+  if [[ -n "$clustering_fields" ]]; then
+    mk_args+=(--clustering_fields="$clustering_fields")
+    log "Creating table ${ref} (partitioned on ${partition_field}, clustered on ${clustering_fields}, schema=${schema_file})"
+  else
+    log "Creating table ${ref} (partitioned on ${partition_field}, schema=${schema_file})"
+  fi
+  run bq mk "${mk_args[@]}" "$ref" "$schema_file"
 }
 
 # Compare live vs desired schema; add missing columns or recreate on drift/extra columns.
+# Note: only column drift is checked (added/changed fields), not partitioning or
+# clustering — `bq update` cannot change an existing table's partitioning/clustering
+# field(s), so changing CLUSTERING_* above only takes effect on a fresh table create
+# or via an explicit `bq rm` + rerun.
 sync_partitioned_table() {
   local project="$1" dataset="$2" table="$3" schema_file="$4"
   local partition_field="${5:-created_at}"
+  local clustering_fields="${6:-}"
   local ref="${project}:${dataset}.${table}"
 
   if ! table_exists "$project" "$dataset" "$table"; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
-      log "Would create table ${ref} (partitioned on ${partition_field}, schema=${schema_file})"
+      if [[ -n "$clustering_fields" ]]; then
+        log "Would create table ${ref} (partitioned on ${partition_field}, clustered on ${clustering_fields}, schema=${schema_file})"
+      else
+        log "Would create table ${ref} (partitioned on ${partition_field}, schema=${schema_file})"
+      fi
     else
-      create_partitioned_table "$ref" "$schema_file" "$partition_field"
+      create_partitioned_table "$ref" "$schema_file" "$partition_field" "$clustering_fields"
     fi
     return 0
   fi
@@ -238,7 +267,7 @@ PY
     else
       log "Schema drift on ${ref} — deleting table and recreating (all rows will be lost)"
       run bq rm -f -t "$ref"
-      create_partitioned_table "$ref" "$schema_file" "$partition_field"
+      create_partitioned_table "$ref" "$schema_file" "$partition_field" "$clustering_fields"
     fi
     rm -f "$tmp_missing" "$tmp_drift"
     return 0
@@ -401,11 +430,14 @@ provision_project() {
   run gcloud config set project "$project" >/dev/null
 
   ensure_dataset "$project" "$dataset"
-  ensure_partitioned_table "$project" "$dataset" "$TABLE_RESEARCH_REQUESTS" "$SCHEMA_RESEARCH_REQUESTS"
-  ensure_partitioned_table "$project" "$dataset" "$TABLE_COST_ATTRIBUTION" "$SCHEMA_COST_ATTRIBUTION"
-  ensure_partitioned_table "$project" "$dataset" "$TABLE_AGENT_TELEMETRY" "$SCHEMA_AGENT_TELEMETRY"
-  ensure_partitioned_table "$project" "$dataset" "$TABLE_CATALOG_JOBS" "$SCHEMA_CATALOG_JOBS"
-  ensure_standard_table "$project" "$dataset" "$TABLE_USER_FEEDBACK" "$SCHEMA_USER_FEEDBACK"
+  ensure_partitioned_table "$project" "$dataset" "$TABLE_RESEARCH_REQUESTS" "$SCHEMA_RESEARCH_REQUESTS" "created_at" "$CLUSTERING_RESEARCH_REQUESTS"
+  ensure_partitioned_table "$project" "$dataset" "$TABLE_COST_ATTRIBUTION" "$SCHEMA_COST_ATTRIBUTION" "created_at" "$CLUSTERING_COST_ATTRIBUTION"
+  ensure_partitioned_table "$project" "$dataset" "$TABLE_AGENT_TELEMETRY" "$SCHEMA_AGENT_TELEMETRY" "created_at" "$CLUSTERING_AGENT_TELEMETRY"
+  ensure_partitioned_table "$project" "$dataset" "$TABLE_CATALOG_JOBS" "$SCHEMA_CATALOG_JOBS" "created_at" "$CLUSTERING_CATALOG_JOBS"
+  # users_feedback's schema (users_feedback.json) documents created_at as its
+  # required DAY-partition column (provisioned in terraform/2-foundations) — use
+  # the same partitioned+clustered path as the other tables instead of a plain one.
+  ensure_partitioned_table "$project" "$dataset" "$TABLE_USER_FEEDBACK" "$SCHEMA_USER_FEEDBACK" "created_at" "$CLUSTERING_USER_FEEDBACK"
 
   log "Done: ${project}:${dataset}"
   echo "  - ${TABLE_RESEARCH_REQUESTS}"

@@ -58,8 +58,13 @@ class ResearchJobService:
     ) -> bool:
         """Create a new research job record in BigQuery."""
         try:
+            metadata = metadata or {}
             return self.bigquery_repo.create_request(
-                job_id=job_id, company_name=company_name, metadata=metadata
+                job_id=job_id,
+                company_name=company_name,
+                metadata=metadata,
+                business_unit=metadata.get("business_unit"),
+                email=metadata.get("user_id"),
             )
         except Exception as e:
             logger.error(f"Failed to create research request: {e}")
