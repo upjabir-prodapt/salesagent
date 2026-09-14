@@ -123,10 +123,11 @@ class BigQueryRepository:
         rating: int | None = None,
         feedback: str | None = None,
     ) -> bool:
-        """Insert a rating and optional comment into the user_feedback table.
+        """Insert a rating and optional comment into the users_feedback table.
 
-        `rating` requires an INT64 column of the same name on the table; see
-        the note above the INSERT.
+        The 1-5 range is enforced by ResearchFeedbackRequest, not here: the
+        column is a plain INT64 so historical rows and any future writer are
+        not rejected at the storage layer.
         """
         if self.client is None:
             logger.info(
@@ -141,12 +142,12 @@ class BigQueryRepository:
         # partition pruning and any future expiry policy. Added 2026-09-11 -- the
         # table previously had no timestamp column at all.
         now = datetime.now(UTC)
-        # `rating` is an INT64 NULLABLE column added alongside the 1-5 rating on
-        # ResearchFeedbackRequest. It must exist on the table before this runs:
-        #   ALTER TABLE `<project>.<dataset>.<user_feedback>`
-        #     ADD COLUMN IF NOT EXISTS rating INT64;
-        # NULLABLE rather than REQUIRED so rows written before the rating
-        # existed stay valid.
+        # `rating` is an INT64 NULLABLE column declared in
+        # scripts/bigquery_schemas/users_feedback.json. It reaches an existing
+        # table through scripts/create_bigquery_tables.sh, which detects the
+        # missing column and runs `bq update` with the full schema -- so that
+        # script must be re-run before this ships. NULLABLE is not a preference:
+        # BigQuery cannot add a REQUIRED column to a populated table.
         query = f"""
         INSERT INTO `{self.user_feedback_table_ref}`
             (job_id, user_email, rating, feedback, created_at)
