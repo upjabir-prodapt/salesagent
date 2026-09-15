@@ -25,6 +25,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types as genai_types
 
+from src.shared.llm_gateway import strip_gateway_model_prefix
 from src.shared.logging_config import logger
 from src.worker.runtime.pricing import extract_usage_counts
 
@@ -344,7 +345,15 @@ class AdkAgentStep(Agent[TIn, TOut]):
                 input_tokens += delta_in
                 output_tokens += delta_out
 
-        model_name = getattr(agent.model, "model", None) or str(agent.model)
+        # Strip the gateway prefix before ANY usage reporting. Under the
+        # Apigee gateway agent.model.model is "apigee/vertex_ai/<model>", and
+        # the pricing registry's normalize_model_name only strips a "models/"
+        # prefix -- so the lookup would miss and the recorded cost would
+        # silently become zero, with no exception anywhere. This one line is
+        # what keeps the gateway prefix confined to the ADK boundary.
+        model_name = strip_gateway_model_prefix(
+            getattr(agent.model, "model", None) or str(agent.model)
+        )
         observer = getattr(self, "_current_observer", None)
         if observer is not None and (input_tokens or output_tokens):
             observer.on_usage(self.name, model_name, input_tokens, output_tokens)

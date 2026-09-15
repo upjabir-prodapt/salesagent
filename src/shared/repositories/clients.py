@@ -11,7 +11,7 @@ from google.cloud import bigquery, firestore, storage
 from google.genai import types as genai_types
 
 from ..config import settings
-from ..llm_gateway import gateway_http_options_kwargs, gateway_vertex_identity_kwargs
+from ..llm_gateway import gateway_client_kwargs, gateway_vertex_identity_kwargs
 
 _bq_client: bigquery.Client | None = None
 _firestore_client: firestore.Client | None = None
@@ -64,6 +64,15 @@ def get_genai_client() -> genai.Client:
     LLM gateway is enabled, in which case gateway_vertex_identity_kwargs()
     omits both instead (see its docstring: the gateway's own target supplies
     the real, central inference project rather than this workload's own).
+
+    Deliberately still a singleton under the gateway. Per-job clients would
+    multiply connection pools and defeat the socket-timeout rationale below,
+    and would still not attribute the guardrail and evaluation call sites,
+    which have no job in scope. Attribution rides on each REQUEST instead --
+    callers merge gateway_request_http_options() into their
+    GenerateContentConfig. Only the credential and the connection shape are
+    baked in here; identity must never be, or the first job's user would be
+    pinned onto every later call for this container's lifetime.
     """
     global _genai_client
     with _lock:
@@ -83,7 +92,7 @@ def get_genai_client() -> genai.Client:
                 # own retry semantics. HttpOptions.timeout is in ms.
                 http_options=genai_types.HttpOptions(
                     timeout=int(settings.GENAI_HTTP_TIMEOUT_SECONDS * 1000),
-                    **gateway_http_options_kwargs(),
+                    **gateway_client_kwargs(),
                 ),
             )
     return _genai_client

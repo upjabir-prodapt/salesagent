@@ -9,6 +9,7 @@ from src.shared.config import settings
 @pytest.fixture
 def mock_user():
     return {
+        "oid": "test-oid",
         "email": "test@example.com",
         "business_unit": "Sales",
         "organization": "Acme",

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.shared.config import settings
+from src.shared.llm_gateway import gateway_request_http_options
 from src.shared.logging_config import logger
 from src.shared.repositories.clients import get_genai_client
 
@@ -163,6 +164,10 @@ class EvaluationService:
             config=genai_types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.0,
+                # Per-request so this call is attributed to the user whose job
+                # triggered it. The genai client is a process-wide singleton,
+                # so its headers cannot carry identity.
+                http_options=gateway_request_http_options(),
             ),
         )
         record_genai_response_usage(session_state, settings.evaluator_model, response)

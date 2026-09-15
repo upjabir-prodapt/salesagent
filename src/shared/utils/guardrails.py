@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 from src.shared.config import settings
 from src.shared.exceptions import InputValidationException
+from src.shared.llm_gateway import gateway_request_http_options
 from src.shared.logging_config import logger
 from src.shared.repositories.clients import get_genai_client
 
@@ -577,6 +578,8 @@ class OutputGuardrail:
                 config=genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.0,
+                    # Per-request identity; the genai client is a singleton.
+                    http_options=gateway_request_http_options(),
                 ),
             )
             if session_state is not None:
@@ -723,6 +726,8 @@ class OutputGuardrail:
                 config=genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.0,
+                    # Per-request identity; the genai client is a singleton.
+                    http_options=gateway_request_http_options(),
                 ),
             )
             if session_state is not None:

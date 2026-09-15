@@ -8,6 +8,7 @@ import time
 import pypdf
 
 from src.shared.config import settings
+from src.shared.llm_gateway import gateway_enabled
 from src.shared.logging_config import logger
 
 # Hardcoded Colt product catalog text from the provided PDF
@@ -163,6 +164,15 @@ def get_or_create_colt_context_cache(model_name: str | None = None) -> str | Non
     to inlining the catalog text directly in the prompt in that case, so
     a cache-service hiccup never blocks report generation.
 
+    UNUSABLE UNDER THE APIGEE GATEWAY (2026-09-15): `client.caches.create`
+    is `POST .../cachedContents`, a different API surface from
+    `generateContent` and NOT on the gateway's model allow-list, so Apigee
+    rejects it during operation matching -- before any policy in the proxy
+    runs. This function returns None on failure by design, so a call would
+    look like a routine cache miss rather than a misconfiguration; the guard
+    below makes it explicit instead. Enabling this means adding a
+    `cachedContents` operation to the aicoe-llm product first.
+
     NOT CURRENTLY CALLED (2026-08-30): live end-to-end testing showed
     AlignmentAnalyst cannot actually use the resulting cache name. Gemini
     rejects a request that sets `cached_content` together with
@@ -177,6 +187,14 @@ def get_or_create_colt_context_cache(model_name: str | None = None) -> str | Non
     kept, working and tested, in case a future ADK version exposes a way
     to build a request without the identity injection.
     """
+    if gateway_enabled():
+        logger.warning(
+            "Colt context cache skipped: caches.create is not on the Apigee "
+            "gateway's model allow-list, so the call would be rejected. "
+            "Callers fall back to inlining the catalog text."
+        )
+        return None
+
     global _colt_cache_name, _colt_cache_expires_at
 
     with _colt_cache_lock:

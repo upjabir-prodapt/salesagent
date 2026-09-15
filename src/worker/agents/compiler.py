@@ -30,7 +30,7 @@ from src.worker.agents.models import CompilerInput, Report, SearchFindings
 from src.worker.agents.safety import get_safety_config_for_agent
 from src.worker.agents.tools.evidence import evidence_key
 from src.worker.agents.tools.verification import Bm25Verifier
-from src.worker.model import RegionalGemini, retry_config
+from src.worker.model import build_llm, retry_config
 from src.worker.services.formatting import clean_markdown_report
 
 # Bm25Verifier.verify()/EvidenceStore.documents() were built against the
@@ -307,7 +307,7 @@ class ReportCompiler(AdkAgentStep[CompilerInput, Report]):
     def build_agent(self) -> LlmAgent:
         return LlmAgent(
             name=self.name,
-            model=RegionalGemini(model=self._model, retry_options=retry_config),
+            model=build_llm(self._model, retry_config),
             instruction="You are the Report Compiler for Colt Technology Services.",
             tools=[],
             output_key="final_report",

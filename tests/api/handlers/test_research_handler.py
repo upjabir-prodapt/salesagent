@@ -38,6 +38,7 @@ async def test_initiate_research_background_tasks_branch() -> None:
     handler = ResearchHandler(service)
     request = ResearchInitiateRequest(company_name="Acme Corp", account_id="ACC-123")
     current_user = {
+        "oid": "test-oid",
         "email": "user@colt.net",
         "business_unit": "Sales",
         "organization": "Colt",
@@ -65,6 +66,7 @@ async def test_initiate_research_cloud_tasks_branch() -> None:
     handler = ResearchHandler(service, cloud_tasks_service=cloud_tasks)
     request = ResearchInitiateRequest(company_name="Beta Corp", account_id="ACC-456")
     current_user = {
+        "oid": "test-oid",
         "email": "user@colt.net",
         "business_unit": "Sales",
         "organization": "Colt",
@@ -93,6 +95,7 @@ async def test_initiate_research_cloud_tasks_failure_marks_job_failed() -> None:
     handler = ResearchHandler(service, cloud_tasks_service=cloud_tasks)
     request = ResearchInitiateRequest(company_name="Gamma Corp", account_id="ACC-789")
     current_user = {
+        "oid": "test-oid",
         "email": "user@colt.net",
         "business_unit": "Sales",
         "organization": "Colt",

@@ -18,7 +18,7 @@ from src.shared.config import settings
 from src.worker.agents.base import AdkAgentStep, InvalidOutputError, RetryPolicy
 from src.worker.agents.models import Query, QueryPlan, ResearchRequest
 from src.worker.agents.safety import get_safety_config_for_agent
-from src.worker.model import RegionalGemini, retry_config
+from src.worker.model import build_llm, retry_config
 
 # One-sentence description per research domain, used both to enrich the
 # generation prompt (so the model knows what each domain actually means,
@@ -345,7 +345,7 @@ class QueryPlanner(AdkAgentStep[ResearchRequest, QueryPlan]):
     def build_agent(self) -> LlmAgent:
         return LlmAgent(
             name=self.name,
-            model=RegionalGemini(model=self._model, retry_options=retry_config),
+            model=build_llm(self._model, retry_config),
             # The concrete task (company, domains, year) is provided in the
             # per-request user message via to_input() -- this instruction
             # only sets the agent's fixed role.

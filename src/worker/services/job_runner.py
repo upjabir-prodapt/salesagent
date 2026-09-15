@@ -21,6 +21,7 @@ import time
 from opentelemetry.trace import Span
 
 from src.shared.config import settings
+from src.shared.llm_identity import use_llm_identity
 from src.shared.logging_config import logger
 from src.shared.repositories.bigquery_repository import BigQueryRepository
 from src.worker.agents.models import PipelineResult, ResearchRequest
@@ -63,7 +64,36 @@ class ResearchJobRunner:
         *,
         span: Span | None = None,
     ) -> None:
-        """Execute the full pipeline for one job, from PROCESSING to terminal state."""
+        """Execute the full pipeline for one job, from PROCESSING to terminal state.
+
+        Wrapped in `use_llm_identity` so every LLM call the pipeline makes is
+        attributed to the submitting user. This is the single choke point: both
+        entry paths (the Cloud Tasks handler and the API background path)
+        converge here, and the alternative -- threading identity through
+        `build_agent()`, which takes no arguments -- would change the abstract
+        method, all four steps and `execute`, and STILL miss the guardrail and
+        evaluation call sites, which have no agent or job in scope.
+
+        `user_oid` is the Entra object id, added to `metadata` at enqueue time.
+        Tasks enqueued before that existed fall back to `user_id` (the email),
+        and then to nothing at all -- in which case the headers are omitted and
+        Apigee applies its own `system`/`unattributed` defaults.
+        """
+        meta = metadata or {}
+        with use_llm_identity(
+            meta.get("user_oid") or meta.get("user_id"),
+            meta.get("business_unit"),
+        ):
+            await self._run_with_identity(job_id, company_name, metadata, span=span)
+
+    async def _run_with_identity(
+        self,
+        job_id: str,
+        company_name: str,
+        metadata: dict | None = None,
+        *,
+        span: Span | None = None,
+    ) -> None:
         logger.info(
             f"[Pipeline] Starting research job job_id={job_id} company={company_name!r}"
         )

@@ -35,6 +35,7 @@ from typing import Any
 
 from google.genai import types as genai_types
 
+from src.shared.llm_gateway import gateway_enabled, gateway_request_http_options
 from src.shared.logging_config import logger
 from src.shared.utils.url_utils import is_authoritative
 from src.worker.agents.base import (
@@ -218,6 +219,31 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
                 agent_name=self.name,
             )
 
+        # Grounding guard. Everything above measures TEXT success -- a response
+        # arrived and parsed. None of it notices that the response carried no
+        # citations, because `_search_once` reads groundingMetadata defensively
+        # through getattr and simply yields no Evidence when it is absent.
+        #
+        # That is exactly what a proxy which drops `Tool(google_search=...)`
+        # produces: HTTP 200, plausible prose, zero sources -- a passing but
+        # uncited report, which is worse than a failed one because nothing
+        # anywhere signals it. ADK's own OpenAI-compat transport drops that
+        # tool silently (its _map_tools handles only function_declarations), so
+        # this is one wrong model-string component away, not hypothetical.
+        #
+        # Only enforced when the gateway is on: direct-to-Vertex local runs
+        # legitimately have no proxy in the path to blame, and failing there
+        # would just make local development harder.
+        if gateway_enabled() and findings.executed and not findings.all_evidence():
+            raise InvalidOutputError(
+                f"{self.name}: {findings.executed} queries succeeded but produced "
+                "zero grounding citations. Server-side Google Search grounding is "
+                "not reaching the model -- check that the Apigee gateway is not "
+                "stripping the google_search tool, and that the model is routed "
+                "over the native Vertex path rather than an OpenAI-compatible one.",
+                agent_name=self.name,
+            )
+
     async def _partition_cache(
         self, plan: QueryPlan
     ) -> tuple[dict[str, QueryResult], list[Query]]:
@@ -320,6 +346,10 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
             config=genai_types.GenerateContentConfig(
                 tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
                 temperature=0.0,
+                # Per-request identity; the genai client is a shared singleton.
+                # `tools` must stay exactly as-is -- server-side grounding is
+                # what produces the citations this agent extracts below.
+                http_options=gateway_request_http_options(),
             ),
         )
         text = response.text or ""

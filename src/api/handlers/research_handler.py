@@ -64,6 +64,12 @@ class ResearchHandler:
 
                 metadata = {
                     "account_id": request.account_id,
+                    # The Entra object id, not the email. The gateway's
+                    # per-user quota key is x-colt-user-oid; sending an email
+                    # there would diverge from what the int proxy records for
+                    # the same person. Additive to a JSON blob, so tasks
+                    # enqueued by an older API still deserialize.
+                    "user_oid": current_user.get("oid", ""),
                     "user_id": current_user["email"],
                     "username": current_user["email"].split("@")[0],
                     "business_unit": current_user["business_unit"],

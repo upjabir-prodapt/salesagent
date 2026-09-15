@@ -319,6 +319,16 @@ class Settings(BaseSettings):
             "true" if self.GOOGLE_GENAI_USE_VERTEXAI else "false"
         )
         os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = self.GOOGLE_CLOUD_QUOTA_PROJECT
+        # ApigeeLlm.__init__ reads these two from os.environ ONLY -- they cannot
+        # be passed in -- and raises if either is unset, so the worker could not
+        # construct a model at all without them. They happen to be present today
+        # because load_dotenv writes os.environ, which is an invisible coupling
+        # between "the secret payload contains these keys" and "the service
+        # starts". Export them explicitly instead. ApigeeRegionalLlm discards
+        # both values (it passes project=None, location=None so google-genai
+        # emits a bare path); they exist purely to satisfy the constructor.
+        os.environ["GOOGLE_CLOUD_PROJECT"] = self.GOOGLE_CLOUD_PROJECT
+        os.environ["GOOGLE_CLOUD_LOCATION"] = self.GOOGLE_CLOUD_LOCATION
         os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = self.OTEL_EXPORTER_OTLP_ENDPOINT
         os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = self.OTEL_EXPORTER_OTLP_PROTOCOL
         os.environ["OTEL_RESOURCE_ATTRIBUTES"] = self.OTEL_RESOURCE_ATTRIBUTES
