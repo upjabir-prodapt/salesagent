@@ -8,6 +8,7 @@ import redis
 import redis.asyncio as aioredis
 from google import genai
 from google.cloud import bigquery, firestore, storage
+from google.genai import types as genai_types
 
 from ..config import settings
 
@@ -67,6 +68,17 @@ def get_genai_client() -> genai.Client:
                 vertexai=settings.GOOGLE_GENAI_USE_VERTEXAI,
                 project=settings.GOOGLE_CLOUD_PROJECT,
                 location=settings.vertex_ai_location,
+                # Belt-and-braces under the app-level asyncio.wait_for
+                # deadlines: without this the SDK inherits no socket
+                # timeout at all, so a wedged connection can outlive any
+                # caller that forgets to bound its own await. Set higher
+                # than the per-call app timeouts (e.g.
+                # SEARCH_TIMEOUT_SECONDS) so the app-level deadline is
+                # normally the one that fires and the caller keeps its
+                # own retry semantics. HttpOptions.timeout is in ms.
+                http_options=genai_types.HttpOptions(
+                    timeout=int(settings.GENAI_HTTP_TIMEOUT_SECONDS * 1000)
+                ),
             )
     return _genai_client
 

@@ -139,11 +139,11 @@ ensure_dataset() {
 }
 
 create_partitioned_table() {
-  local ref="$1" schema_file="$2"
-  log "Creating table ${ref} (partitioned on created_at, schema=${schema_file})"
+  local ref="$1" schema_file="$2" partition_field="${3:-created_at}"
+  log "Creating table ${ref} (partitioned on ${partition_field}, schema=${schema_file})"
   run bq mk --table \
     --time_partitioning_type=DAY \
-    --time_partitioning_field=created_at \
+    --time_partitioning_field="$partition_field" \
     "$ref" \
     "$schema_file"
 }
@@ -254,7 +254,13 @@ PY
     log "Would update schema for ${ref} (add ${missing_count} column(s))"
   else
     log "Updating schema for ${ref} (adding ${missing_count} column(s))"
-    run bq update "$ref" "$tmp_missing"
+    # `bq update` replaces the table schema, so it must receive the full desired
+    # schema. Passing only the missing columns is rejected with
+    # "Provided Schema does not match Table ... Field <x> is missing in new schema".
+    # This is safe here: the drift check above guarantees the live table has no
+    # extra columns and no type/mode mismatches, so the desired schema is a
+    # pure superset and the update is additive.
+    run bq update "$ref" "$schema_file"
   fi
   rm -f "$tmp_missing" "$tmp_drift"
 }
@@ -371,7 +377,9 @@ PY
     log "Would update schema for ${ref} (add ${missing_count} column(s))"
   else
     log "Updating schema for ${ref} (adding ${missing_count} column(s))"
-    run bq update "$ref" "$tmp_missing"
+    # See note in sync_partitioned_table: `bq update` needs the full desired
+    # schema, not just the missing columns.
+    run bq update "$ref" "$schema_file"
   fi
   rm -f "$tmp_missing" "$tmp_drift"
 }
