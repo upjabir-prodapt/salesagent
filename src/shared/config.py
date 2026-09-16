@@ -89,6 +89,19 @@ class Settings(BaseSettings):
     CLOUD_TASKS_WORKER_URL: str = ""
     CLOUD_TASKS_OIDC_SERVICE_ACCOUNT: str = ""
     CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS: int = 1800
+    # MUST match (or be below) the queue's own --max-attempts, which
+    # scripts/create_cloud_tasks_queue.sh sets to 5. The worker needs the
+    # number so it knows when it is on its final delivery and must settle
+    # the job as FAILED rather than leaving it retryable; if this were
+    # higher than the queue's, the last delivery would leave the job
+    # non-terminal forever. Lower is safe: the queue's remaining
+    # deliveries then hit the already-terminal no-op guard.
+    CLOUD_TASKS_MAX_ATTEMPTS: int = 5
+    # Re-deliver a job whose report never passed output validation. Off by
+    # default: the ReportCompiler has already re-drafted with targeted
+    # feedback on each violation, so a cold full-pipeline re-run is
+    # expensive and unlikely to do better. See services/task_attempt.py.
+    CLOUD_TASKS_RETRY_ON_INVALID_OUTPUT: bool = False
     WORKER_OIDC_AUDIENCE: str = ""
     WORKER_SKIP_OIDC_VERIFICATION: bool = False
 
@@ -160,6 +173,50 @@ class Settings(BaseSettings):
     COMPILER_TIMEOUT_SECONDS: float = 300.0
     SEARCH_STEP_TIMEOUT_SECONDS: float = 300.0
 
+    # --- RESOURCE_EXHAUSTED (429) retry budget, applied to every agent ---
+    # A Vertex AI quota is enforced per minute, so a window exhausted at
+    # t=0 can need up to 60s to reset. The retry stack that preceded this
+    # waited ~47-55s in total across all its layers and then gave up --
+    # i.e. it re-hammered the wall nine times and quit at roughly the
+    # moment the window would have rolled over. These are the knobs that
+    # make a 429 survivable: RATE_LIMIT draws on its own, much larger
+    # budget than an INVALID_OUTPUT or a malformed response does.
+    # 6 attempts at 15s/30s/60s/120s/120s = ~345s of backoff, which
+    # outlasts five consecutive quota windows.
+    AGENT_RATE_LIMIT_RETRY_ATTEMPTS: int = 6
+    AGENT_RATE_LIMIT_INITIAL_DELAY: float = 15.0
+    AGENT_RATE_LIMIT_MAX_DELAY: float = 120.0
+    # Backoff for the other retryable kinds (TRANSIENT/TIMEOUT/INVALID_OUTPUT).
+    AGENT_RETRY_INITIAL_DELAY: float = 2.0
+    AGENT_RETRY_MAX_DELAY: float = 60.0
+    # Prefer a server-sent Retry-After / google.rpc.RetryInfo hint over our
+    # own blind backoff. Vertex tells us when to come back; the previous
+    # stack discarded that even though it was sitting on the exception.
+    AGENT_RETRY_RESPECT_RETRY_AFTER: bool = True
+
+    # Per-step wall-clock ceilings. Each is a HARD cap: a step will not
+    # start another attempt past its budget, and a running attempt's
+    # timeout is clamped to what remains (see Agent.run). The sum must
+    # stay under CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS with room left for
+    # finalization (PDF render, GCS upload, evaluation):
+    #   180 + 600 + 240 + 540 = 1560s, leaving 240s of the 1800s budget.
+    # Without these the configured worst case was 2413s -- 34% over the
+    # dispatch deadline, with the compiler last in line and liable to be
+    # left less than one of its own attempts.
+    PLANNER_STEP_BUDGET_SECONDS: float = 180.0
+    SEARCH_STEP_BUDGET_SECONDS: float = 600.0
+    ALIGNMENT_STEP_BUDGET_SECONDS: float = 240.0
+    COMPILER_STEP_BUDGET_SECONDS: float = 540.0
+
+    # --- Retry for the LLM call sites that are not pipeline agents ------
+    # The two OutputGuardrail hallucination checks and the evaluation LLM
+    # judge had no retry of any kind: one 429 silently downgraded the
+    # report's quality gate or its score, with only a logger.warning.
+    LLM_CALL_RETRY_ATTEMPTS: int = 4
+    LLM_CALL_RETRY_INITIAL_DELAY: float = 5.0
+    LLM_CALL_RETRY_MAX_DELAY: float = 60.0
+    LLM_CALL_RETRY_BUDGET_SECONDS: float = 150.0
+
     # Mounted Assets (pricing catalog, Colt product catalog)
     ASSETS_ROOT: str = ""
     PRICING_CATALOG_FILENAME: str = "pricing_catalog.json"
@@ -223,11 +280,19 @@ class Settings(BaseSettings):
     AGENT_COMPACT_SUMMARIZER_MODEL: str = ""
     RESEARCH_STATUS_MIN_UPDATE_INTERVAL_SECONDS: float = 5.0
     GEMINI_RETRY_ATTEMPTS: int = 3
-    GEMINI_RETRY_INITIAL_DELAY: int = 5
+    GEMINI_RETRY_INITIAL_DELAY: int = 1
     GEMINI_RETRY_MAX_DELAY: int = 120
     GEMINI_RETRY_EXP_BASE: int = 2
     GEMINI_RETRY_JITTER: int = 1
-    GEMINI_RETRY_STATUS_CODES: list[int] = [408, 429, 500, 502, 503, 504]
+    # 429 is deliberately NOT in this list. It is handled one layer up by
+    # the agent RetryPolicy (see AGENT_RATE_LIMIT_* above). Leaving it here
+    # too meant two nested backoff loops multiplying into 9 HTTP requests
+    # per step, where the inner loop -- invisible to the Observer, with no
+    # Retry-After handling and no wall-clock budget -- contributed 93-96%
+    # of the total wait and could burn an outer attempt's whole timeout,
+    # surfacing a quota failure as a bare TIMEOUT. The inner layer keeps
+    # only the fast, cheap HTTP errors worth an immediate in-place retry.
+    GEMINI_RETRY_STATUS_CODES: list[int] = [408, 500, 502, 503, 504]
     # Output cap for agents that emit one large structured payload
     AGENT_MAX_OUTPUT_TOKENS: int = 65_535
     # Minimum per-domain research outputs (of 12) required before synthesis.

@@ -12,6 +12,7 @@ from typing import Any
 from src.shared.config import settings
 from src.shared.logging_config import logger
 from src.shared.repositories.clients import get_genai_client
+from src.shared.retrying import retry_async
 
 from ..agents.tools.evidence import (
     aggregate_job_evidence,
@@ -157,13 +158,28 @@ class EvaluationService:
             catalog_context,
             job_evidence=job_evidence or [],
         )
-        response = client.models.generate_content(
-            model=settings.evaluator_model,
-            contents=prompt,
-            config=genai_types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.0,
-            ),
+
+        def _once():
+            return client.models.generate_content(
+                model=settings.evaluator_model,
+                contents=prompt,
+                config=genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0,
+                ),
+            )
+
+        # Previously a bare call with no retry: a single RESOURCE_EXHAUSTED
+        # here lost the whole Section A judge score for the job. Run on a
+        # worker thread because the genai client is blocking and a
+        # rate-limit backoff must not stall the event loop.
+        response = await retry_async(
+            lambda: asyncio.to_thread(_once),
+            label="Evaluation LLM judge",
+            max_attempts=settings.LLM_CALL_RETRY_ATTEMPTS,
+            initial_delay=settings.LLM_CALL_RETRY_INITIAL_DELAY,
+            max_delay=settings.LLM_CALL_RETRY_MAX_DELAY,
+            max_elapsed=settings.LLM_CALL_RETRY_BUDGET_SECONDS,
         )
         record_genai_response_usage(session_state, settings.evaluator_model, response)
         raw_text = response.text.strip() if response.text else ""

@@ -1,47 +1,53 @@
-"""Async and sync retry utility functions."""
+"""Async and sync retry utility functions.
+
+Thin, signature-compatible adapters over the shared tenacity engine in
+``src/shared/retrying.py``. These used to be two hand-rolled
+``for attempt in range(...)`` loops with no jitter; the call sites
+(``services/finalization_ops.py``) are unchanged.
+
+Keeping the wrappers rather than pointing callers straight at
+``retry_async``/``retry_sync`` preserves the ``backoff_factor`` keyword
+these five call sites already use, and gives the finalization side-ops a
+name to log under.
+"""
 
 from __future__ import annotations
 
-import asyncio
-import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
-from src.shared.logging_config import logger
+from src.shared.retrying import retry_async, retry_sync
 
 T = TypeVar("T")
 
+# Finalization side-ops (PDF render, GCS upload, BigQuery batch insert)
+# are not on the critical path of producing the report, so they get a
+# tighter ceiling than an agent step: enough to ride out a transient
+# error or a short 429, not enough to hold the Cloud Tasks request open.
+_DEFAULT_MAX_DELAY = 30.0
+_DEFAULT_JITTER = 0.3
+
 
 async def with_retry(
-    coro_fn: Callable[[], Any],
+    coro_fn: Callable[[], Awaitable[Any]],
     *,
     max_attempts: int = 3,
     initial_delay: float = 0.5,
     backoff_factor: float = 2.0,
     retry_exceptions: tuple[type[Exception], ...] = (Exception,),
+    label: str = "async operation",
 ) -> Any:
     """Execute async callable with exponential backoff retry."""
-    delay = initial_delay
-    last_exc: Exception | None = None
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return await coro_fn()
-        except retry_exceptions as exc:
-            last_exc = exc
-            if attempt == max_attempts:
-                logger.warning(
-                    f"Operation failed on final attempt {attempt}/{max_attempts}: {exc}"
-                )
-                raise
-            logger.debug(
-                f"Operation failed attempt {attempt}/{max_attempts}, retrying in {delay:.2f}s: {exc}"
-            )
-            await asyncio.sleep(delay)
-            delay *= backoff_factor
-
-    if last_exc:
-        raise last_exc
+    return await retry_async(
+        coro_fn,
+        label=label,
+        max_attempts=max_attempts,
+        initial_delay=initial_delay,
+        max_delay=_DEFAULT_MAX_DELAY,
+        exp_base=backoff_factor,
+        jitter=_DEFAULT_JITTER,
+        retry_exceptions=retry_exceptions,
+    )
 
 
 def with_retry_sync(
@@ -51,29 +57,19 @@ def with_retry_sync(
     initial_delay: float = 0.5,
     backoff_factor: float = 2.0,
     retry_exceptions: tuple[type[Exception], ...] = (Exception,),
+    label: str = "sync operation",
 ) -> T:
     """Execute sync callable with exponential backoff retry."""
-    delay = initial_delay
-    last_exc: Exception | None = None
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return fn()
-        except retry_exceptions as exc:
-            last_exc = exc
-            if attempt == max_attempts:
-                logger.warning(
-                    f"Sync operation failed on final attempt {attempt}/{max_attempts}: {exc}"
-                )
-                raise
-            logger.debug(
-                f"Sync operation failed attempt {attempt}/{max_attempts}, retrying in {delay:.2f}s: {exc}"
-            )
-            time.sleep(delay)
-            delay *= backoff_factor
-
-    if last_exc:
-        raise last_exc
+    return retry_sync(
+        fn,
+        label=label,
+        max_attempts=max_attempts,
+        initial_delay=initial_delay,
+        max_delay=_DEFAULT_MAX_DELAY,
+        exp_base=backoff_factor,
+        jitter=_DEFAULT_JITTER,
+        retry_exceptions=retry_exceptions,
+    )
 
 
 __all__ = ["with_retry", "with_retry_sync"]

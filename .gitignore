@@ -233,3 +233,5 @@ credentials/
 memory-bank
 
 # Local/manual end-to-end tests (not run in CI, requires real GCP credentials)
+
+service_account.json

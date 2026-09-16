@@ -129,15 +129,17 @@ class BigQueryRepository:
             )
             return True
 
+        now = datetime.now(UTC)
         query = f"""
-        INSERT INTO `{self.user_feedback_table_ref}` (job_id, user_email, feedback)
-        VALUES (@job_id, @user_email, @feedback)
+        INSERT INTO `{self.user_feedback_table_ref}` (job_id, user_email, feedback, completed_date)
+        VALUES (@job_id, @user_email, @feedback, @completed_date)
         """
 
         query_parameters = [
             bigquery.ScalarQueryParameter("job_id", "STRING", job_id),
             bigquery.ScalarQueryParameter("user_email", "STRING", user_email),
             bigquery.ScalarQueryParameter("feedback", "STRING", feedback),
+            bigquery.ScalarQueryParameter("completed_date", "TIMESTAMP", now),
         ]
 
         self._execute_query(query, query_parameters, "inserting user feedback")

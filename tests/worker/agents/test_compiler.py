@@ -498,3 +498,146 @@ def test_to_input_handles_no_grounding_evidence():
     prompt = compiler.to_input(compiler_input)
 
     assert "(no grounding citation URLs available)" in prompt
+
+
+class FlakyThenScriptedLlm(ScriptedLlm):
+    """Raises a RESOURCE_EXHAUSTED on chosen 1-based call numbers."""
+
+    rate_limit_on: list[int] = Field(default_factory=list)
+
+    async def generate_content_async(self, llm_request, stream: bool = False):
+        prompt_text = "".join(
+            part.text or ""
+            for content in (llm_request.contents or [])
+            for part in (content.parts or [])
+        )
+        self.seen_prompts.append(prompt_text)
+        if len(self.seen_prompts) in self.rate_limit_on:
+            raise Exception(  # noqa: TRY002 - deliberate test error
+                "429 RESOURCE_EXHAUSTED. Quota exceeded for aiplatform.googleapis.com"
+            )
+        index = min(len(self.seen_prompts) - 1, len(self.payloads or [""]) - 1)
+        text = (self.payloads or [self.payload])[index]
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[types.Part(text=text)]),
+            usage_metadata=types.GenerateContentResponseUsageMetadata(
+                prompt_token_count=30, candidates_token_count=200
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_revision_feedback_survives_a_rate_limit_retry():
+    """A 429 in the middle of the revision loop must not destroy the
+    feedback the next attempt needs.
+
+    Regression for a real bug: to_input() used to *pop* the revision
+    state, so attempt 2 consumed attempt 1's violations and draft, then
+    hit RESOURCE_EXHAUSTED before reaching the code in execute() that
+    rewrites the entry. Attempt 3 then found nothing and built a plain
+    prompt -- a blind full regeneration with no idea what had been
+    wrong -- silently contradicting the documented
+    compile -> validate -> revise design. It now peeks, and execute()
+    discards the entry only once a draft actually passes.
+    """
+    compiler = ReportCompiler(
+        retry=RetryPolicy(
+            max_attempts=2,
+            rate_limit_max_attempts=4,
+            initial_delay=0.001,
+            rate_limit_initial_delay=0.001,
+            max_delay=0.01,
+            rate_limit_max_delay=0.01,
+            jitter=0.0,
+        )
+    )
+    llm = FlakyThenScriptedLlm(
+        payloads=["draft v1 (bad)", "draft v2 (good)"],
+        rate_limit_on=[2],
+    )
+    original_build_agent = compiler.build_agent
+
+    def build_agent_with_fake_llm():
+        agent = original_build_agent()
+        agent.model = llm
+        return agent
+
+    compiler.build_agent = build_agent_with_fake_llm  # type: ignore[method-assign]
+    compiler._bm25_verifier.verify = lambda *a, **k: _passing_bm25_result()
+
+    results = [
+        type(
+            "R",
+            (),
+            {
+                "is_valid": False,
+                "violations": [
+                    type("V", (), {"rule": "format", "detail": "Section 1 missing"})()
+                ],
+            },
+        )(),
+        type("R", (), {"is_valid": True, "violations": []})(),
+    ]
+    calls = {"n": 0}
+
+    async def fake_validate(_markdown):
+        result = results[min(calls["n"], len(results) - 1)]
+        calls["n"] += 1
+        return result
+
+    compiler._guardrail.validate = fake_validate
+
+    request = _compiler_input()
+    report = await compiler.run(request, NullObserver())
+
+    assert report.validation_status == "PASSED"
+    # attempt 1 -> bad draft; attempt 2 -> 429; attempt 3 -> revision.
+    assert len(llm.seen_prompts) == 3
+    assert "REVISION REQUIRED" not in llm.seen_prompts[0]
+    # The rate-limited attempt still received the revision prompt...
+    assert "REVISION REQUIRED" in llm.seen_prompts[1]
+    assert "draft v1 (bad)" in llm.seen_prompts[1]
+    # ...and, crucially, so did the attempt after it.
+    assert "REVISION REQUIRED" in llm.seen_prompts[2]
+    assert "Section 1 missing" in llm.seen_prompts[2]
+    assert "draft v1 (bad)" in llm.seen_prompts[2]
+    # Passing released the entry, so nothing is pinned afterwards.
+    assert compiler._revisions == {}
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_does_not_consume_the_validation_attempt_budget():
+    """RATE_LIMIT draws on its own budget, so a 429 no longer costs one of
+    the compiler's revision attempts."""
+    compiler = ReportCompiler(
+        retry=RetryPolicy(
+            max_attempts=1,
+            rate_limit_max_attempts=3,
+            initial_delay=0.001,
+            rate_limit_initial_delay=0.001,
+            max_delay=0.01,
+            rate_limit_max_delay=0.01,
+            jitter=0.0,
+        )
+    )
+    llm = FlakyThenScriptedLlm(
+        payloads=["# Strategic Account Brief"], rate_limit_on=[1, 2]
+    )
+    original_build_agent = compiler.build_agent
+
+    def build_agent_with_fake_llm():
+        agent = original_build_agent()
+        agent.model = llm
+        return agent
+
+    compiler.build_agent = build_agent_with_fake_llm  # type: ignore[method-assign]
+    compiler._guardrail.validate = AsyncMock(
+        return_value=type("R", (), {"is_valid": True, "violations": []})()
+    )
+    compiler._bm25_verifier.verify = lambda *a, **k: _passing_bm25_result()
+
+    report = await compiler.run(_compiler_input(), NullObserver())
+
+    # max_attempts=1 would have failed outright under the old single budget.
+    assert report.validation_status == "PASSED"
+    assert len(llm.seen_prompts) == 3

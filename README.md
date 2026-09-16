@@ -256,7 +256,7 @@ The system streams execution data across four BigQuery tables:
 - **`research_requests`**: Job execution state, progress percentage (5% -> 25% -> 50% -> 75% -> 92% -> 97% -> 100%), current agent step, final markdown report, and error details.
 - **`cost_attribution`**: Reconciles exact model token usage and Google Search grounding call counts against the pricing catalog (`pricing_catalog.json`) to compute exact USD cost per job execution.
 - **`agent_telemetry`**: Per-agent telemetry records capturing execution latency, model name, input/output tokens, and error classification.
-- **`users_feedback`**: Captures user ratings (1–5) and qualitative feedback submitted for compiled briefs.
+- **`users_feedback`**: Captures user ratings (1–5) and qualitative feedback submitted for compiled briefs, with the UTC `completed_date` at which the feedback was submitted.
 
 ### Google Cloud Storage & WeasyPrint PDF Generation
 - Upon report compilation, `ResearchArtifactService` converts the Markdown brief to styled HTML and renders an executive PDF using **WeasyPrint** (with embedded SVG charts, executive styling, and page numbering).

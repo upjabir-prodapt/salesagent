@@ -122,3 +122,116 @@ class TestAgentError:
         assert exc.attempts == 2
         assert exc.cause is cause
         assert str(exc) == "wrapped"
+
+
+class TestRateLimitBudget:
+    """RATE_LIMIT draws on its own, larger budget.
+
+    A Vertex quota window is enforced per minute, so retrying a 429 on
+    the same ~1s/2s schedule used for a malformed model response just
+    re-hammers the wall. These fields default to None ("no different from
+    any other retryable error") so a policy built directly behaves as it
+    always did; production opts in via build_research_pipeline().
+    """
+
+    def test_defaults_leave_rate_limit_undifferentiated(self):
+        policy = RetryPolicy(max_attempts=3)
+        assert policy.rate_limit_max_attempts is None
+        assert policy.max_attempts_for(ErrorKind.RATE_LIMIT) == 3
+        assert policy.attempt_ceiling == 3
+        assert policy.should_retry(ErrorKind.RATE_LIMIT, 3) is False
+
+    def test_rate_limit_gets_more_attempts_than_other_kinds(self):
+        policy = RetryPolicy(max_attempts=3, rate_limit_max_attempts=6)
+        assert policy.max_attempts_for(ErrorKind.RATE_LIMIT) == 6
+        assert policy.max_attempts_for(ErrorKind.TRANSIENT) == 3
+        assert policy.should_retry(ErrorKind.RATE_LIMIT, 5) is True
+        assert policy.should_retry(ErrorKind.TRANSIENT, 5) is False
+        assert policy.should_retry(ErrorKind.RATE_LIMIT, 6) is False
+
+    def test_attempt_ceiling_sums_the_per_kind_budgets(self):
+        """tenacity's stop runs before the error is classified, so it can
+        only bound the loop globally; the per-kind budget is enforced by
+        the retry predicate. The bound must therefore be the SUM -- a run
+        can legitimately spend its whole rate-limit budget on 429s AND
+        its whole ordinary budget on validation failures."""
+        assert (
+            RetryPolicy(max_attempts=3, rate_limit_max_attempts=6).attempt_ceiling == 9
+        )
+        assert (
+            RetryPolicy(max_attempts=7, rate_limit_max_attempts=2).attempt_ceiling == 9
+        )
+        assert RetryPolicy(max_attempts=3).attempt_ceiling == 3
+
+    def test_rate_limit_backoff_is_longer(self):
+        policy = RetryPolicy(
+            initial_delay=1.0,
+            max_delay=30.0,
+            rate_limit_initial_delay=15.0,
+            rate_limit_max_delay=120.0,
+            jitter=0.0,
+        )
+        assert policy.delay_for(1) == 1.0
+        assert policy.delay_for(1, ErrorKind.RATE_LIMIT) == 15.0
+        assert policy.delay_for(3, ErrorKind.RATE_LIMIT) == 60.0
+        assert policy.delay_for(4, ErrorKind.RATE_LIMIT) == 120.0
+        # Capped by the rate-limit ceiling, not the ordinary one.
+        assert policy.delay_for(9, ErrorKind.RATE_LIMIT) == 120.0
+        assert policy.delay_for(9) == 30.0
+
+    def test_production_rate_limit_budget_outlasts_a_quota_window(self):
+        """The whole point of the change: total backoff must exceed the
+        60s per-minute Vertex quota window by a wide margin. The stack
+        this replaced waited ~47-55s across every layer combined."""
+        policy = RetryPolicy(
+            max_attempts=3,
+            rate_limit_max_attempts=6,
+            rate_limit_initial_delay=15.0,
+            rate_limit_max_delay=120.0,
+            jitter=0.0,
+        )
+        sleeps = [
+            policy.delay_for(n, ErrorKind.RATE_LIMIT)
+            for n in range(1, policy.max_attempts_for(ErrorKind.RATE_LIMIT))
+        ]
+        assert sleeps == [15.0, 30.0, 60.0, 120.0, 120.0]
+        assert sum(sleeps) == 345.0
+        assert sum(sleeps) > 60.0 * 5
+
+    def test_non_retryable_kinds_stay_non_retryable(self):
+        policy = RetryPolicy(max_attempts=3, rate_limit_max_attempts=6)
+        assert policy.should_retry(ErrorKind.SAFETY, 1) is False
+        assert policy.should_retry(ErrorKind.FATAL, 1) is False
+
+
+class TestStepBudget:
+    def test_max_elapsed_defaults_to_unbounded(self):
+        assert RetryPolicy().max_elapsed is None
+
+    def test_max_elapsed_is_carried_on_the_policy(self):
+        assert RetryPolicy(max_elapsed=540.0).max_elapsed == 540.0
+
+    def test_step_budgets_fit_the_cloud_tasks_dispatch_deadline(self):
+        """The four per-step ceilings must provably fit inside the 1800s
+        Cloud Tasks dispatch deadline, with room for finalization. The
+        configuration this replaced had a worst case of 2413s."""
+        from src.shared.config import settings
+
+        total = (
+            settings.PLANNER_STEP_BUDGET_SECONDS
+            + settings.SEARCH_STEP_BUDGET_SECONDS
+            + settings.ALIGNMENT_STEP_BUDGET_SECONDS
+            + settings.COMPILER_STEP_BUDGET_SECONDS
+        )
+        assert total == 1560.0
+        assert total < settings.CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS
+        # At least 200s left for PDF render, GCS upload and evaluation.
+        assert settings.CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS - total >= 200
+
+
+class TestBuildRetrying:
+    def test_build_retrying_returns_a_fresh_loop_each_call(self):
+        """tenacity keeps its RetryCallState on the instance, so a shared
+        loop would interleave attempt numbers across concurrent jobs."""
+        policy = RetryPolicy(max_attempts=3)
+        assert policy.build_retrying() is not policy.build_retrying()

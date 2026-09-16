@@ -212,15 +212,26 @@ class _RevisionState:
     concurrent jobs sharing this singleton instance (see
     dependencies.py::build_research_pipeline) since each job constructs
     its own distinct CompilerInput.
+
+    `request` is held deliberately, not for reading. id() is a CPython
+    memory address, and an entry that outlives its CompilerInput would
+    leave that address free for a later job's CompilerInput to land on --
+    which would then read this entry and splice another company's draft
+    and violations into its prompt. Keeping a reference makes the address
+    un-recyclable for exactly as long as the entry that uses it.
     """
 
     feedback: str
     draft: str
+    request: Any
 
 
 # Bounds the one-entry-per-permanently-failed-job leak in
 # ReportCompiler._revisions described in _RevisionState's docstring above.
-_MAX_TRACKED_REVISIONS = 50
+# Each entry now pins its CompilerInput (findings + alignment) plus a full
+# draft, so this is deliberately far below a singleton's lifetime job
+# count: it only has to cover the jobs genuinely in flight.
+_MAX_TRACKED_REVISIONS = 8
 
 
 def _render_revision_block(feedback: str, previous_draft: str) -> str:
@@ -332,11 +343,16 @@ class ReportCompiler(AdkAgentStep[CompilerInput, Report]):
             hooks_block=", ".join(alignment.hooks) or "(none)",
             evidence_urls_block=ev_block,
         )
-        # Consumed on read (pop, not get): once this attempt's prompt is
-        # built from it, the entry is no longer needed. If this attempt
-        # also fails, execute() below writes a fresh entry for the next
-        # retry; if it succeeds, nothing is left behind to clean up.
-        state = self._revisions.pop(id(request), None)
+        # Peek, do not consume. This used to pop, which silently broke
+        # the revision loop on any retry that was not itself a validation
+        # failure: attempt 2 popped attempt 1's feedback, then hit a 429
+        # on its LLM call -- never reaching the code in execute() that
+        # rewrites the entry -- so attempt 3 built a plain prompt and
+        # blind-regenerated with no knowledge of what had been wrong.
+        # Now the entry is overwritten on a fresh validation failure and
+        # discarded by execute() once a draft finally passes, so a
+        # RATE_LIMIT retry preserves it.
+        state = self._revisions.get(id(request))
         if state is not None:
             # Next-step-of-the-same-agent revision (per user requirement):
             # the retried attempt sees exactly what was wrong with its own
@@ -406,17 +422,22 @@ class ReportCompiler(AdkAgentStep[CompilerInput, Report]):
             self._revisions[id(request)] = _RevisionState(
                 feedback="\n".join(f"- {v['rule']}: {v['detail']}" for v in violations),
                 draft=report.markdown,
+                request=request,
             )
-            # Entries are normally popped by to_input() on the next retry
-            # attempt (see there). The one case that leaves an entry
-            # behind is a *permanent* failure (retries exhausted): Agent
-            # .run() raises AgentError instead of calling to_input()
-            # again, so nothing ever consumes it. This cap bounds that
-            # leak to a handful of small objects regardless of how many
-            # jobs this singleton instance processes over its lifetime.
+            # The one case that leaves an entry behind is a *permanent*
+            # failure (retries exhausted): Agent.run() raises AgentError
+            # instead of calling to_input() again, so nothing consumes
+            # it. This cap bounds that leak regardless of how many jobs
+            # this singleton instance processes over its lifetime.
             if len(self._revisions) > _MAX_TRACKED_REVISIONS:
                 oldest_key = next(iter(self._revisions))
                 self._revisions.pop(oldest_key, None)
+        else:
+            # Passed: the feedback has served its purpose. Releasing it
+            # here, rather than in to_input() which now only peeks, is
+            # what lets a RATE_LIMIT retry keep it while still freeing
+            # the pinned CompilerInput and draft on success.
+            self._revisions.pop(id(request), None)
         return Report(
             markdown=report.markdown,
             validation_status=status,

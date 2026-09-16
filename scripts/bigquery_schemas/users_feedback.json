@@ -19,5 +19,12 @@
     "type": "STRING",
     "description": "",
     "fields": []
+  },
+  {
+    "name": "completed_date",
+    "mode": "NULLABLE",
+    "type": "TIMESTAMP",
+    "description": "UTC timestamp at which the user submitted this feedback",
+    "fields": []
   }
 ]
