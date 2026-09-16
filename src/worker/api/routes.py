@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from ...shared.schemas.tasks import ResearchTaskPayload
 from ..dependencies import get_research_task_handler
+from ..services.task_attempt import TaskAttempt
 from .auth import require_cloud_tasks_oidc
 from .handlers import ResearchTaskHandler
 
@@ -32,16 +33,23 @@ async def research_task(
     handler: ResearchTaskHandlerDep,
 ) -> dict[str, Any]:
     """Cloud Tasks target: run research pipeline for job_id."""
+    # Cloud Tasks stamps the delivery count on every dispatch; absent for
+    # the local dev path, which posts here directly with no queue behind it.
+    attempt = TaskAttempt.from_headers(request.headers)
     logger.info(
-        "Received research task request job_id=%s company=%s traceparent=%s",
+        "Received research task request job_id=%s company=%s traceparent=%s delivery=%s",
         payload.job_id,
         payload.company_name,
         payload.traceparent,
+        attempt.label if attempt is not None else "direct (no queue)",
     )
     try:
-        result = await handler.handle(payload)
+        result = await handler.handle(payload, attempt)
     except Exception as e:
-        # Non-2xx causes Cloud Tasks to retry according to queue configuration
+        # Non-2xx is what makes Cloud Tasks re-deliver, per the queue's
+        # --max-attempts/--min-backoff. The handler only re-raises when a
+        # re-delivery is actually wanted; a permanent failure comes back as
+        # a normal response so the queue stops immediately.
         logger.exception("Research task failed for job %s: %s", payload.job_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

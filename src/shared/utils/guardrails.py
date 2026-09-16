@@ -11,14 +11,57 @@ Output guardrails (available checks for compiled report):
     prohibited content, hallucination) but not part of the active blocking path.
 """
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass, field
+from typing import Any
+
+from google.genai import types as genai_types
 
 from src.shared.config import settings
 from src.shared.exceptions import InputValidationException
 from src.shared.logging_config import logger
 from src.shared.repositories.clients import get_genai_client
+from src.shared.retrying import retry_async
+
+
+async def _generate_json_with_retry(
+    client: Any, *, model: str, prompt: str, label: str
+) -> Any:
+    """One JSON `generate_content` call, retried with exponential backoff.
+
+    Two reasons this is not just a bare call:
+
+    *   It had **no retry at all**. A single RESOURCE_EXHAUSTED left the
+        caller's `except Exception` to log a warning and return no
+        violations, so a quota blip silently *passed* a report that the
+        hallucination gate never actually inspected.
+    *   `client.models.generate_content` is the **blocking** genai client
+        being called from a coroutine. Adding a rate-limit backoff of up
+        to LLM_CALL_RETRY_MAX_DELAY seconds inline would have parked the
+        whole event loop -- including the pipeline it shares -- so both
+        the call and its waiting happen on a worker thread.
+    """
+
+    def _once() -> Any:
+        return client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0,
+            ),
+        )
+
+    return await retry_async(
+        lambda: asyncio.to_thread(_once),
+        label=label,
+        max_attempts=settings.LLM_CALL_RETRY_ATTEMPTS,
+        initial_delay=settings.LLM_CALL_RETRY_INITIAL_DELAY,
+        max_delay=settings.LLM_CALL_RETRY_MAX_DELAY,
+        max_elapsed=settings.LLM_CALL_RETRY_BUDGET_SECONDS,
+    )
 
 
 class _ClientPool:
@@ -517,8 +560,6 @@ class OutputGuardrail:
             return []
 
         try:
-            from google.genai import types as genai_types
-
             client = client_pool.get_genai_client()
 
             prompt = (
@@ -571,13 +612,11 @@ class OutputGuardrail:
                 "}"
             )
 
-            response = client.models.generate_content(
+            response = await _generate_json_with_retry(
+                client,
                 model=settings.output_guardrail_hallucination_model,
-                contents=prompt,
-                config=genai_types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0,
-                ),
+                prompt=prompt,
+                label="OutputGuardrail hallucination check",
             )
             if session_state is not None:
                 from src.worker.runtime.pricing import (
@@ -640,8 +679,6 @@ class OutputGuardrail:
             return []
 
         try:
-            from google.genai import types as genai_types
-
             client = client_pool.get_genai_client()
 
             prompt = (
@@ -717,13 +754,11 @@ class OutputGuardrail:
                 "}"
             )
 
-            response = client.models.generate_content(
+            response = await _generate_json_with_retry(
+                client,
                 model=settings.output_guardrail_hallucination_model,
-                contents=prompt,
-                config=genai_types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0,
-                ),
+                prompt=prompt,
+                label="OutputGuardrail hallucination check",
             )
             if session_state is not None:
                 from src.worker.runtime.pricing import (

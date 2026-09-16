@@ -30,6 +30,7 @@ dependencies = [
     "google-auth>=2.47.0",
     "pyjwt>=2.12.1",
     "rank-bm25>=0.2.2",
+    "tenacity>=9.1.4",
     "markdown>=3.10.2",
     "weasyprint>=69.0",
 ]
@@ -52,6 +53,14 @@ fix = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/conftest.py" = ["E402"]
+
+[tool.pytest.ini_options]
+# CI runs `uv run pytest` with no path argument. Without this, collection
+# walks the repo root, so any module under scripts/ matching test_*.py is
+# imported as a test -- and one that freezes os.environ at import time
+# (scripts/verify_retry_loop.py) takes the whole suite down with an
+# INTERNALERROR rather than a test failure.
+testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.11"

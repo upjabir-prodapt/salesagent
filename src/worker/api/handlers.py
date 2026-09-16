@@ -14,6 +14,7 @@ from src.shared.repositories.bigquery_repository import BigQueryRepository
 from src.shared.schemas.tasks import ResearchTaskPayload
 
 from ..services.job_runner import ResearchJobRunner
+from ..services.task_attempt import JobPhase, TaskAttempt, should_redispatch
 
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 
@@ -38,11 +39,22 @@ class ResearchTaskHandler:
             carrier["tracestate"] = payload.tracestate
         return TraceContextTextMapPropagator().extract(carrier)
 
-    async def handle(self, payload: ResearchTaskPayload) -> dict[str, Any]:
+    async def handle(
+        self,
+        payload: ResearchTaskPayload,
+        attempt: TaskAttempt | None = None,
+    ) -> dict[str, Any]:
         """Process one research task.
 
-        Returns a small status dict. Raises on transient failures so Cloud Tasks retries.
-        Terminal no-ops return without raising so Cloud Tasks stops retrying.
+        Returns a small status dict. Raises ONLY when Cloud Tasks should
+        deliver the task again -- the route turns that into a 5XX, which
+        is what triggers re-delivery. Every other outcome, including a
+        permanent failure, returns normally so the queue stops.
+
+        *attempt* is the delivery context from the Cloud Tasks headers
+        (None for the local dev path). It is what makes the queue-level
+        retry real: without it a failure was always written as FAILED, and
+        the next delivery read that back and no-opped.
         """
         job_id = payload.job_id
         parent_ctx = self._attach_trace(payload)
@@ -68,12 +80,38 @@ class ResearchTaskHandler:
                 logger.info("Job %s already terminal (%s); skipping", job_id, status)
                 return {"job_id": job_id, "status": status, "action": "noop"}
 
-            await self._job_runner.run(
-                job_id,
-                payload.company_name,
-                metadata=payload.metadata,
-                span=span,
-            )
+            try:
+                await self._job_runner.run(
+                    job_id,
+                    payload.company_name,
+                    metadata=payload.metadata,
+                    span=span,
+                    attempt=attempt,
+                )
+            except Exception as error:
+                # The runner has already recorded the failure -- either as
+                # FAILED, or (for a transient pipeline failure with a
+                # delivery left) as still-PROCESSING. Re-raise only in the
+                # latter case: a 5XX is the signal Cloud Tasks retries on,
+                # and raising for a permanent failure just buys a wasted
+                # re-delivery that the terminal-status guard above no-ops.
+                if should_redispatch(error, attempt, JobPhase.PIPELINE):
+                    span.set_status(
+                        trace.Status(trace.StatusCode.ERROR, "retryable failure")
+                    )
+                    logger.warning(
+                        "Job %s failed transiently (%s); asking Cloud Tasks to "
+                        "re-deliver: %s",
+                        job_id,
+                        attempt.label if attempt else "no delivery context",
+                        error,
+                    )
+                    raise
+                span.set_status(trace.Status(trace.StatusCode.ERROR, "failed"))
+                logger.error(
+                    "Job %s failed permanently; not re-delivering: %s", job_id, error
+                )
+                return {"job_id": job_id, "status": "FAILED", "action": "failed"}
 
             final_data = self._bigquery.get_status(job_id)
             final_status = str((final_data or {}).get("status") or "UNKNOWN")

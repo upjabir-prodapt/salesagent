@@ -42,8 +42,32 @@ def get_gcs_repository() -> GCSRepository:
     return _gcs_repo
 
 
+def _rate_limit_kwargs() -> dict:
+    """The RESOURCE_EXHAUSTED-specific half of every step's policy.
+
+    Shared by all four steps so a 429 is absorbed identically wherever it
+    lands. RetryPolicy leaves these None by default, so this factory is
+    the single place the production service opts into the larger
+    rate-limit budget.
+    """
+    return {
+        "rate_limit_max_attempts": settings.AGENT_RATE_LIMIT_RETRY_ATTEMPTS,
+        "rate_limit_initial_delay": settings.AGENT_RATE_LIMIT_INITIAL_DELAY,
+        "rate_limit_max_delay": settings.AGENT_RATE_LIMIT_MAX_DELAY,
+        "initial_delay": settings.AGENT_RETRY_INITIAL_DELAY,
+        "max_delay": settings.AGENT_RETRY_MAX_DELAY,
+        "respect_retry_after": settings.AGENT_RETRY_RESPECT_RETRY_AFTER,
+    }
+
+
 def build_research_pipeline(*, cache_repo: Any | None = None) -> ResearchPipeline:
     """Construct the 4-step ResearchPipeline with production dependencies.
+
+    Every step's RetryPolicy carries three things the defaults do not: the
+    larger RATE_LIMIT budget, the exponential-backoff shape (previously
+    hard-coded in RetryPolicy.__init__ and unreachable from config), and a
+    hard per-step wall-clock ceiling so the four budgets provably fit
+    inside the 1800s Cloud Tasks dispatch deadline.
 
     *cache_repo* overrides the search cache backend. Production leaves it
     None and gets RedisSearchCacheRepository; a local run with no
@@ -52,7 +76,11 @@ def build_research_pipeline(*, cache_repo: Any | None = None) -> ResearchPipelin
     timeouts -- stays byte-identical to what the worker runs.
     """
     planner = QueryPlanner(
-        retry=RetryPolicy(max_attempts=settings.PLANNER_RETRY_ATTEMPTS)
+        retry=RetryPolicy(
+            max_attempts=settings.PLANNER_RETRY_ATTEMPTS,
+            max_elapsed=settings.PLANNER_STEP_BUDGET_SECONDS,
+            **_rate_limit_kwargs(),
+        )
     )
     searcher = SearchExecutor(
         get_genai_client(),
@@ -61,20 +89,34 @@ def build_research_pipeline(*, cache_repo: Any | None = None) -> ResearchPipelin
         qps=settings.SEARCH_QPS,
         qps_burst=settings.SEARCH_QPS_BURST,
         concurrency=settings.SEARCH_CONCURRENCY_LIMIT,
+        # Per-query: this is the layer that actually meets the quota wall,
+        # since the step fans out ~30 grounded searches. It also gets the
+        # per-query timeout enforced for the first time (see _run_one).
         query_retry=RetryPolicy(
             max_attempts=settings.SEARCH_QUERY_RETRY_ATTEMPTS,
             timeout=settings.SEARCH_TIMEOUT_SECONDS,
+            **_rate_limit_kwargs(),
         ),
         min_success_rate=settings.SEARCH_MIN_SUCCESS_RATE,
-        step_retry=RetryPolicy(timeout=settings.SEARCH_STEP_TIMEOUT_SECONDS),
+        step_retry=RetryPolicy(
+            timeout=settings.SEARCH_STEP_TIMEOUT_SECONDS,
+            max_elapsed=settings.SEARCH_STEP_BUDGET_SECONDS,
+            **_rate_limit_kwargs(),
+        ),
     )
     analyst = AlignmentAnalyst(
-        retry=RetryPolicy(max_attempts=settings.ALIGNMENT_RETRY_ATTEMPTS)
+        retry=RetryPolicy(
+            max_attempts=settings.ALIGNMENT_RETRY_ATTEMPTS,
+            max_elapsed=settings.ALIGNMENT_STEP_BUDGET_SECONDS,
+            **_rate_limit_kwargs(),
+        )
     )
     compiler = ReportCompiler(
         retry=RetryPolicy(
             max_attempts=settings.COMPILER_RETRY_ATTEMPTS,
             timeout=settings.COMPILER_TIMEOUT_SECONDS,
+            max_elapsed=settings.COMPILER_STEP_BUDGET_SECONDS,
+            **_rate_limit_kwargs(),
         )
     )
     return ResearchPipeline(planner, searcher, analyst, compiler)

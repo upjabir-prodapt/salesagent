@@ -1,4 +1,5 @@
 import json
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -91,6 +92,14 @@ def test_insert_user_feedback_success(bq_repo, mock_bq_client):
     query = mock_bq_client.query.call_args[0][0]
     assert "INSERT INTO" in query
     assert "users_feedback" in query or "test_users_feedback" in query
+    assert "completed_date" in query
+
+    job_config = mock_bq_client.query.call_args.kwargs["job_config"]
+    completed_date = next(
+        p for p in job_config.query_parameters if p.name == "completed_date"
+    )
+    assert completed_date.type_ == "TIMESTAMP"
+    assert completed_date.value.tzinfo is UTC
 
 
 def test_list_jobs_for_user_success(bq_repo, mock_bq_client):

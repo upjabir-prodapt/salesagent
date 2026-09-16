@@ -127,6 +127,13 @@ async def test_output_guardrail_hallucination_check_legacy_failure_functional(
     ):
         mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD = 1
         mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL = "gemini-flash"
+        # `settings` is stubbed wholesale here, so the retry knobs that
+        # _generate_json_with_retry reads need real numbers rather than
+        # MagicMocks. Kept tiny so the call is retried but never sleeps.
+        mock_s.LLM_CALL_RETRY_ATTEMPTS = 2
+        mock_s.LLM_CALL_RETRY_INITIAL_DELAY = 0.001
+        mock_s.LLM_CALL_RETRY_MAX_DELAY = 0.001
+        mock_s.LLM_CALL_RETRY_BUDGET_SECONDS = 5.0
         violations = await og._check_hallucinations_legacy(report)
         assert len(violations) == 1
         assert "output:hallucination" in violations[0].rule
@@ -162,6 +169,13 @@ async def test_output_guardrail_hallucination_check_with_cache_functional(
     ):
         mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_BLOCK_THRESHOLD = 1
         mock_s.OUTPUT_GUARDRAIL_HALLUCINATION_MODEL = "gemini-flash"
+        # `settings` is stubbed wholesale here, so the retry knobs that
+        # _generate_json_with_retry reads need real numbers rather than
+        # MagicMocks. Kept tiny so the call is retried but never sleeps.
+        mock_s.LLM_CALL_RETRY_ATTEMPTS = 2
+        mock_s.LLM_CALL_RETRY_INITIAL_DELAY = 0.001
+        mock_s.LLM_CALL_RETRY_MAX_DELAY = 0.001
+        mock_s.LLM_CALL_RETRY_BUDGET_SECONDS = 5.0
         violations = await og._check_hallucinations_with_cache(report, raw_cache)
         assert len(violations) == 1
         assert "numerical_facts" in violations[0].detail

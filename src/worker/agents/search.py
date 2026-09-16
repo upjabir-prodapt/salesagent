@@ -34,6 +34,7 @@ import time
 from typing import Any
 
 from google.genai import types as genai_types
+from tenacity import RetryCallState
 
 from src.shared.logging_config import logger
 from src.shared.utils.url_utils import is_authoritative
@@ -267,45 +268,86 @@ class SearchExecutor(Agent[QueryPlan, SearchFindings]):
     async def _run_one(self, company: str, query: Query) -> QueryResult:
         """Execute one query with QPS gating, concurrency limiting, and
         per-query retry. Never fabricates content on failure.
+
+        The retry loop is tenacity, built from the same RetryPolicy the
+        step level uses (see RetryPolicy.build_retrying), so a
+        RESOURCE_EXHAUSTED here backs off on the same rate-limit-aware
+        schedule -- and honours Vertex's own Retry-After -- instead of the
+        1s/2s schedule the hand-rolled loop used to apply to every error
+        alike. This is the layer that actually meets the quota wall: the
+        step fires up to 30 grounded searches at SEARCH_QPS.
         """
+
+        def _on_before_sleep(retry_state: RetryCallState) -> None:
+            outcome = retry_state.outcome
+            exc = outcome.exception() if outcome is not None else None
+            kind = classify(exc) if exc is not None else ErrorKind.FATAL
+            delay = (
+                retry_state.next_action.sleep
+                if retry_state.next_action is not None
+                else 0.0
+            )
+            logger.debug(
+                f"[SearchExecutor] Query attempt {retry_state.attempt_number} failed "
+                f"(kind={kind}), retrying in {delay:.2f}s: "
+                f"[{query.domain}] {query.text!r}"
+            )
+
+        retrying = self._query_retry.build_retrying(before_sleep=_on_before_sleep)
         attempt = 0
-        while True:
-            attempt += 1
-            await self._limiter.acquire()
-            async with self._semaphore:
-                t0 = time.monotonic()
-                try:
-                    logger.debug(
-                        f"[SearchExecutor] Query attempt {attempt} starting: "
-                        f"[{query.domain}] '{query.text}'"
-                    )
-                    text, evidence = await asyncio.wait_for(
-                        self._search_once(company, query),
-                        timeout=self._query_retry.timeout,
-                    )
-                    elapsed = time.monotonic() - t0
-                    logger.info(
-                        f"[SearchExecutor] Query attempt {attempt} succeeded in {elapsed:.2f}s: "
-                        f"[{query.domain}] '{query.text}' -> {len(text)} chars, {len(evidence)} evidence URLs"
-                    )
-                    return QueryResult.ok(query, text, evidence)
-                except Exception as exc:  # noqa: BLE001 - classified below
-                    elapsed = time.monotonic() - t0
-                    kind = classify(exc)
-                    if kind is ErrorKind.RATE_LIMIT:
-                        self._limiter.penalize()
-                    if not self._query_retry.should_retry(kind, attempt):
-                        logger.warning(
-                            f"[SearchExecutor] Query failed permanently in {elapsed:.2f}s "
-                            f"(attempt {attempt}, kind={kind}): [{query.domain}] {query.text!r}: {exc}"
+        try:
+            async for tenacity_attempt in retrying:
+                attempt = tenacity_attempt.retry_state.attempt_number
+                with tenacity_attempt:
+                    await self._limiter.acquire()
+                    async with self._semaphore:
+                        t0 = time.monotonic()
+                        try:
+                            logger.debug(
+                                f"[SearchExecutor] Query attempt {attempt} starting: "
+                                f"[{query.domain}] '{query.text}'"
+                            )
+                            # SEARCH_TIMEOUT_SECONDS reaches this policy as
+                            # `timeout` but was never enforced: the old loop
+                            # awaited _search_once() bare, so a hung query had
+                            # no clock of its own and could only be stopped by
+                            # the 300s step-level timeout it shared with all 30
+                            # of its siblings.
+                            text, evidence = await asyncio.wait_for(
+                                self._search_once(company, query),
+                                timeout=self._query_retry.timeout,
+                            )
+                        except Exception as exc:  # noqa: BLE001 - classified below
+                            elapsed = time.monotonic() - t0
+                            if classify(exc) is ErrorKind.RATE_LIMIT:
+                                self._limiter.penalize()
+                            logger.debug(
+                                f"[SearchExecutor] Query attempt {attempt} raised in "
+                                f"{elapsed:.2f}s: [{query.domain}] {query.text!r}: {exc}"
+                            )
+                            raise
+                        elapsed = time.monotonic() - t0
+                        logger.info(
+                            f"[SearchExecutor] Query attempt {attempt} succeeded in "
+                            f"{elapsed:.2f}s: [{query.domain}] '{query.text}' -> "
+                            f"{len(text)} chars, {len(evidence)} evidence URLs"
                         )
-                        return QueryResult.failed(query, str(kind))
-                    delay = self._query_retry.delay_for(attempt)
-                    logger.debug(
-                        f"[SearchExecutor] Query attempt {attempt} failed in {elapsed:.2f}s "
-                        f"(kind={kind}), retrying in {delay:.2f}s: [{query.domain}] {query.text!r}"
-                    )
-                    await asyncio.sleep(delay)
+                        result = QueryResult.ok(query, text, evidence)
+                state = tenacity_attempt.retry_state
+                if state.outcome is not None and not state.outcome.failed:
+                    state.set_result(result)
+        except Exception as exc:  # noqa: BLE001 - reported, never raised
+            # reraise=True gives us the final attempt's real error. A failed
+            # query is recorded honestly (R3) rather than fabricated as
+            # success text, so it never counts toward search_count.
+            kind = classify(exc)
+            logger.warning(
+                f"[SearchExecutor] Query failed permanently "
+                f"(attempt {attempt}, kind={kind}): "
+                f"[{query.domain}] {query.text!r}: {exc}"
+            )
+            return QueryResult.failed(query, str(kind))
+        return result
 
     async def _search_once(
         self, company: str, query: Query
